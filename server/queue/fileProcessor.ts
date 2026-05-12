@@ -194,7 +194,7 @@ type MappedChunkMeta = {
   headings?: string[]
 }
 
-const mapChunkMeta = (
+export const mapChunkMeta = (
   meta: ChunkMetadata,
   includeHeadings = false,
 ): MappedChunkMeta => {

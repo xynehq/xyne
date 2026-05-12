@@ -1,0 +1,40 @@
+{
+	"name": "@xyne/client",
+	"version": "0.1.0",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"import": "./dist/index.js",
+			"types": "./dist/index.d.ts"
+		},
+		"./styles.css": "./dist/styles.css"
+	},
+	"sideEffects": ["*.css"],
+	"scripts": {
+		"build": "tsup && postcss src/styles/index.css -o dist/styles.css",
+		"clean": "rm -rf dist",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"react-markdown": "^9.0.0",
+		"remark-gfm": "^4.0.0"
+	},
+	"peerDependencies": {
+		"react": "^18.0.0 || ^19.0.0",
+		"react-dom": "^18.0.0 || ^19.0.0"
+	},
+	"devDependencies": {
+		"@types/react": "^19.0.0",
+		"@types/react-dom": "^19.0.0",
+		"autoprefixer": "^10.4.0",
+		"postcss": "^8.4.0",
+		"postcss-cli": "^11.0.0",
+		"react": "^19.0.0",
+		"react-dom": "^19.0.0",
+		"tailwindcss": "^3.4.0",
+		"tsup": "^8.0.0",
+		"typescript": "^5.7.0"
+	}
+}

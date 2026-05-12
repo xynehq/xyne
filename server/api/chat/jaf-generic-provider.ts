@@ -420,5 +420,189 @@ export const makeXyneGenericJAFProvider = <Ctx>(
         genericRunCfg,
       )
     },
+
+    async *getCompletionStream(state, agent, runCfg) {
+      const requestedModel = runCfg.modelOverride ?? agent.modelConfig?.name
+      if (!requestedModel) {
+        throw new Error(`Model not specified for agent ${agent.name}`)
+      }
+
+      const modelConfig = getModelConfiguration(requestedModel)
+      const providerType = modelConfig?.provider as AIProviders | undefined
+      if (!providerType || !isGenericCompatibleProvider(providerType)) {
+        const result = await legacy.getCompletion(state, agent, runCfg)
+        if (result.message?.content) {
+          yield { delta: result.message.content }
+        }
+        yield { isDone: true, finishReason: "stop" }
+        return
+      }
+
+      const stopSignal = getStopSignal(
+        state.context as unknown as AgentRunContext | undefined,
+      )
+      throwIfStopRequested(stopSignal)
+
+      const actualModelId = modelConfig?.actualName ?? requestedModel
+      const { apiKey, baseURL } = getProviderConnection(providerType)
+
+      const stateWithImages = await attachImagesToLastUserMessage(state)
+      throwIfStopRequested(stopSignal)
+
+      // Build request body (mirrors generic-openai buildRequestBody)
+      const convertMsg = (m: JAFMessage) => {
+        if (m.role === "user") {
+          return {
+            role: "user" as const,
+            content: Array.isArray(m.content) ? m.content : getTextContent(m.content),
+          }
+        }
+        if (m.role === "tool") {
+          return {
+            role: "tool" as const,
+            content: getTextContent(m.content),
+            tool_call_id: m.tool_call_id,
+          }
+        }
+        // assistant
+        const msg: Record<string, unknown> = {
+          role: "assistant",
+          content: getTextContent(m.content),
+        }
+        if (m.tool_calls && m.tool_calls.length > 0) {
+          msg.tool_calls = m.tool_calls
+        }
+        return msg
+      }
+
+      const tools = agent.tools?.map((tool) => ({
+        type: "function" as const,
+        function: {
+          name: tool.schema.name,
+          description: tool.schema.description,
+          parameters: zodSchemaToJsonSchema(tool.schema.parameters),
+        },
+      }))
+
+      const body: Record<string, unknown> = {
+        model: actualModelId,
+        messages: [
+          { role: "system", content: agent.instructions(stateWithImages) },
+          ...stateWithImages.messages.map(convertMsg),
+        ],
+        stream: true,
+        ...(tools && tools.length > 0 ? { tools } : {}),
+      }
+      addXyneRequestOptions(body, stateWithImages)
+
+      // Stream directly — yields deltas immediately without think-tag buffering
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 120_000) // 120s timeout
+      if (stopSignal?.aborted) controller.abort()
+      stopSignal?.addEventListener("abort", () => controller.abort(), {
+        once: true,
+      })
+
+      let response: Response
+      try {
+        Logger.info(
+          { model: actualModelId, messageCount: stateWithImages.messages.length },
+          "Starting streaming LLM call",
+        )
+        response = await fetch(`${baseURL}/chat/completions`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        })
+      } catch (err) {
+        clearTimeout(timeout)
+        Logger.error({ err, model: actualModelId }, "Streaming fetch failed")
+        throw err
+      }
+
+      if (!response.ok) {
+        clearTimeout(timeout)
+        const errorBody = await response.text().catch(() => "unknown")
+        Logger.error(
+          { status: response.status, errorBody, model: actualModelId },
+          "Streaming API returned error",
+        )
+        throw new Error(
+          `Streaming API error ${response.status}: ${errorBody}`,
+        )
+      }
+
+      if (!response.body) {
+        clearTimeout(timeout)
+        throw new Error("Streaming response has no body")
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ""
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split("\n")
+          buffer = lines.pop() ?? ""
+
+          for (const line of lines) {
+            const trimmed = line.trim()
+            if (!trimmed.startsWith("data:")) continue
+            const data = trimmed.slice(5).trim()
+            if (data === "[DONE]") {
+              yield { isDone: true, finishReason: "stop" }
+              return
+            }
+
+            let chunk: any
+            try {
+              chunk = JSON.parse(data)
+            } catch {
+              continue
+            }
+
+            const delta = chunk.choices?.[0]?.delta
+            if (delta?.content) {
+              yield { delta: delta.content }
+            }
+            if (Array.isArray(delta?.tool_calls)) {
+              for (const tc of delta.tool_calls) {
+                yield {
+                  toolCallDelta: {
+                    index: tc.index ?? 0,
+                    id: tc.id,
+                    type: "function" as const,
+                    function: {
+                      name: tc.function?.name,
+                      argumentsDelta: tc.function?.arguments,
+                    },
+                  },
+                }
+              }
+            }
+            const finishReason = chunk.choices?.[0]?.finish_reason
+            if (finishReason) {
+              yield {
+                isDone: true,
+                finishReason,
+                usage: chunk.usage,
+              }
+            }
+          }
+        }
+      } finally {
+        clearTimeout(timeout)
+        reader.releaseLock()
+      }
+    },
   }
 }

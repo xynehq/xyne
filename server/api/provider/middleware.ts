@@ -36,6 +36,7 @@ export const ProviderTokenMiddleware = async (c: Context, next: Next) => {
     // 4. Set on context
     c.set("workspaceId", payload.workspace_id as string)
     c.set("accessTags", payload.access_tags as string[])
+    c.set("isAuthenticated", payload.authenticated === true)
     c.set("providerSub", payload.sub as string)
     c.set("providerEmail", payload.email as string | undefined)
 

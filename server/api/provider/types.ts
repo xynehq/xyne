@@ -43,6 +43,8 @@ export const providerExplainSchema = z.object({
   text: z.string().min(1),
 })
 
+export const visibilityEnum = z.enum(["public", "authenticated"])
+
 export const providerIngestSchema = z.object({
   collection_id: z.string().min(1),
   documents: z.array(
@@ -50,6 +52,7 @@ export const providerIngestSchema = z.object({
       doc_id: z.string().optional(),
       title: z.string(),
       content: z.string(),
+      visibility: visibilityEnum.default("public"),
       access_tags: z.array(z.string()).default([]),
       source_url: z.string().optional(),
       metadata: z.record(z.unknown()).optional(),

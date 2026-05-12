@@ -1,0 +1,23 @@
+{
+	"compilerOptions": {
+		"strict": true,
+		"noUncheckedIndexedAccess": true,
+		"noImplicitOverride": true,
+		"forceConsistentCasingInFileNames": true,
+		"moduleResolution": "bundler",
+		"module": "ESNext",
+		"target": "ES2022",
+		"declaration": true,
+		"declarationMap": true,
+		"sourceMap": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"isolatedModules": true,
+		"jsx": "react-jsx",
+		"outDir": "./dist",
+		"rootDir": "./src",
+		"lib": ["ES2022", "DOM", "DOM.Iterable"]
+	},
+	"include": ["src"],
+	"exclude": ["src/__tests__"]
+}

@@ -25,10 +25,8 @@ export const IssueProviderTokenApi = async (c: Context) => {
       })
     }
 
-    // Build access_tags: auto-embed public, authenticated, user:<id>
+    // Build access_tags: only granular permission tags + user:<id>
     const accessTags = [
-      "public",
-      "authenticated",
       `user:${external_user_id}`,
       ...(tags as string[]),
     ]
@@ -44,6 +42,7 @@ export const IssueProviderTokenApi = async (c: Context) => {
       iss: "xyne",
       sub: external_user_id as string,
       ...(email ? { email: email as string } : {}),
+      authenticated: true,
       access_tags: uniqueTags,
       workspace_id: workspaceId,
       token_type: "provider",

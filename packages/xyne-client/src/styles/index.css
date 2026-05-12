@@ -1,0 +1,161 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Gentle thinking dots animation */
+@keyframes xyne-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+.xyne-thinking-dot {
+  animation: xyne-pulse 1.4s ease-in-out infinite;
+}
+
+/* Markdown rendering inside chat bubbles */
+.xyne-markdown h1 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  line-height: 1.3;
+}
+.xyne-markdown h2 {
+  font-size: 1.125rem;
+  font-weight: 700;
+  margin-top: 0.875rem;
+  margin-bottom: 0.375rem;
+  line-height: 1.3;
+}
+.xyne-markdown h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-top: 0.75rem;
+  margin-bottom: 0.25rem;
+  line-height: 1.4;
+}
+.xyne-markdown h4, .xyne-markdown h5, .xyne-markdown h6 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-top: 0.625rem;
+  margin-bottom: 0.25rem;
+}
+.xyne-markdown h1:first-child,
+.xyne-markdown h2:first-child,
+.xyne-markdown h3:first-child {
+  margin-top: 0;
+}
+.xyne-markdown p {
+  margin-bottom: 0.5rem;
+  line-height: 1.6;
+}
+.xyne-markdown p:last-child {
+  margin-bottom: 0;
+}
+.xyne-markdown strong {
+  font-weight: 600;
+}
+.xyne-markdown em {
+  font-style: italic;
+}
+.xyne-markdown ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+.xyne-markdown ol {
+  list-style-type: decimal;
+  padding-left: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+.xyne-markdown li {
+  margin-bottom: 0.25rem;
+  line-height: 1.5;
+}
+.xyne-markdown li > ul, .xyne-markdown li > ol {
+  margin-top: 0.25rem;
+  margin-bottom: 0;
+}
+.xyne-markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8125rem;
+  background-color: rgba(0, 0, 0, 0.06);
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+}
+.xyne-markdown pre {
+  background-color: #1e293b;
+  color: #e2e8f0;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin-bottom: 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+.xyne-markdown pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+  color: inherit;
+}
+.xyne-markdown blockquote {
+  border-left: 3px solid #cbd5e1;
+  padding-left: 0.75rem;
+  margin-left: 0;
+  margin-bottom: 0.5rem;
+  color: #64748b;
+  font-style: italic;
+}
+.xyne-markdown hr {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 0.75rem 0;
+}
+.xyne-markdown .table-wrapper {
+  overflow-x: auto;
+  margin-bottom: 0.5rem;
+}
+.xyne-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+.xyne-markdown th {
+  text-align: left;
+  font-weight: 600;
+  padding: 0.375rem 0.625rem;
+  border-bottom: 2px solid #cbd5e1;
+  background-color: rgba(0, 0, 0, 0.03);
+}
+.xyne-markdown td {
+  padding: 0.375rem 0.625rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+.xyne-markdown a {
+  color: #2563eb;
+  text-decoration: underline;
+}
+.xyne-markdown a:hover {
+  color: #1d4ed8;
+}
+
+/* AI Popover */
+@keyframes xyne-popover-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.xyne-popover {
+  animation: xyne-popover-in 0.15s ease-out;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+@keyframes xyne-toolbar-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.xyne-toolbar {
+  animation: xyne-toolbar-in 0.12s ease-out;
+}

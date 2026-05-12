@@ -2,11 +2,21 @@ import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Key, Trash2, Plus, Copy, X, Check } from "lucide-react"
 import * as api from "@/api"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 export function Settings() {
   return (
-    <div className="space-y-8">
-      <h2 className="text-xl font-semibold">Settings</h2>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold tracking-tight">Settings</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Manage API keys and configuration
+        </p>
+      </div>
       <ApiKeysSection />
       <ConfigSection />
     </div>
@@ -45,85 +55,97 @@ function ApiKeysSection() {
   }
 
   return (
-    <section className="bg-white rounded-lg border border-gray-200 p-6">
-      <div className="flex items-center justify-between mb-4">
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <div>
-          <h3 className="font-medium">API Keys</h3>
-          <p className="text-sm text-gray-500 mt-1">
+          <CardTitle className="text-base">API Keys</CardTitle>
+          <CardDescription className="mt-1">
             Use API keys to authenticate your backend with the provider API.
-          </p>
+          </CardDescription>
         </div>
-        <button
+        <Button
           onClick={() => createMutation.mutate()}
           disabled={createMutation.isPending}
-          className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          size="sm"
         >
-          <Plus className="h-4 w-4" />
+          <Plus className="h-4 w-4 mr-2" />
           Create Key
-        </button>
-      </div>
-
-      {newKey && (
-        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md">
-          <p className="text-sm font-medium text-green-800 mb-2">
-            New API key created. Copy it now - you won't see it again.
-          </p>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 px-3 py-2 bg-white border border-green-200 rounded text-sm font-mono break-all">
-              {newKey}
-            </code>
-            <button
-              onClick={copyKey}
-              className="p-2 text-green-700 hover:text-green-900 transition-colors"
-              title="Copy to clipboard"
-            >
-              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-            </button>
-            <button
-              onClick={() => setNewKey(null)}
-              className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {isLoading ? (
-        <div className="text-sm text-gray-500">Loading...</div>
-      ) : !data?.api_keys.length ? (
-        <p className="text-sm text-gray-500">No API keys yet.</p>
-      ) : (
-        <div className="space-y-2">
-          {data.api_keys.map((key) => (
-            <div
-              key={key.id}
-              className="flex items-center justify-between px-4 py-3 bg-gray-50 rounded-md"
-            >
-              <div className="flex items-center gap-3">
-                <Key className="h-4 w-4 text-gray-400" />
-                <div>
-                  <span className="text-sm font-mono text-gray-700">
-                    {key.key_prefix}{"*".repeat(28)}
-                  </span>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Created {new Date(key.created_at).toLocaleDateString()}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => deleteMutation.mutate(key.id)}
-                disabled={deleteMutation.isPending}
-                className="p-1 text-gray-400 hover:text-red-600 transition-colors"
-                title="Revoke key"
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {newKey && (
+          <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-md">
+            <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400 mb-2">
+              New API key created. Copy it now — you won't see it again.
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 px-3 py-2 bg-background border rounded-md text-sm font-mono break-all">
+                {newKey}
+              </code>
+              <Button variant="ghost" size="icon" onClick={copyKey} className="h-8 w-8 shrink-0">
+                {copied ? (
+                  <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                ) : (
+                  <Copy className="h-4 w-4 text-muted-foreground" />
+                )}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setNewKey(null)}
+                className="h-8 w-8 shrink-0"
               >
-                <Trash2 className="h-4 w-4" />
-              </button>
+                <X className="h-4 w-4 text-muted-foreground" />
+              </Button>
             </div>
-          ))}
-        </div>
-      )}
-    </section>
+          </div>
+        )}
+
+        {isLoading ? (
+          <div className="text-sm text-muted-foreground">Loading...</div>
+        ) : !data?.api_keys.length ? (
+          <div className="flex flex-col items-center justify-center py-8">
+            <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center mb-3">
+              <Key className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <p className="text-sm font-medium">No API keys yet</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Create your first key to get started
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {data.api_keys.map((key) => (
+              <div
+                key={key.id}
+                className="flex items-center justify-between px-4 py-3 bg-muted/50 rounded-md"
+              >
+                <div className="flex items-center gap-3">
+                  <Key className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <span className="text-sm font-mono">
+                      {key.key_prefix}{"*".repeat(28)}
+                    </span>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Created {new Date(key.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => deleteMutation.mutate(key.id)}
+                  disabled={deleteMutation.isPending}
+                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -140,7 +162,6 @@ function ConfigSection() {
   const [originInput, setOriginInput] = useState("")
   const [saved, setSaved] = useState(false)
 
-  // Initialize local state from fetched data
   const currentExpiry = tokenExpiry ?? data?.token_expiry_seconds ?? 3600
   const currentOrigins = origins ?? data?.allowed_origins ?? []
 
@@ -174,38 +195,45 @@ function ConfigSection() {
   }
 
   if (isLoading) {
-    return <div className="text-sm text-gray-500">Loading configuration...</div>
+    return (
+      <Card>
+        <CardContent className="py-8">
+          <div className="text-sm text-muted-foreground text-center">
+            Loading configuration...
+          </div>
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
-    <section className="bg-white rounded-lg border border-gray-200 p-6">
-      <h3 className="font-medium mb-4">Configuration</h3>
-
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Token Expiry (seconds)
-          </label>
-          <input
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Configuration</CardTitle>
+        <CardDescription>
+          Token settings and CORS configuration for your provider.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-2">
+          <Label>Token Expiry (seconds)</Label>
+          <Input
             type="number"
             min={300}
             max={86400}
             value={currentExpiry}
             onChange={(e) => setTokenExpiry(parseInt(e.target.value) || 3600)}
-            className="w-48 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-48"
           />
-          <p className="text-xs text-gray-500 mt-1">
-            How long provider tokens last (300-86400 seconds)
+          <p className="text-xs text-muted-foreground">
+            How long provider tokens last (300–86400 seconds)
           </p>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Allowed Origins
-          </label>
-          <div className="flex gap-2 mb-2">
-            <input
-              type="text"
+        <div className="space-y-2">
+          <Label>Allowed Origins</Label>
+          <div className="flex gap-2">
+            <Input
               value={originInput}
               onChange={(e) => setOriginInput(e.target.value)}
               onKeyDown={(e) => {
@@ -214,52 +242,45 @@ function ConfigSection() {
                   addOrigin()
                 }
               }}
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="https://example.com"
+              className="flex-1"
             />
-            <button
-              type="button"
-              onClick={addOrigin}
-              className="px-3 py-2 border border-gray-300 rounded-md text-sm hover:bg-gray-50 transition-colors"
-            >
+            <Button type="button" variant="outline" size="sm" onClick={addOrigin} className="h-9">
               Add
-            </button>
+            </Button>
           </div>
           {currentOrigins.length > 0 && (
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1.5 pt-1">
               {currentOrigins.map((origin) => (
-                <span
-                  key={origin}
-                  className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-md"
-                >
+                <Badge key={origin} variant="secondary" className="gap-1 pr-1 font-normal">
                   {origin}
-                  <button onClick={() => removeOrigin(origin)} className="hover:text-red-600">
+                  <button
+                    type="button"
+                    onClick={() => removeOrigin(origin)}
+                    className="rounded-full p-0.5 hover:bg-foreground/10"
+                  >
                     <X className="h-3 w-3" />
                   </button>
-                </span>
+                </Badge>
               ))}
             </div>
           )}
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-muted-foreground">
             Origins allowed to make requests with provider tokens (CORS)
           </p>
         </div>
 
         <div className="flex items-center gap-3 pt-2">
-          <button
-            onClick={handleSave}
-            disabled={mutation.isPending}
-            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
-          >
+          <Button onClick={handleSave} disabled={mutation.isPending}>
             {mutation.isPending ? "Saving..." : "Save Changes"}
-          </button>
+          </Button>
           {saved && (
-            <span className="text-sm text-green-600 flex items-center gap-1">
+            <span className="text-sm text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
               <Check className="h-4 w-4" /> Saved
             </span>
           )}
         </div>
-      </div>
-    </section>
+      </CardContent>
+    </Card>
   )
 }

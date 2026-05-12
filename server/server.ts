@@ -460,11 +460,11 @@ import { preloadModelInfoCache } from "./ai/fetchModels"
 import { IssueProviderTokenApi } from "@/api/provider/token"
 import {
   ProviderTokenMiddleware,
-  ProviderCorsMiddleware,
 } from "@/api/provider/middleware"
+import { cors } from "hono/cors"
 import { ProviderSearchApi } from "@/api/provider/search"
 import { ProviderChatApi, ProviderExplainApi } from "@/api/provider/chat"
-import { ProviderIngestApi } from "@/api/provider/documents"
+import { ProviderIngestApi, ProviderFileUploadApi } from "@/api/provider/documents"
 import { ProviderSignupApi, ProviderLoginApi } from "@/api/provider/auth"
 import {
   ProviderMeApi,
@@ -2479,12 +2479,18 @@ app
   .post("/token", zValidator("json", issueTokenSchema), IssueProviderTokenApi)
 
 // Provider user-facing endpoints (provider token protected — external user calls these)
-// Middleware applied per-route to avoid catching /api/provider/dashboard/* and /api/provider/manage/*
 app
   .basePath("/api/provider")
-  .post("/search", ProviderTokenMiddleware, ProviderCorsMiddleware, zValidator("json", providerSearchSchema), ProviderSearchApi)
-  .post("/chat", ProviderTokenMiddleware, ProviderCorsMiddleware, zValidator("json", providerChatSchema), ProviderChatApi)
-  .post("/explain", ProviderTokenMiddleware, ProviderCorsMiddleware, zValidator("json", providerExplainSchema), ProviderExplainApi)
+  .use("*", cors({
+    origin: (origin) => origin,
+    allowHeaders: ["Authorization", "Content-Type"],
+    allowMethods: ["POST", "OPTIONS"],
+    credentials: true,
+    maxAge: 86400,
+  }))
+  .post("/search", ProviderTokenMiddleware, zValidator("json", providerSearchSchema), ProviderSearchApi)
+  .post("/chat", ProviderTokenMiddleware, zValidator("json", providerChatSchema), ProviderChatApi)
+  .post("/explain", ProviderTokenMiddleware, zValidator("json", providerExplainSchema), ProviderExplainApi)
 
 // Provider management (API key protected — provider's backend pushes docs)
 app
@@ -2497,6 +2503,7 @@ app
     zValidator("json", providerIngestSchema),
     ProviderIngestApi,
   )
+  .post("/documents/upload", ProviderFileUploadApi)
 
 // Provider dashboard auth (public — no middleware)
 app
@@ -2541,6 +2548,7 @@ app
     zValidator("json", providerIngestSchema),
     ProviderIngestApi,
   )
+  .post("/documents/upload", ...providerDashboardAuth, ProviderFileUploadApi)
   .get("/api-keys", ...providerDashboardAuth, ListProviderApiKeysApi)
   .post("/api-keys", ...providerDashboardAuth, CreateProviderApiKeyApi)
   .delete("/api-keys/:id", ...providerDashboardAuth, DeleteProviderApiKeyApi)

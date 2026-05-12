@@ -71,6 +71,7 @@ export async function listDocuments() {
     documents: Array<{
       docId: string
       title: string
+      visibility: "public" | "authenticated"
       accessTags: string[]
       createdAt: number
       collectionId: string
@@ -83,6 +84,7 @@ export async function uploadDocuments(data: {
   documents: Array<{
     title: string
     content: string
+    visibility: "public" | "authenticated"
     access_tags: string[]
     source_url?: string
   }>
@@ -91,6 +93,45 @@ export async function uploadDocuments(data: {
     "/documents",
     { method: "POST", body: JSON.stringify(data) },
   )
+}
+
+export async function uploadFiles(data: {
+  files: File[]
+  collection_id: string
+  visibility: "public" | "authenticated"
+  access_tags: string[]
+}) {
+  const token = getToken()
+  const formData = new FormData()
+  formData.append("collection_id", data.collection_id)
+  formData.append("visibility", data.visibility)
+  formData.append("access_tags", JSON.stringify(data.access_tags))
+  for (const file of data.files) {
+    formData.append("files", file)
+  }
+
+  const res = await fetch(`${BASE_URL}/documents/upload`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  })
+
+  if (res.status === 401) {
+    localStorage.removeItem("provider_token")
+    window.location.href = "/login"
+    throw new Error("Unauthorized")
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.message || `Upload failed: ${res.status}`)
+  }
+
+  return res.json() as Promise<{
+    collection_id: string
+    documents: Array<{ docId: string; title: string; status: string }>
+    total: number
+  }>
 }
 
 export async function deleteDocument(docId: string) {

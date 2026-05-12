@@ -11,6 +11,8 @@ import { eq, and } from "drizzle-orm"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import config from "@/config"
+import { DeleteDocument } from "@/search/vespa"
+import { KbItemsSchema } from "@xyne/vespa-ts/types"
 
 const Logger = getLogger(Subsystem.Server)
 
@@ -148,7 +150,10 @@ export const ListProviderDocumentsApi = async (c: Context) => {
     vespaResult.root?.children?.map((hit) => ({
       docId: hit.fields?.docId as string,
       title: hit.fields?.fileName as string,
-      accessTags: (hit.fields?.access_tags as string[]) ?? [],
+      visibility: (hit.fields?.visibility as string) ?? "public",
+      accessTags: ((hit.fields?.access_tags as string[]) ?? []).filter(
+        (t) => t !== "__all_authenticated__",
+      ),
       createdAt: hit.fields?.createdAt as number,
       collectionId: hit.fields?.clId as string,
     })) ?? []
@@ -162,17 +167,12 @@ export const ListProviderDocumentsApi = async (c: Context) => {
  */
 export const DeleteProviderDocumentApi = async (c: Context) => {
   const docId = c.req.param("docId")
-  const payload = c.get("jwtPayload")
-  const workspaceId = payload.workspaceId as string
 
-  // Delete from Vespa using document API
-  const deleteUrl = `${config.vespaEndpoint.documentEndpoint}/document/v1/default/kb_items/docid/${docId}`
-  const response = await fetch(deleteUrl, { method: "DELETE" })
-
-  if (!response.ok) {
-    const errorText = await response.text()
+  try {
+    await DeleteDocument(docId, KbItemsSchema)
+  } catch (error) {
     Logger.error(
-      { status: response.status, body: errorText, docId },
+      { error, docId },
       "Failed to delete provider document from Vespa",
     )
     throw new HTTPException(500, { message: "Failed to delete document" })
@@ -224,7 +224,10 @@ export const ListProviderDocumentsByApiKeyApi = async (c: Context) => {
     vespaResult.root?.children?.map((hit) => ({
       docId: hit.fields?.docId as string,
       title: hit.fields?.fileName as string,
-      accessTags: (hit.fields?.access_tags as string[]) ?? [],
+      visibility: (hit.fields?.visibility as string) ?? "public",
+      accessTags: ((hit.fields?.access_tags as string[]) ?? []).filter(
+        (t) => t !== "__all_authenticated__",
+      ),
       createdAt: hit.fields?.createdAt as number,
       collectionId: hit.fields?.clId as string,
     })) ?? []
@@ -239,13 +242,11 @@ export const ListProviderDocumentsByApiKeyApi = async (c: Context) => {
 export const DeleteProviderDocumentByApiKeyApi = async (c: Context) => {
   const docId = c.req.param("docId")
 
-  const deleteUrl = `${config.vespaEndpoint.documentEndpoint}/document/v1/default/kb_items/docid/${docId}`
-  const response = await fetch(deleteUrl, { method: "DELETE" })
-
-  if (!response.ok) {
-    const errorText = await response.text()
+  try {
+    await DeleteDocument(docId, KbItemsSchema)
+  } catch (error) {
     Logger.error(
-      { status: response.status, body: errorText, docId },
+      { error, docId },
       "Failed to delete provider document from Vespa",
     )
     throw new HTTPException(500, { message: "Failed to delete document" })

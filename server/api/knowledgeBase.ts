@@ -291,7 +291,7 @@ function assertIsCollectionOwner(collection: Collection, userId: number): void {
 }
 
 // Enhanced MIME type detection with extension normalization and magic byte analysis
-async function detectMimeType(
+export async function detectMimeType(
   fileName: string,
   buffer: ArrayBuffer | Uint8Array | Buffer,
   browserMimeType?: string,
