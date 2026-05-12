@@ -1,6 +1,6 @@
 {
 	"name": "@xyne/client",
-	"version": "0.1.0",
+	"version": "0.1.2",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -11,7 +11,9 @@
 		},
 		"./styles.css": "./dist/styles.css"
 	},
-	"sideEffects": ["*.css"],
+	"sideEffects": [
+		"*.css"
+	],
 	"scripts": {
 		"build": "tsup && postcss src/styles/index.css -o dist/styles.css",
 		"clean": "rm -rf dist",
