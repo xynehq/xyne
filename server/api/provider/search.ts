@@ -50,7 +50,7 @@ export const ProviderSearchApi = async (c: Context) => {
     // Layer 1 (visibility): public docs are always visible; authenticated docs require auth
     // Layer 2 (access_tags): if an authenticated doc has tags, user must have a matching tag
     const visibilityFilter = buildVisibilityFilter(isAuthenticated, accessTags)
-    const yql = `select * from kb_items where userInput(@query) AND (${visibilityFilter})`
+    const yql = `select * from kb_items where userInput(@query) AND createdBy contains "${workspaceId}" AND (${visibilityFilter})`
 
     const vespaQuery = {
       yql,

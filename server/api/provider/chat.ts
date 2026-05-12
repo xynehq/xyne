@@ -35,6 +35,7 @@ function sseEvent(evt: Record<string, unknown>): { data: string } {
 // ---------------------------------------------------------------------------
 
 type ProviderAgentContext = {
+  workspaceId: string
   isAuthenticated: boolean
   accessTags: string[]
 }
@@ -74,6 +75,7 @@ setInterval(() => {
 
 async function searchWithAccessTags(
   query: string,
+  workspaceId: string,
   isAuthenticated: boolean,
   accessTags: string[],
   hits: number = 5,
@@ -81,7 +83,7 @@ async function searchWithAccessTags(
   Array<{ docId: string; title: string; content: string; sourceUrl?: string }>
 > {
   const visibilityFilter = buildVisibilityFilter(isAuthenticated, accessTags)
-  const yql = `select * from kb_items where userInput(@query) AND (${visibilityFilter})`
+  const yql = `select * from kb_items where userInput(@query) AND createdBy contains "${workspaceId}" AND (${visibilityFilter})`
 
   const vespaQuery = {
     yql,
@@ -158,6 +160,7 @@ const searchDocumentsTool: Tool<
     try {
       const results = await searchWithAccessTags(
         params.query,
+        context.workspaceId,
         context.isAuthenticated,
         context.accessTags,
         5,
@@ -194,6 +197,7 @@ async function runProviderAgent(
   agentName: string,
   instructions: string,
   userMessage: string,
+  workspaceId: string,
   isAuthenticated: boolean,
   accessTags: string[],
   sessionId: string,
@@ -220,7 +224,7 @@ async function runProviderAgent(
     traceId: generateTraceId(),
     messages: allMessages,
     currentAgentName: agent.name,
-    context: { isAuthenticated, accessTags },
+    context: { workspaceId, isAuthenticated, accessTags },
     turnCount: 0,
   }
 
@@ -279,6 +283,7 @@ async function runProviderAgent(
 
 export const ProviderChatApi = async (c: Context) => {
   const { query, session_id } = c.req.valid("json" as never)
+  const workspaceId = c.get("workspaceId") as string
   const accessTags = (c.get("accessTags") as string[]) ?? []
   const isAuthenticated = (c.get("isAuthenticated") as boolean) ?? false
 
@@ -302,6 +307,7 @@ export const ProviderChatApi = async (c: Context) => {
           `- Do not dump all related information. Answer exactly what was asked, nothing more.\n` +
           `- If the answer is a name, number, date, or status — just give it.`,
         query as string,
+        workspaceId,
         isAuthenticated,
         accessTags,
         resolvedSessionId,
@@ -323,6 +329,7 @@ export const ProviderChatApi = async (c: Context) => {
 
 export const ProviderExplainApi = async (c: Context) => {
   const { text } = c.req.valid("json" as never)
+  const workspaceId = c.get("workspaceId") as string
   const accessTags = (c.get("accessTags") as string[]) ?? []
   const isAuthenticated = (c.get("isAuthenticated") as boolean) ?? false
 
@@ -339,6 +346,7 @@ export const ProviderExplainApi = async (c: Context) => {
           `Give a brief, to-the-point explanation — one or two sentences covering what it means and why it matters. ` +
           `Do not over-explain or add tangential context unless the user asks for more detail.`,
         `Explain the following text:\n\n${text}`,
+        workspaceId,
         isAuthenticated,
         accessTags,
         `explain-${Date.now()}`,
