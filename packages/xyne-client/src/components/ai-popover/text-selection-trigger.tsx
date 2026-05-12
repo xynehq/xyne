@@ -13,6 +13,40 @@ export interface TextSelectionTriggerProps {
 	classNames?: AIPopoverClassNames | undefined;
 }
 
+function useToolbarPosition(range: Range | null) {
+	const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+	useEffect(() => {
+		if (!range) {
+			setPos(null);
+			return;
+		}
+
+		function calculate() {
+			if (!range) return;
+			const rect = range.getBoundingClientRect();
+			setPos({
+				top: rect.top - 40,
+				left: Math.max(
+					8,
+					Math.min(rect.left + rect.width / 2, window.innerWidth - 100),
+				),
+			});
+		}
+
+		calculate();
+
+		window.addEventListener("scroll", calculate, true);
+		window.addEventListener("resize", calculate);
+		return () => {
+			window.removeEventListener("scroll", calculate, true);
+			window.removeEventListener("resize", calculate);
+		};
+	}, [range]);
+
+	return pos;
+}
+
 export function TextSelectionTrigger({
 	children,
 	disabled = false,
@@ -22,8 +56,10 @@ export function TextSelectionTrigger({
 	classNames,
 }: TextSelectionTriggerProps) {
 	const wrapperRef = useRef<HTMLDivElement>(null);
-	const [selection, setSelection] = useState<{ text: string; rect: DOMRect } | null>(null);
+	const [selection, setSelection] = useState<{ text: string; range: Range } | null>(null);
 	const [popoverState, setPopoverState] = useState<{ query: string; range: Range } | null>(null);
+
+	const toolbarPos = useToolbarPosition(selection?.range ?? null);
 
 	// Monitor text selection within the wrapper
 	useEffect(() => {
@@ -59,8 +95,7 @@ export function TextSelectionTrigger({
 					return;
 				}
 
-				const rect = range.getBoundingClientRect();
-				setSelection({ text, rect });
+				setSelection({ text, range });
 			});
 		}
 
@@ -70,14 +105,8 @@ export function TextSelectionTrigger({
 
 	const handleToolbarClick = useCallback(() => {
 		if (!selection) return;
-		const sel = window.getSelection();
-		if (!sel || !sel.rangeCount) return;
 
-		// Save the live Range — don't clear the selection
-		const range = sel.getRangeAt(0).cloneContents() ? sel.getRangeAt(0) : null;
-		if (!range) return;
-
-		setPopoverState({ query: selection.text, range });
+		setPopoverState({ query: selection.text, range: selection.range });
 		setSelection(null); // hide toolbar
 	}, [selection]);
 
@@ -85,20 +114,6 @@ export function TextSelectionTrigger({
 		setPopoverState(null);
 		window.getSelection()?.removeAllRanges();
 	}, []);
-
-	// Position toolbar centered above selection
-	const toolbarPos = selection
-		? {
-				top: selection.rect.top - 40,
-				left: Math.max(
-					8,
-					Math.min(
-						selection.rect.left + selection.rect.width / 2,
-						window.innerWidth - 100,
-					),
-				),
-			}
-		: null;
 
 	return (
 		<div ref={wrapperRef}>
