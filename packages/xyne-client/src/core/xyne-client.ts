@@ -26,9 +26,11 @@ export class XyneClient {
 		query: string,
 		signal?: AbortSignal,
 		sessionId?: string,
+		collection?: string,
 	): AsyncGenerator<ChatStreamEvent> {
-		const payload: { query: string; session_id?: string } = { query };
+		const payload: { query: string; session_id?: string; collection?: string } = { query };
 		if (sessionId) payload.session_id = sessionId;
+		if (collection) payload.collection = collection;
 		const body = JSON.stringify(payload);
 
 		const init: RequestInit = { method: "POST", body };
@@ -46,8 +48,11 @@ export class XyneClient {
 	async *explain(
 		text: string,
 		signal?: AbortSignal,
+		collection?: string,
 	): AsyncGenerator<ChatStreamEvent> {
-		const body = JSON.stringify({ text });
+		const payload: { text: string; collection?: string } = { text };
+		if (collection) payload.collection = collection;
+		const body = JSON.stringify(payload);
 
 		const init: RequestInit = { method: "POST", body };
 		if (signal) init.signal = signal;
@@ -61,8 +66,10 @@ export class XyneClient {
 		yield* parseSseStream(response.body, signal);
 	}
 
-	async search(query: string, signal?: AbortSignal): Promise<SearchResponse> {
-		const body = JSON.stringify({ query });
+	async search(query: string, signal?: AbortSignal, collection?: string): Promise<SearchResponse> {
+		const payload: { query: string; collection?: string } = { query };
+		if (collection) payload.collection = collection;
+		const body = JSON.stringify(payload);
 
 		const init: RequestInit = { method: "POST", body };
 		if (signal) init.signal = signal;

@@ -9,10 +9,11 @@ export interface ChatPanelProps {
 	suggestedPrompts?: string[];
 	welcomeMessage?: string;
 	renderAvatar?: () => React.ReactNode;
+	collection?: string;
 }
 
-export function ChatPanel({ placeholder, classNames, suggestedPrompts, welcomeMessage, renderAvatar }: ChatPanelProps) {
-	const { messages, isStreaming, error, sendMessage, stop } = useChat();
+export function ChatPanel({ placeholder, classNames, suggestedPrompts, welcomeMessage, renderAvatar, collection }: ChatPanelProps) {
+	const { messages, isStreaming, error, sendMessage, stop } = useChat(collection);
 
 	return (
 		<div className={`flex flex-col h-full bg-gray-50 ${classNames?.root ?? ""}`}>

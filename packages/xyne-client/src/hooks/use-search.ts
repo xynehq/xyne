@@ -10,7 +10,7 @@ export interface UseSearchReturn {
 	clearResults: () => void;
 }
 
-export function useSearch(): UseSearchReturn {
+export function useSearch(collection?: string): UseSearchReturn {
 	const client = useXyneClient();
 	const [results, setResults] = useState<SearchResult[]>([]);
 	const [isLoading, setIsLoading] = useState(false);
@@ -35,7 +35,7 @@ export function useSearch(): UseSearchReturn {
 
 			void (async () => {
 				try {
-					const response = await client.search(trimmed, controller.signal);
+					const response = await client.search(trimmed, controller.signal, collection);
 					if (!controller.signal.aborted) {
 						setResults(response.results);
 					}
@@ -53,7 +53,7 @@ export function useSearch(): UseSearchReturn {
 				}
 			})();
 		},
-		[client],
+		[client, collection],
 	);
 
 	const clearResults = useCallback(() => {

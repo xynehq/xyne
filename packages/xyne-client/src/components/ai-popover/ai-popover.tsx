@@ -13,6 +13,7 @@ export interface AIPopoverProps {
 	onClose: () => void;
 	headerIcon?: React.ReactNode | undefined;
 	classNames?: AIPopoverClassNames | undefined;
+	collection?: string | undefined;
 }
 
 const POPOVER_WIDTH = 340;
@@ -65,8 +66,9 @@ export function AIPopover({
 	onClose,
 	headerIcon,
 	classNames,
+	collection,
 }: AIPopoverProps) {
-	const { content, sources, isStreaming, error, query: runQuery, stop, reset } = useAISummary();
+	const { content, sources, isStreaming, error, query: runQuery, stop, reset } = useAISummary(collection);
 	const popoverRef = useRef<HTMLDivElement | null>(null);
 	const hasQueriedRef = useRef(false);
 	const pos = usePosition(anchorRange, popoverRef);

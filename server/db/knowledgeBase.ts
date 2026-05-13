@@ -174,6 +174,25 @@ export const getCollectionsByOwner = async (
   return results
 }
 
+export const getCollectionByName = async (
+  trx: TxnOrClient,
+  workspaceId: number,
+  name: string,
+): Promise<Collection | null> => {
+  const [result] = await trx
+    .select()
+    .from(collections)
+    .where(
+      and(
+        eq(collections.workspaceId, workspaceId),
+        eq(collections.name, name),
+        isNull(collections.deletedAt),
+      ),
+    )
+    .limit(1)
+  return result || null
+}
+
 export const getAccessibleCollections = async (
   trx: TxnOrClient,
   userId: number,

@@ -3,6 +3,7 @@ import { HTTPException } from "hono/http-exception"
 import config, { NAMESPACE, CLUSTER } from "@/config"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
+import { resolveCollectionId, resolveWorkspaceCreator } from "@/api/provider/collections"
 
 const Logger = getLogger(Subsystem.Server)
 
@@ -38,7 +39,7 @@ export function buildVisibilityFilter(
 }
 
 export const ProviderSearchApi = async (c: Context) => {
-  const { query, max_results } = c.req.valid("json" as never)
+  const { query, max_results, collection: collectionName } = c.req.valid("json" as never)
   const accessTags = c.get("accessTags") as string[]
   const isAuthenticated = c.get("isAuthenticated") as boolean
   const workspaceId = c.get("workspaceId") as string
@@ -46,11 +47,17 @@ export const ProviderSearchApi = async (c: Context) => {
   try {
     const hits = (max_results as number) ?? 10
 
+    // Resolve collection name → UUID for Vespa filtering
+    const collectionUuid = await resolveCollectionId(workspaceId, collectionName as string | undefined)
+    // Resolve workspace → admin email for createdBy scoping
+    const createdBy = await resolveWorkspaceCreator(workspaceId)
+
     // Two-layer access control:
     // Layer 1 (visibility): public docs are always visible; authenticated docs require auth
     // Layer 2 (access_tags): if an authenticated doc has tags, user must have a matching tag
     const visibilityFilter = buildVisibilityFilter(isAuthenticated, accessTags)
-    const yql = `select * from kb_items where userInput(@query) AND createdBy contains "${workspaceId}" AND (${visibilityFilter})`
+    const collectionFilter = collectionUuid ? ` AND clId contains "${collectionUuid}"` : ""
+    const yql = `select * from kb_items where userInput(@query) AND createdBy contains "${createdBy}"${collectionFilter} AND (${visibilityFilter})`
 
     const vespaQuery = {
       yql,

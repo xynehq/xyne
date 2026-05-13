@@ -432,6 +432,8 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
           }),
         ),
         createdBy: file.uploadedByEmail || "system",
+        visibility: (file.metadata as Record<string, unknown>)?.visibility as string ?? "public",
+        access_tags: (file.metadata as Record<string, unknown>)?.access_tags as string[] ?? [],
         duration: 0,
         mimeType: getBaseMimeType(file.mimeType || "text/plain"),
         fileSize: file.fileSize || 0,

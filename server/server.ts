@@ -464,7 +464,7 @@ import {
 import { cors } from "hono/cors"
 import { ProviderSearchApi } from "@/api/provider/search"
 import { ProviderChatApi, ProviderExplainApi } from "@/api/provider/chat"
-import { ProviderIngestApi, ProviderFileUploadApi } from "@/api/provider/documents"
+import { ProviderIngestApi, ProviderFileUploadApi, ProviderSyncApi } from "@/api/provider/documents"
 import { ProviderSignupApi, ProviderLoginApi } from "@/api/provider/auth"
 import {
   ProviderMeApi,
@@ -479,14 +479,22 @@ import {
   DeleteProviderApiKeyApi,
 } from "@/api/provider/manage"
 import {
+  ListProviderCollectionsApi,
+  CreateProviderCollectionApi,
+  DeleteProviderCollectionApi,
+  ListProviderCollectionItemsApi,
+} from "@/api/provider/collections"
+import {
   issueTokenSchema,
   providerSearchSchema,
   providerChatSchema,
   providerExplainSchema,
   providerIngestSchema,
+  providerSyncSchema,
   providerSignupSchema,
   providerLoginSchema,
   updateProviderConfigSchema,
+  createProviderCollectionSchema,
 } from "@/api/provider/types"
 
 // Define Zod schema for delete datasource file query parameters
@@ -2504,6 +2512,19 @@ app
     ProviderIngestApi,
   )
   .post("/documents/upload", ProviderFileUploadApi)
+  .get("/collections", ListProviderCollectionsApi)
+  .post(
+    "/collections",
+    zValidator("json", createProviderCollectionSchema),
+    CreateProviderCollectionApi,
+  )
+  .delete("/collections/:collectionId", DeleteProviderCollectionApi)
+  .get("/collections/:collectionId/items", ListProviderCollectionItemsApi)
+  .post(
+    "/sync",
+    zValidator("json", providerSyncSchema),
+    ProviderSyncApi,
+  )
 
 // Provider dashboard auth (public — no middleware)
 app
@@ -2559,6 +2580,15 @@ app
     zValidator("json", updateProviderConfigSchema),
     UpdateProviderConfigApi,
   )
+  .get("/collections", ...providerDashboardAuth, ListProviderCollectionsApi)
+  .post(
+    "/collections",
+    ...providerDashboardAuth,
+    zValidator("json", createProviderCollectionSchema),
+    CreateProviderCollectionApi,
+  )
+  .delete("/collections/:collectionId", ...providerDashboardAuth, DeleteProviderCollectionApi)
+  .get("/collections/:collectionId/items", ...providerDashboardAuth, ListProviderCollectionItemsApi)
 
 // Proxy function to forward ingestion API calls to sync server
 const proxyToSyncServer = async (

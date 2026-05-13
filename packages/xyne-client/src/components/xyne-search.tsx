@@ -20,6 +20,7 @@ export interface XyneSearchProps {
 	placeholder?: string;
 	classNames?: XyneSearchClassNames;
 	renderResult?: (result: SearchResult) => React.ReactNode;
+	collection?: string;
 }
 
 export function XyneSearch({
@@ -28,6 +29,7 @@ export function XyneSearch({
 	placeholder,
 	classNames,
 	renderResult,
+	collection,
 }: XyneSearchProps) {
 	const [token, setToken] = useState<string | null>(null);
 	const [authError, setAuthError] = useState<string | null>(null);
@@ -68,6 +70,7 @@ export function XyneSearch({
 				placeholder={placeholder}
 				classNames={classNames}
 				renderResult={renderResult}
+				collection={collection}
 			/>
 		</XyneProvider>
 	);
@@ -77,8 +80,9 @@ function SearchInner({
 	placeholder,
 	classNames,
 	renderResult,
-}: Pick<XyneSearchProps, "placeholder" | "classNames" | "renderResult">) {
-	const { results, isLoading, error, search } = useSearch();
+	collection,
+}: Pick<XyneSearchProps, "placeholder" | "classNames" | "renderResult" | "collection">) {
+	const { results, isLoading, error, search } = useSearch(collection);
 	const [value, setValue] = useState("");
 	const inputRef = useRef<HTMLInputElement>(null);
 

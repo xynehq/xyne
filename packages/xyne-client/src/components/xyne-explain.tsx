@@ -13,6 +13,7 @@ export interface XyneExplainProps {
 	triggerIcon?: React.ReactNode;
 	headerIcon?: React.ReactNode;
 	classNames?: AIPopoverClassNames;
+	collection?: string;
 }
 
 export function XyneExplain({
@@ -25,6 +26,7 @@ export function XyneExplain({
 	triggerIcon,
 	headerIcon,
 	classNames,
+	collection,
 }: XyneExplainProps) {
 	const [token, setToken] = useState<string | null>(null);
 
@@ -56,6 +58,7 @@ export function XyneExplain({
 				triggerIcon={triggerIcon}
 				headerIcon={headerIcon}
 				classNames={classNames}
+				collection={collection}
 			>
 				{children}
 			</TextSelectionTrigger>

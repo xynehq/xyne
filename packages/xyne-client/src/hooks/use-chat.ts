@@ -25,7 +25,7 @@ function nextId(): string {
 	return `msg-${messageCounter}`;
 }
 
-export function useChat(): UseChatReturn {
+export function useChat(collection?: string): UseChatReturn {
 	const client = useXyneClient();
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
 	const [isStreaming, setIsStreaming] = useState(false);
@@ -70,6 +70,7 @@ export function useChat(): UseChatReturn {
 						trimmed,
 						controller.signal,
 						sessionIdRef.current ?? undefined,
+						collection,
 					)) {
 						if (controller.signal.aborted) break;
 
@@ -125,7 +126,7 @@ export function useChat(): UseChatReturn {
 				}
 			})();
 		},
-		[client, isStreaming],
+		[client, isStreaming, collection],
 	);
 
 	const stop = useCallback(() => {

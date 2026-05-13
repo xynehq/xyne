@@ -16,6 +16,7 @@ export interface XyneChatProps {
 	onClose?: () => void;
 	renderAvatar?: () => React.ReactNode;
 	renderMessage?: (message: { role: "user" | "assistant"; content: string }) => React.ReactNode;
+	collection?: string;
 }
 
 export function XyneChat({
@@ -29,6 +30,7 @@ export function XyneChat({
 	titleIcon,
 	onClose,
 	renderAvatar,
+	collection,
 }: XyneChatProps) {
 	const [token, setToken] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -117,6 +119,7 @@ export function XyneChat({
 						suggestedPrompts={suggestedPrompts}
 						welcomeMessage={welcomeMessage}
 						renderAvatar={renderAvatar}
+						collection={collection}
 					/>
 				</XyneProvider>
 			</div>

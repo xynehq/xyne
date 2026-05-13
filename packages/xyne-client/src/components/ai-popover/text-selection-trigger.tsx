@@ -11,6 +11,7 @@ export interface TextSelectionTriggerProps {
 	triggerIcon?: React.ReactNode | undefined;
 	headerIcon?: React.ReactNode | undefined;
 	classNames?: AIPopoverClassNames | undefined;
+	collection?: string | undefined;
 }
 
 function useToolbarPosition(range: Range | null) {
@@ -55,6 +56,7 @@ export function TextSelectionTrigger({
 	triggerIcon,
 	headerIcon,
 	classNames,
+	collection,
 }: TextSelectionTriggerProps) {
 	const wrapperRef = useRef<HTMLDivElement>(null);
 	const [selection, setSelection] = useState<{ text: string; range: Range } | null>(null);
@@ -150,6 +152,7 @@ export function TextSelectionTrigger({
 				onClose={handlePopoverClose}
 				headerIcon={headerIcon}
 				classNames={classNames}
+				collection={collection}
 			/>
 		</div>
 	);

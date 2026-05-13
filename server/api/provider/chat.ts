@@ -21,6 +21,7 @@ import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { makeXyneGenericJAFProvider } from "@/api/chat/jaf-generic-provider"
 import { buildVisibilityFilter } from "@/api/provider/search"
+import { resolveCollectionId, resolveWorkspaceCreator } from "@/api/provider/collections"
 
 const Logger = getLogger(Subsystem.Server)
 
@@ -35,7 +36,8 @@ function sseEvent(evt: Record<string, unknown>): { data: string } {
 // ---------------------------------------------------------------------------
 
 type ProviderAgentContext = {
-  workspaceId: string
+  createdBy: string
+  collectionId?: string
   isAuthenticated: boolean
   accessTags: string[]
 }
@@ -75,7 +77,8 @@ setInterval(() => {
 
 async function searchWithAccessTags(
   query: string,
-  workspaceId: string,
+  createdBy: string,
+  collectionId: string | undefined,
   isAuthenticated: boolean,
   accessTags: string[],
   hits: number = 5,
@@ -83,7 +86,8 @@ async function searchWithAccessTags(
   Array<{ docId: string; title: string; content: string; sourceUrl?: string }>
 > {
   const visibilityFilter = buildVisibilityFilter(isAuthenticated, accessTags)
-  const yql = `select * from kb_items where userInput(@query) AND createdBy contains "${workspaceId}" AND (${visibilityFilter})`
+  const collectionFilter = collectionId ? ` AND clId contains "${collectionId}"` : ""
+  const yql = `select * from kb_items where userInput(@query) AND createdBy contains "${createdBy}"${collectionFilter} AND (${visibilityFilter})`
 
   const vespaQuery = {
     yql,
@@ -160,7 +164,8 @@ const searchDocumentsTool: Tool<
     try {
       const results = await searchWithAccessTags(
         params.query,
-        context.workspaceId,
+        context.createdBy,
+        context.collectionId,
         context.isAuthenticated,
         context.accessTags,
         5,
@@ -197,7 +202,8 @@ async function runProviderAgent(
   agentName: string,
   instructions: string,
   userMessage: string,
-  workspaceId: string,
+  createdBy: string,
+  collectionId: string | undefined,
   isAuthenticated: boolean,
   accessTags: string[],
   sessionId: string,
@@ -224,7 +230,7 @@ async function runProviderAgent(
     traceId: generateTraceId(),
     messages: allMessages,
     currentAgentName: agent.name,
-    context: { workspaceId, isAuthenticated, accessTags },
+    context: { createdBy, collectionId, isAuthenticated, accessTags },
     turnCount: 0,
   }
 
@@ -282,10 +288,15 @@ async function runProviderAgent(
 // ---------------------------------------------------------------------------
 
 export const ProviderChatApi = async (c: Context) => {
-  const { query, session_id } = c.req.valid("json" as never)
+  const { query, session_id, collection: collectionName } = c.req.valid("json" as never)
   const workspaceId = c.get("workspaceId") as string
   const accessTags = (c.get("accessTags") as string[]) ?? []
   const isAuthenticated = (c.get("isAuthenticated") as boolean) ?? false
+
+  // Resolve workspace → admin email for createdBy scoping
+  const createdBy = await resolveWorkspaceCreator(workspaceId)
+  // Resolve collection name → UUID before entering the stream
+  const collectionUuid = await resolveCollectionId(workspaceId, collectionName as string | undefined)
 
   const resolvedSessionId =
     (session_id as string) ?? `provider-${Date.now()}`
@@ -307,7 +318,8 @@ export const ProviderChatApi = async (c: Context) => {
           `- Do not dump all related information. Answer exactly what was asked, nothing more.\n` +
           `- If the answer is a name, number, date, or status — just give it.`,
         query as string,
-        workspaceId,
+        createdBy,
+        collectionUuid,
         isAuthenticated,
         accessTags,
         resolvedSessionId,
@@ -328,10 +340,15 @@ export const ProviderChatApi = async (c: Context) => {
 // ---------------------------------------------------------------------------
 
 export const ProviderExplainApi = async (c: Context) => {
-  const { text } = c.req.valid("json" as never)
+  const { text, collection: collectionName } = c.req.valid("json" as never)
   const workspaceId = c.get("workspaceId") as string
   const accessTags = (c.get("accessTags") as string[]) ?? []
   const isAuthenticated = (c.get("isAuthenticated") as boolean) ?? false
+
+  // Resolve workspace → admin email for createdBy scoping
+  const createdBy = await resolveWorkspaceCreator(workspaceId)
+  // Resolve collection name → UUID before entering the stream
+  const collectionUuid = await resolveCollectionId(workspaceId, collectionName as string | undefined)
 
   return streamSSE(c, async (stream) => {
     try {
@@ -346,7 +363,8 @@ export const ProviderExplainApi = async (c: Context) => {
           `Give a brief, to-the-point explanation — one or two sentences covering what it means and why it matters. ` +
           `Do not over-explain or add tangential context unless the user asks for more detail.`,
         `Explain the following text:\n\n${text}`,
-        workspaceId,
+        createdBy,
+        collectionUuid,
         isAuthenticated,
         accessTags,
         `explain-${Date.now()}`,

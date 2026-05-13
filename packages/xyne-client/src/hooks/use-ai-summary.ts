@@ -12,7 +12,7 @@ export interface UseAISummaryReturn {
 	reset: () => void;
 }
 
-export function useAISummary(): UseAISummaryReturn {
+export function useAISummary(collection?: string): UseAISummaryReturn {
 	const client = useXyneClient();
 	const [content, setContent] = useState("");
 	const [sources, setSources] = useState<ChatSource[]>([]);
@@ -54,6 +54,7 @@ export function useAISummary(): UseAISummaryReturn {
 					for await (const event of client.explain(
 						text,
 						controller.signal,
+						collection,
 					)) {
 						if (controller.signal.aborted) break;
 
@@ -86,7 +87,7 @@ export function useAISummary(): UseAISummaryReturn {
 				}
 			})();
 		},
-		[client, isStreaming],
+		[client, isStreaming, collection],
 	);
 
 	return { content, sources, isStreaming, error, query, stop, reset };

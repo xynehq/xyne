@@ -32,15 +32,25 @@ export const updateProviderConfigSchema = z.object({
 export const providerSearchSchema = z.object({
   query: z.string().min(1),
   max_results: z.number().min(1).max(50).default(10).optional(),
+  collection: z.string().optional(),
 })
 
 export const providerChatSchema = z.object({
   query: z.string().min(1),
   session_id: z.string().optional(),
+  collection: z.string().optional(),
 })
 
 export const providerExplainSchema = z.object({
   text: z.string().min(1),
+  collection: z.string().optional(),
+})
+
+// --- Provider collection management ---
+
+export const createProviderCollectionSchema = z.object({
+  name: z.string().min(1).max(255),
+  description: z.string().optional(),
 })
 
 export const visibilityEnum = z.enum(["public", "authenticated"])
@@ -50,6 +60,22 @@ export const providerIngestSchema = z.object({
   documents: z.array(
     z.object({
       doc_id: z.string().optional(),
+      title: z.string(),
+      content: z.string(),
+      visibility: visibilityEnum.default("public"),
+      access_tags: z.array(z.string()).default([]),
+      source_url: z.string().optional(),
+      metadata: z.record(z.string(), z.unknown()).optional(),
+    }),
+  ),
+})
+
+export const providerSyncSchema = z.object({
+  collection: z.string().min(1),
+  source: z.string().min(1),
+  documents: z.array(
+    z.object({
+      doc_id: z.string().min(1),
       title: z.string(),
       content: z.string(),
       visibility: visibilityEnum.default("public"),

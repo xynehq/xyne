@@ -13,6 +13,7 @@ import { Subsystem } from "@/types"
 import config from "@/config"
 import { DeleteDocument } from "@/search/vespa"
 import { KbItemsSchema } from "@xyne/vespa-ts/types"
+import { resolveWorkspaceCreator } from "@/api/provider/collections"
 
 const Logger = getLogger(Subsystem.Server)
 
@@ -113,8 +114,9 @@ export const UpdateProviderConfigApi = async (c: Context) => {
 export const ListProviderDocumentsApi = async (c: Context) => {
   const payload = c.get("jwtPayload")
   const workspaceId = payload.workspaceId as string
+  const createdBy = await resolveWorkspaceCreator(workspaceId)
 
-  const yql = `select * from kb_items where createdBy contains "${workspaceId}"`
+  const yql = `select * from kb_items where createdBy contains "${createdBy}"`
 
   const response = await fetch(
     `${config.vespaEndpoint.queryEndpoint}/search/`,
@@ -187,8 +189,9 @@ export const DeleteProviderDocumentApi = async (c: Context) => {
  */
 export const ListProviderDocumentsByApiKeyApi = async (c: Context) => {
   const workspaceId = c.get("workspaceId") as string
+  const createdBy = await resolveWorkspaceCreator(workspaceId)
 
-  const yql = `select * from kb_items where createdBy contains "${workspaceId}"`
+  const yql = `select * from kb_items where createdBy contains "${createdBy}"`
 
   const response = await fetch(
     `${config.vespaEndpoint.queryEndpoint}/search/`,

@@ -65,6 +65,51 @@ export async function getMe() {
   }>("/me")
 }
 
+// Collections
+export async function listCollections() {
+  return request<{
+    collections: Array<{
+      id: string
+      name: string
+      description: string | null
+      totalItems: number
+      uploadStatus: string
+      createdAt: string
+      updatedAt: string
+    }>
+  }>("/collections")
+}
+
+export async function createCollection(data: { name: string; description?: string }) {
+  return request<{
+    id: string
+    name: string
+    description: string | null
+    uploadStatus: string
+    createdAt: string
+  }>("/collections", { method: "POST", body: JSON.stringify(data) })
+}
+
+export async function deleteCollection(id: string) {
+  return request<{ success: boolean; deletedCount: number }>(`/collections/${id}`, { method: "DELETE" })
+}
+
+export async function listCollectionItems(collectionId: string) {
+  return request<{
+    items: Array<{
+      id: string
+      name: string
+      type: string
+      mimeType: string | null
+      fileSize: number | null
+      uploadStatus: string
+      statusMessage: string | null
+      createdAt: string
+      updatedAt: string
+    }>
+  }>(`/collections/${collectionId}/items`)
+}
+
 // Documents
 export async function listDocuments() {
   return request<{
