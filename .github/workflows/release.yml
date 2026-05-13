@@ -31,8 +31,8 @@ jobs:
         working-directory: ./server
         run: bun install
 
-
       - name: Run semantic-release
+        if: github.ref == 'refs/heads/main'
         working-directory: ./server
         env:
           HUSKY: 0
@@ -63,14 +63,13 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Log in to Docker Hub
-        if: steps.check_release.outputs.published == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.XYNE_DOCKERHUB_USERNAME }}
           password: ${{ secrets.XYNE_DOCKERHUB_TOKEN }}
 
-      - name: Build and push Docker image
-        if: steps.check_release.outputs.published == 'true'
+      - name: Build and push Docker image (main)
+        if: github.ref == 'refs/heads/main' && steps.check_release.outputs.published == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -78,3 +77,12 @@ jobs:
           tags: |
             xynehq/xyne:latest
             xynehq/xyne:${{ steps.get_version.outputs.version }}
+
+      - name: Build and push Docker image (sebi-main)
+        if: github.ref == 'refs/heads/sebi-main'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            xynehq/xyne:sebi-main
