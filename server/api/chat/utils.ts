@@ -1496,25 +1496,15 @@ export const checkAndYieldCitationsForAgent = async function* (
   textInput: string,
   yieldedCitations: Set<number>,
   results: MinimalAgentFragment[],
-  yieldedImageCitations?: Map<number, Set<number>>,
-  email: string = "",
+  startOffset: number = 0,
 ): AsyncGenerator<
   {
     citation?: { index: number; item: Citation }
-    imageCitation?: ImageCitation
   },
   void,
   unknown
 > {
-  const tracer = getTracer("chat")
-  const span = tracer.startSpan("checkAndYieldCitationsForAgent")
-  const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
   try {
-    span.setAttribute("text_input_length", textInput.length)
-    span.setAttribute("results_count", results.length)
-    span.setAttribute("yielded_citations_size", yieldedCitations.size)
-    span.setAttribute("has_image_citations", !!yieldedImageCitations)
-    span.setAttribute("user_email", email)
     let warnedKbChunkCitations =
       warnedKbChunkCitationsByYieldedSet.get(yieldedCitations)
     if (!warnedKbChunkCitations) {
@@ -1525,253 +1515,80 @@ export const checkAndYieldCitationsForAgent = async function* (
       )
     }
 
-    // Reset global RegExp state so this function can be called repeatedly per request.
-    textToCitationIndex.lastIndex = 0
-    textToImageCitationIndex.lastIndex = 0
-    textToChunkCitationIndex.lastIndex = 0
-    textToChunkCitationIndexWithDocKey.lastIndex = 0
+    // Groups: 1=kbId, 2=kbChunk, 3=bracketIdx, 4=bracketChunk
+    const regex = new RegExp(
+      /(?:K\[([A-Za-z0-9_-]+)_(\d+)\])|(?:\[(\d+)(?:_(\d+))?\])/,
+      "g",
+    )
 
-    const text = splitGroupedCitationsWithSpaces(textInput)
+    // Safety check: if offset is >= string length, reset to 0
+    const safeStart =
+      startOffset >= textInput.length ? 0 : Math.max(0, startOffset - 20)
+    regex.lastIndex = safeStart
 
-    let match
-    let imgMatch
-    let chunkMatch
-    let chunkDocKeyMatch
-    let citationsProcessed = 0
-    let imageCitationsProcessed = 0
-    let citationsYielded = 0
-    let imageCitationsYielded = 0
-    while (
-      (match = textToCitationIndex.exec(text)) !== null ||
-      (imgMatch = textToImageCitationIndex.exec(text)) !== null ||
-      (chunkMatch = textToChunkCitationIndex.exec(text)) !== null ||
-      (chunkDocKeyMatch = textToChunkCitationIndexWithDocKey.exec(text)) !==
-        null
-    ) {
-      if (match || chunkMatch || chunkDocKeyMatch) {
-        citationsProcessed++
-        let citationIndex: number | null = null
-        let rawChunkKey: string | undefined
-        let warnedKbChunkCitationKey: string | undefined
-        let citationText: string | undefined
-        let citationTextIndex: number | undefined
-        if (match) {
-          citationIndex = parseInt(match[1], 10)
-          citationText = match[0]
-          citationTextIndex = match.index
-        } else if (chunkMatch) {
-          rawChunkKey = chunkMatch[1]
-          warnedKbChunkCitationKey = `numeric:${rawChunkKey}`
-          citationIndex = parseInt(chunkMatch[1].split("_")[0], 10)
-          citationText = chunkMatch[0]
-          citationTextIndex = chunkMatch.index
-        } else if (chunkDocKeyMatch) {
-          const docKey = chunkDocKeyMatch[1]
-          const chunkIndex = chunkDocKeyMatch[2]
-          if (/^\d+$/.test(docKey)) {
-            continue
-          }
-          rawChunkKey = `${docKey}_${chunkIndex}`
-          warnedKbChunkCitationKey = `docKey:${rawChunkKey}`
-          citationText = chunkDocKeyMatch[0]
-          citationTextIndex = chunkDocKeyMatch.index
-          // Map docKey (docId) -> numeric doc index (1-based) in `results`.
-          // We accept either `source.docId` or the fragment `id` as the possible emitter.
-          const docPos = results.findIndex(
-            (r) => r?.source?.docId === docKey || r.id === docKey,
-          )
-          if (docPos >= 0) {
-            rawChunkKey = `${docPos + 1}_${chunkIndex}`
-            warnedKbChunkCitationKey = `docKey:${rawChunkKey}`
-            citationIndex = docPos + 1
-          } else {
-            citationIndex = null
-          }
-        }
-        if (
-          citationIndex == null ||
-          Number.isNaN(citationIndex) ||
-          citationIndex <= 0
-        ) {
-          if (
-            warnedKbChunkCitationKey &&
-            !warnedKbChunkCitations.has(warnedKbChunkCitationKey)
-          ) {
-            warnedKbChunkCitations.add(warnedKbChunkCitationKey)
-            loggerWithChild({ email }).warn(
-              "[checkAndYieldCitationsForAgent] Found KB citation but could not resolve numeric index",
-              { rawChunkKey },
-            )
-          }
-          continue
-        }
-
-        const item = results[citationIndex - 1]
-        if (!item) {
-          if (
-            warnedKbChunkCitationKey &&
-            !warnedKbChunkCitations.has(warnedKbChunkCitationKey)
-          ) {
-            warnedKbChunkCitations.add(warnedKbChunkCitationKey)
-            loggerWithChild({ email: email }).warn(
-              `[checkAndYieldCitationsForAgent] Found a citation but could not map it to a search result: ${citationIndex}, ${results.length}`,
-            )
-          }
-          continue
-        }
-
-        if (chunkMatch || chunkDocKeyMatch) {
-          const chunkIndexRaw = chunkMatch
-            ? chunkMatch[1].split("_")[1]
-            : chunkDocKeyMatch?.[2]
-          const chunkIndex = parseInt(chunkIndexRaw ?? "", 10)
-          const availableChunkIndices = extractChunkIndicesFromFragment(item)
-          if (
-            Number.isNaN(chunkIndex) ||
-            !availableChunkIndices.has(chunkIndex)
-          ) {
-            if (
-              warnedKbChunkCitationKey &&
-              !warnedKbChunkCitations.has(warnedKbChunkCitationKey)
-            ) {
-              warnedKbChunkCitations.add(warnedKbChunkCitationKey)
-              loggerWithChild({ email }).warn(
-                "[checkAndYieldCitationsForAgent] Dropping KB chunk citation with missing chunk marker",
-                {
-                  rawChunkKey,
-                  citationText,
-                  answerExcerpt:
-                    typeof citationTextIndex === "number" && citationText
-                      ? buildCitationFailureExcerpt(
-                          text,
-                          citationTextIndex,
-                          citationText.length,
-                        )
-                      : undefined,
-                  citationIndex,
-                  chunkIndex,
-                  availableChunkIndices: Array.from(
-                    availableChunkIndices.values(),
-                  ),
-                },
-              )
-            }
-            continue
-          }
-        }
-
-        if (!yieldedCitations.has(citationIndex)) {
-          if (!item?.source?.docId && !item?.source?.url) {
-            continue
-          }
-
-          yield {
-            citation: {
-              index: citationIndex,
-              item: item.source,
-            },
-          }
-          yieldedCitations.add(citationIndex)
-          citationsYielded++
-        }
-      } else if (imgMatch && yieldedImageCitations) {
-        imageCitationsProcessed++
-        const parts = imgMatch[1].split("_")
-        if (parts.length >= 2) {
-          const docIndex = parseInt(parts[0], 10)
-          const imageIndex = parseInt(parts[1], 10)
-          if (
-            !yieldedImageCitations.has(docIndex) ||
-            !yieldedImageCitations.get(docIndex)?.has(imageIndex)
-          ) {
-            const item = results[docIndex]
-            if (item) {
-              const imageProcessingSpan = span.startSpan(
-                "process_image_citation",
-              )
-              try {
-                imageProcessingSpan.setAttribute("citation_key", imgMatch[1])
-                imageProcessingSpan.setAttribute("doc_index", docIndex)
-                imageProcessingSpan.setAttribute("image_index", imageIndex)
-
-                const imageData = await getCitationToImage(
-                  imgMatch[1],
-                  {
-                    id: item.id,
-                    relevance: item.confidence,
-                    fields: {
-                      docId: item.source.docId,
-                    } as any,
-                  } as VespaSearchResult,
-                  email,
-                )
-                if (imageData) {
-                  if (!imageData.imagePath || !imageData.imageBuffer) {
-                    imageProcessingSpan.setAttribute(
-                      "processing_success",
-                      false,
-                    )
-                    imageProcessingSpan.setAttribute(
-                      "error_reason",
-                      "invalid_image_data",
-                    )
-                    imageProcessingSpan.end()
-                    continue
-                  }
-                  yield {
-                    imageCitation: {
-                      citationKey: imgMatch[1],
-                      imagePath: imageData.imagePath,
-                      imageData: imageData.imageBuffer.toString("base64"),
-                      ...(imageData.extension
-                        ? { mimeType: mimeTypeMap[imageData.extension] }
-                        : {}),
-                      item: item.source,
-                    },
-                  }
-                  imageCitationsYielded++
-                  imageProcessingSpan.setAttribute("processing_success", true)
-                  imageProcessingSpan.setAttribute(
-                    "image_size",
-                    imageData.imageBuffer.length,
-                  )
-                  imageProcessingSpan.setAttribute(
-                    "image_extension",
-                    imageData.extension || "unknown",
-                  )
-                }
-                imageProcessingSpan.end()
-              } catch (error) {
-                imageProcessingSpan.addEvent("image_processing_error", {
-                  message: getErrorMessage(error),
-                  stack: (error as Error).stack || "",
-                })
-                imageProcessingSpan.setAttribute("processing_success", false)
-                imageProcessingSpan.end()
-              }
-              if (!yieldedImageCitations.has(docIndex)) {
-                yieldedImageCitations.set(docIndex, new Set<number>())
-              }
-              yieldedImageCitations.get(docIndex)?.add(imageIndex)
-            } else {
-              continue
-            }
-          }
-        }
-      }
+    if (!textInput) {
+      return
     }
 
-    span.setAttribute("citations_processed", citationsProcessed)
-    span.setAttribute("image_citations_processed", imageCitationsProcessed)
-    span.setAttribute("citations_yielded", citationsYielded)
-    span.setAttribute("image_citations_yielded", imageCitationsYielded)
-    span.end()
+    let match: RegExpExecArray | null
+    let citationsProcessed = 0
+    let citationsYielded = 0
+
+    while ((match = regex.exec(textInput)) !== null) {
+      citationsProcessed++
+      let citationIndex: number | null = null
+
+      // match[1] = kbId (from K[...]), match[2] = kbChunk
+      // match[3] = bracketIndex (from [...]), match[4] = bracketChunk
+      const kbId = match[1]
+      const bracketIndex = match[3]
+
+      if (kbId) {
+        // K[...] citation: resolve kbId to an index
+        if (/^\d+$/.test(kbId)) {
+          // Numeric kbId like K[20_1]
+          citationIndex = parseInt(kbId, 10)
+        } else {
+          // String docKey like K[docId_1]: resolve by finding in results
+          const docPos = results.findIndex(
+            (r) => r?.source?.docId === kbId || r.id === kbId,
+          )
+          citationIndex = docPos >= 0 ? docPos + 1 : null
+        }
+      } else if (bracketIndex) {
+        // Standard bracket citation [n] or [n_m]
+        citationIndex = parseInt(bracketIndex, 10)
+      }
+
+      if (
+        citationIndex == null ||
+        Number.isNaN(citationIndex) ||
+        citationIndex <= 0
+      ) {
+        continue
+      }
+
+      const item = results[citationIndex - 1]
+      if (!item) {
+        continue
+      }
+
+      if (!yieldedCitations.has(citationIndex)) {
+        if (!item?.source?.docId && !item?.source?.url) {
+          continue
+        }
+
+        yield {
+          citation: {
+            index: citationIndex,
+            item: item.source,
+          },
+        }
+        yieldedCitations.add(citationIndex)
+        citationsYielded++
+      }
+    }
   } catch (error) {
-    span.addEvent("error", {
-      message: getErrorMessage(error),
-      stack: (error as Error).stack || "",
-    })
-    span.end()
     throw error
   }
 }

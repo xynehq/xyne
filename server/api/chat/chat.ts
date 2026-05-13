@@ -482,199 +482,66 @@ export const processWebSearchMessage = (
   return result
 }
 
-// the Set is passed by reference so that singular object will get updated
-// but need to be kept in mind
 const checkAndYieldCitations = async function* (
   textInput: string,
   yieldedCitations: Set<number>,
   results: any[],
   baseIndex: number = 0,
-  email: string,
-  yieldedImageCitations: Set<number>,
-  allowChunkCitations?: boolean,
+  allowChunkCitations: boolean = true,
+  startOffset: number = 0,
 ) {
-  const text = splitGroupedCitationsWithSpaces(textInput)
-  let match
-  let imgMatch
-  let chunkMatch = null
-  let chunkDocKeyMatch = null
+  // Groups: 1=kbId, 2=kbChunk, 3=bracketIdx, 4=bracketChunk
+  const regex = new RegExp(
+    /(?:K\[([A-Za-z0-9_-]+)_(\d+)\])|(?:\[(\d+)(?:_(\d+))?\])/,
+    "g",
+  )
 
-  const textToChunkCitationIndexWithDocKey = /K\[([A-Za-z0-9_-]+)_([0-9]+)\]/g
+  // Safety check: if offset is >= string length, reset to 0
+  const safeStart =
+    startOffset >= textInput.length ? 0 : Math.max(0, startOffset - 20)
+  regex.lastIndex = safeStart
 
-  // Reset global RegExp state so this function can be called repeatedly per request.
-  textToCitationIndex.lastIndex = 0
-  textToImageCitationIndex.lastIndex = 0
-  textToChunkCitationIndex.lastIndex = 0
+  if (!textInput) return
 
-  // Iterate through citation tokens in a way that avoids consuming matches from
-  // multiple regexes in the same step (regexes all have `g` state via `lastIndex`).
-  while (true) {
-    match = textToCitationIndex.exec(text)
-    if (match) {
-      const citationIndex = parseInt(match[1], 10)
-      if (!yieldedCitations.has(citationIndex)) {
-        const item = results[citationIndex - baseIndex]
-        if (item) {
-          // TODO: fix this properly, empty citations making streaming broke
-          const f = (item as any)?.fields
-          if (f?.sddocname === dataSourceFileSchema) {
-            // Skip datasource files from citations
-            continue
-          }
-          yield {
-            citation: {
-              index: citationIndex,
-              item: searchToCitation(item as VespaSearchResults),
-            },
-          }
-          yieldedCitations.add(citationIndex)
-        } else {
-          loggerWithChild({ email: email }).error(
-            `Found a citation but could not map it to a search result: ${citationIndex}, ${results.length}`,
-          )
-        }
+  let match: RegExpExecArray | null
+
+  while ((match = regex.exec(textInput)) !== null) {
+    let citationIndex: number | null = null
+
+    // Mapping based on the regex groups above
+    const kbId = match[1] // From K[...]
+    const bracketIndex = match[3] // From [...]
+
+    if (kbId && allowChunkCitations) {
+      // If it's K[20_1], use 20. If it's K[docId_1], resolve it.
+      if (/^\d+$/.test(kbId)) {
+        citationIndex = parseInt(kbId, 10)
+      } else {
+        const docPos = results.findIndex(
+          (r) => (r as any)?.fields?.docId === kbId || (r as any)?.id === kbId,
+        )
+        citationIndex = docPos >= 0 ? baseIndex + docPos : null
       }
-      continue
+    } else if (bracketIndex) {
+      citationIndex = parseInt(bracketIndex, 10)
     }
 
-    imgMatch = textToImageCitationIndex.exec(text)
-    if (imgMatch) {
-      const parts = imgMatch[1].split("_")
-      if (parts.length >= 2) {
-        const docIndex = parseInt(parts[0], 10)
-        const imageIndex = parseInt(parts[1], 10)
-        const citationIndex = docIndex + baseIndex
-        if (!yieldedImageCitations.has(citationIndex)) {
-          const item = results[docIndex]
-          if (item) {
-            try {
-              const imageData = await getCitationToImage(
-                imgMatch[1],
-                item,
-                email,
-              )
-              if (imageData) {
-                if (!imageData.imagePath || !imageData.imageBuffer) {
-                  loggerWithChild({ email: email }).error(
-                    "Invalid imageData structure returned",
-                    { citationKey: imgMatch[1], imageData },
-                  )
-                  continue
-                }
-                yield {
-                  imageCitation: {
-                    citationKey: imgMatch[1],
-                    imagePath: imageData.imagePath,
-                    imageData: imageData.imageBuffer.toString("base64"),
-                    ...(imageData.extension
-                      ? { mimeType: mimeTypeMap[imageData.extension] }
-                      : {}),
-                    item: searchToCitation(item as VespaSearchResults),
-                  },
-                }
-              }
-            } catch (error) {
-              loggerWithChild({ email: email }).error(
-                error,
-                "Error processing image citation",
-                { citationKey: imgMatch[1], error: getErrorMessage(error) },
-              )
-            }
-            yieldedImageCitations.add(citationIndex)
-          } else {
-            loggerWithChild({ email: email }).error(
-              `Found a citation index but could not find it in the search result: ${citationIndex}, ${results.length}`,
-            )
-            continue
-          }
-        }
-      }
-      continue
-    }
+    if (citationIndex !== null && !Number.isNaN(citationIndex)) {
+      if (yieldedCitations.has(citationIndex)) continue
 
-    if (allowChunkCitations) {
-      chunkMatch = textToChunkCitationIndex.exec(text)
-      if (chunkMatch) {
-        const citationIndex = parseInt(chunkMatch[1].split("_")[0], 10)
-        if (!yieldedCitations.has(citationIndex)) {
-          const item = results[citationIndex - baseIndex]
-          if (item) {
-            const f = (item as any)?.fields
-            if (f?.sddocname === dataSourceFileSchema) {
-              // Skip datasource files from citations
-              continue
-            }
-            yield {
-              citation: {
-                index: citationIndex,
-                item: searchToCitation(item as VespaSearchResults),
-              },
-            }
-            yieldedCitations.add(citationIndex)
-          } else {
-            loggerWithChild({ email: email }).error(
-              `Found a citation but could not map it to a search result: ${citationIndex}, ${results.length}`,
-            )
-          }
-        }
-        continue
-      }
+      const lookupIdx = citationIndex - baseIndex
+      const item = results[lookupIdx]
 
-      // Fallback for weaker models emitting KB citations like:
-      //   K[<docKey>_<chunkIndex>]  e.g. K[attf_<uuid>_21]
-      chunkDocKeyMatch = textToChunkCitationIndexWithDocKey.exec(text)
-      if (chunkDocKeyMatch) {
-        const docKey = chunkDocKeyMatch[1]
-        let citationIndex: number | null = null
-
-        if (/^\d+$/.test(docKey)) {
-          citationIndex = parseInt(docKey, 10)
-        } else {
-          const docPos = results.findIndex((r) => {
-            const fields = (r as any)?.fields
-            return fields?.docId === docKey || (r as any)?.id === docKey
-          })
-          citationIndex = docPos >= 0 ? baseIndex + docPos : null
+      if (item && (item as any)?.fields?.sddocname !== dataSourceFileSchema) {
+        yield {
+          citation: {
+            index: citationIndex,
+            item: searchToCitation(item as VespaSearchResults),
+          },
         }
-
-        if (
-          citationIndex === null ||
-          Number.isNaN(citationIndex) ||
-          citationIndex < 0
-        ) {
-          loggerWithChild({ email: email }).warn(
-            "[checkAndYieldCitations] Found KB citation but could not resolve numeric index",
-            { rawChunkKey: docKey },
-          )
-          continue
-        }
-
-        if (!yieldedCitations.has(citationIndex)) {
-          const item = results[citationIndex - baseIndex]
-          if (item) {
-            const f = (item as any)?.fields
-            if (f?.sddocname === dataSourceFileSchema) {
-              // Skip datasource files from citations
-              continue
-            }
-            yield {
-              citation: {
-                index: citationIndex,
-                item: searchToCitation(item as VespaSearchResults),
-              },
-            }
-            yieldedCitations.add(citationIndex)
-          } else {
-            loggerWithChild({ email: email }).error(
-              `Found a citation but could not map it to a search result: ${citationIndex}, ${results.length}`,
-            )
-          }
-        }
-        continue
+        yieldedCitations.add(citationIndex)
       }
     }
-
-    break
   }
 }
 
@@ -709,7 +576,6 @@ async function* processIterator(
   results: VespaSearchResult[],
   previousResultsLength: number = 0,
   userRequestsReasoningAndEnabled?: boolean,
-  email?: string,
   allowChunkCitations?: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & {
@@ -723,7 +589,7 @@ async function* processIterator(
   let thinking = ""
   let reasoning = userRequestsReasoningAndEnabled
   let yieldedCitations = new Set<number>()
-  let yieldedImageCitations = new Set<number>()
+  let lastScannedAnswerLength = 0
   // tied to the json format and output expected, we expect the answer key to be present
   const ANSWER_TOKEN = '"answer":'
 
@@ -737,10 +603,10 @@ async function* processIterator(
             yieldedCitations,
             results,
             previousResultsLength,
-            email!,
-            yieldedImageCitations,
             allowChunkCitations,
+            lastScannedAnswerLength,
           )
+          lastScannedAnswerLength = thinking.length
           yield { text: chunk.text, reasoning }
         } else {
           // first time
@@ -763,10 +629,10 @@ async function* processIterator(
               yieldedCitations,
               results,
               previousResultsLength,
-              email!,
-              yieldedImageCitations,
               allowChunkCitations,
+              lastScannedAnswerLength,
             )
+            lastScannedAnswerLength = thinking.length
             yield { text: token, reasoning }
           }
         }
@@ -802,10 +668,10 @@ async function* processIterator(
               yieldedCitations,
               results,
               previousResultsLength,
-              email!,
-              yieldedImageCitations,
               allowChunkCitations,
+              lastScannedAnswerLength,
             )
+            lastScannedAnswerLength = currentAnswer.length
           }
         } catch (e) {
           // If we can't parse the JSON yet, continue accumulating
@@ -846,10 +712,10 @@ async function* processIterator(
             yieldedCitations,
             results,
             previousResultsLength,
-            email!,
-            yieldedImageCitations,
             allowChunkCitations,
+            lastScannedAnswerLength,
           )
+          lastScannedAnswerLength = currentAnswer.length
         }
         return currentAnswer
       }
@@ -1932,7 +1798,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           totalResults,
           previousResultsLength,
           userRequestsReasoningAndEnabled,
-          email,
           agentSpecificCollectionSelections.length > 0,
         )
         if (answer) {
@@ -2152,7 +2017,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       results?.root?.children,
       previousResultsLength,
       userRequestsReasoningAndEnabled,
-      email,
       agentSpecificCollectionSelections.length > 0,
     )
 
@@ -2561,8 +2425,6 @@ async function* generateAnswerFromGivenContext(
     combinedSearchResponse,
     previousResultsLength,
     userRequestsReasoningAndEnabled,
-    email,
-    allowChunkCitations,
   )
   if (answer) {
     generateAnswerSpan?.setAttribute("answer_found", true)
@@ -3151,7 +3013,6 @@ export async function* generateAnswerFromDualRag(
     combinedSearchResponse,
     previousResultsLength,
     userRequestsReasoningAndEnabled,
-    email,
     allowChunkCitations,
   )
 
@@ -3765,7 +3626,6 @@ async function* generatePointQueryTimeExpansion(
       combinedResults?.root?.children,
       previousResultsLength,
       userRequestsReasoningAndEnabled,
-      email,
     )
     ragSpan?.end()
     if (answer) {
@@ -3915,7 +3775,6 @@ async function* processResultsForMetadata(
     items,
     0,
     userRequestsReasoningAndEnabled,
-    email,
     isMsgWithKbItems,
   )
 }

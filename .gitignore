@@ -220,3 +220,5 @@ data/app-assets/
 # docker-compose app file
 deployment/portable/docker-compose.app.yml
 deployment/portable/docker-compose.sync.yml
+
+server/xyne-evals
