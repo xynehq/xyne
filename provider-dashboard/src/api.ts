@@ -111,19 +111,6 @@ export async function listCollectionItems(collectionId: string) {
 }
 
 // Documents
-export async function listDocuments() {
-  return request<{
-    documents: Array<{
-      docId: string
-      title: string
-      visibility: "public" | "authenticated"
-      accessTags: string[]
-      createdAt: number
-      collectionId: string
-    }>
-  }>("/documents")
-}
-
 export async function uploadDocuments(data: {
   collection_id: string
   documents: Array<{
@@ -177,10 +164,6 @@ export async function uploadFiles(data: {
     documents: Array<{ docId: string; title: string; status: string }>
     total: number
   }>
-}
-
-export async function deleteDocument(docId: string) {
-  return request<{ success: boolean }>(`/documents/${docId}`, { method: "DELETE" })
 }
 
 // API Keys

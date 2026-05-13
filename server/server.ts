@@ -470,10 +470,6 @@ import {
   ProviderMeApi,
   GetProviderConfigApi,
   UpdateProviderConfigApi,
-  ListProviderDocumentsApi,
-  DeleteProviderDocumentApi,
-  ListProviderDocumentsByApiKeyApi,
-  DeleteProviderDocumentByApiKeyApi,
   ListProviderApiKeysApi,
   CreateProviderApiKeyApi,
   DeleteProviderApiKeyApi,
@@ -2504,8 +2500,6 @@ app
 app
   .basePath("/api/provider/manage")
   .use("*", ApiKeyMiddleware)
-  .get("/documents", ListProviderDocumentsByApiKeyApi)
-  .delete("/documents/:docId", DeleteProviderDocumentByApiKeyApi)
   .post(
     "/documents",
     zValidator("json", providerIngestSchema),
@@ -2561,8 +2555,6 @@ const providerDashboardAuth = [ProviderDashboardAuthMiddleware, requireProvider]
 app
   .basePath("/api/provider/dashboard")
   .get("/me", ...providerDashboardAuth, ProviderMeApi)
-  .get("/documents", ...providerDashboardAuth, ListProviderDocumentsApi)
-  .delete("/documents/:docId", ...providerDashboardAuth, DeleteProviderDocumentApi)
   .post(
     "/documents",
     ...providerDashboardAuth,
