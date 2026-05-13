@@ -3,7 +3,7 @@ import { HTTPException } from "hono/http-exception"
 import config, { NAMESPACE, CLUSTER } from "@/config"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
-import { resolveCollectionId, resolveWorkspaceCreator } from "@/api/provider/collections"
+import { resolveCollectionId, resolveWorkspaceCreator } from "@/api/sdk/collections"
 
 const Logger = getLogger(Subsystem.Server)
 
@@ -38,7 +38,7 @@ export function buildVisibilityFilter(
   return clauses.join(" OR ")
 }
 
-export const ProviderSearchApi = async (c: Context) => {
+export const SdkSearchApi = async (c: Context) => {
   const { query, max_results, collection: collectionName } = c.req.valid("json" as never)
   const accessTags = c.get("accessTags") as string[]
   const isAuthenticated = c.get("isAuthenticated") as boolean
@@ -83,7 +83,7 @@ export const ProviderSearchApi = async (c: Context) => {
       const errorText = await response.text()
       Logger.error(
         { status: response.status, body: errorText },
-        "Vespa search failed for provider",
+        "Vespa search failed for SDK",
       )
       throw new HTTPException(502, { message: "Search service unavailable" })
     }
@@ -112,7 +112,7 @@ export const ProviderSearchApi = async (c: Context) => {
     return c.json({ results })
   } catch (error) {
     if (error instanceof HTTPException) throw error
-    Logger.error(error, "Provider search failed")
+    Logger.error(error, "SDK search failed")
     throw new HTTPException(500, { message: "Search failed" })
   }
 }

@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-// --- Provider token issuance (API key auth) ---
+// --- SDK token issuance (API key auth) ---
 
 export const issueTokenSchema = z.object({
   external_user_id: z.string().min(1),
@@ -8,54 +8,54 @@ export const issueTokenSchema = z.object({
   tags: z.array(z.string()).default([]),
 })
 
-// --- Provider dashboard auth (email+password) ---
+// --- SDK dashboard auth (email+password) ---
 
-export const providerSignupSchema = z.object({
+export const sdkSignupSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
   name: z.string().min(1),
   workspace_name: z.string().min(1),
 })
 
-export const providerLoginSchema = z.object({
+export const sdkLoginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
 })
 
-// --- Provider config management ---
+// --- SDK config management ---
 
-export const updateProviderConfigSchema = z.object({
+export const updateSdkConfigSchema = z.object({
   allowed_origins: z.array(z.string()).optional(),
   token_expiry_seconds: z.number().min(300).max(86400).optional(),
 })
 
-export const providerSearchSchema = z.object({
+export const sdkSearchSchema = z.object({
   query: z.string().min(1),
   max_results: z.number().min(1).max(50).default(10).optional(),
   collection: z.string().optional(),
 })
 
-export const providerChatSchema = z.object({
+export const sdkChatSchema = z.object({
   query: z.string().min(1),
   session_id: z.string().optional(),
   collection: z.string().optional(),
 })
 
-export const providerExplainSchema = z.object({
+export const sdkExplainSchema = z.object({
   text: z.string().min(1),
   collection: z.string().optional(),
 })
 
-// --- Provider collection management ---
+// --- SDK collection management ---
 
-export const createProviderCollectionSchema = z.object({
+export const createSdkCollectionSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().optional(),
 })
 
 export const visibilityEnum = z.enum(["public", "authenticated"])
 
-export const providerIngestSchema = z.object({
+export const sdkIngestSchema = z.object({
   collection_id: z.string().min(1),
   documents: z.array(
     z.object({
@@ -70,7 +70,7 @@ export const providerIngestSchema = z.object({
   ),
 })
 
-export const providerSyncSchema = z.object({
+export const sdkSyncSchema = z.object({
   collection: z.string().min(1),
   source: z.string().min(1),
   documents: z.array(

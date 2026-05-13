@@ -25,7 +25,7 @@ export * from "@/db/schema/ingestions"
 export * from "@/db/schema/databaseSyncState"
 export * from "@/db/schema/summaries"
 export * from "@/db/schema/agentDocuments"
-export * from "@/db/schema/providerConfigs"
+export * from "@/db/schema/sdkConfigs"
 
 // Export combined types
 import type { PublicUser, SelectUser } from "@/db/schema/users"

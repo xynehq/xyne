@@ -23,9 +23,9 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>(() => {
-    const token = localStorage.getItem("provider_token")
-    const userStr = localStorage.getItem("provider_user")
-    const workspaceId = localStorage.getItem("provider_workspace_id")
+    const token = localStorage.getItem("sdk_token")
+    const userStr = localStorage.getItem("sdk_user")
+    const workspaceId = localStorage.getItem("sdk_workspace_id")
     return {
       token,
       user: userStr ? JSON.parse(userStr) : null,
@@ -34,16 +34,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   })
 
   const setAuth = useCallback((token: string, user: User, workspaceId: string) => {
-    localStorage.setItem("provider_token", token)
-    localStorage.setItem("provider_user", JSON.stringify(user))
-    localStorage.setItem("provider_workspace_id", workspaceId)
+    localStorage.setItem("sdk_token", token)
+    localStorage.setItem("sdk_user", JSON.stringify(user))
+    localStorage.setItem("sdk_workspace_id", workspaceId)
     setState({ token, user, workspaceId })
   }, [])
 
   const logout = useCallback(() => {
-    localStorage.removeItem("provider_token")
-    localStorage.removeItem("provider_user")
-    localStorage.removeItem("provider_workspace_id")
+    localStorage.removeItem("sdk_token")
+    localStorage.removeItem("sdk_user")
+    localStorage.removeItem("sdk_workspace_id")
     setState({ token: null, user: null, workspaceId: null })
   }, [])
 

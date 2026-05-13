@@ -1,19 +1,19 @@
 import { type Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { db } from "@/db/client"
-import { apiKeys, users, providerConfigs } from "@/db/schema"
+import { apiKeys, users, sdkConfigs } from "@/db/schema"
 import { getUserByEmail, createUserApiKey } from "@/db/user"
 import {
-  getProviderConfigByWorkspaceExternalId,
-  updateProviderConfig,
-} from "@/db/providerConfig"
+  getSdkConfigByWorkspaceExternalId,
+  updateSdkConfig,
+} from "@/db/sdkConfig"
 import { eq, and } from "drizzle-orm"
 
 /**
- * GET /api/provider/manage/me
- * Returns current provider user info + workspace + config.
+ * GET /api/sdk/manage/me
+ * Returns current SDK user info + workspace + config.
  */
-export const ProviderMeApi = async (c: Context) => {
+export const SdkMeApi = async (c: Context) => {
   const payload = c.get("jwtPayload")
   const email = payload.sub as string
   const workspaceId = payload.workspaceId as string
@@ -24,7 +24,7 @@ export const ProviderMeApi = async (c: Context) => {
   }
 
   const user = userRes[0]
-  const providerConfig = await getProviderConfigByWorkspaceExternalId(
+  const sdkConfig = await getSdkConfigByWorkspaceExternalId(
     db,
     workspaceId,
   )
@@ -36,45 +36,45 @@ export const ProviderMeApi = async (c: Context) => {
       role: user.role,
     },
     workspace_id: workspaceId,
-    config: providerConfig
+    config: sdkConfig
       ? {
-          token_expiry_seconds: providerConfig.tokenExpirySeconds,
-          allowed_origins: providerConfig.allowedOrigins,
-          enabled: providerConfig.enabled,
+          token_expiry_seconds: sdkConfig.tokenExpirySeconds,
+          allowed_origins: sdkConfig.allowedOrigins,
+          enabled: sdkConfig.enabled,
         }
       : null,
   })
 }
 
 /**
- * GET /api/provider/manage/config
- * Returns provider configuration.
+ * GET /api/sdk/manage/config
+ * Returns SDK configuration.
  */
-export const GetProviderConfigApi = async (c: Context) => {
+export const GetSdkConfigApi = async (c: Context) => {
   const payload = c.get("jwtPayload")
   const workspaceId = payload.workspaceId as string
 
-  const providerConfig = await getProviderConfigByWorkspaceExternalId(
+  const sdkConfig = await getSdkConfigByWorkspaceExternalId(
     db,
     workspaceId,
   )
 
-  if (!providerConfig) {
-    throw new HTTPException(404, { message: "Provider config not found" })
+  if (!sdkConfig) {
+    throw new HTTPException(404, { message: "SDK config not found" })
   }
 
   return c.json({
-    token_expiry_seconds: providerConfig.tokenExpirySeconds,
-    allowed_origins: providerConfig.allowedOrigins,
-    enabled: providerConfig.enabled,
+    token_expiry_seconds: sdkConfig.tokenExpirySeconds,
+    allowed_origins: sdkConfig.allowedOrigins,
+    enabled: sdkConfig.enabled,
   })
 }
 
 /**
- * PUT /api/provider/manage/config
- * Updates provider configuration (allowed_origins, token_expiry_seconds).
+ * PUT /api/sdk/manage/config
+ * Updates SDK configuration (allowed_origins, token_expiry_seconds).
  */
-export const UpdateProviderConfigApi = async (c: Context) => {
+export const UpdateSdkConfigApi = async (c: Context) => {
   const payload = c.get("jwtPayload")
   const workspaceId = payload.workspaceId as string
   const body = c.req.valid("json" as never) as {
@@ -82,7 +82,7 @@ export const UpdateProviderConfigApi = async (c: Context) => {
     token_expiry_seconds?: number
   }
 
-  const updates: Parameters<typeof updateProviderConfig>[2] = {}
+  const updates: Parameters<typeof updateSdkConfig>[2] = {}
   if (body.allowed_origins !== undefined) {
     updates.allowedOrigins = body.allowed_origins
   }
@@ -90,7 +90,7 @@ export const UpdateProviderConfigApi = async (c: Context) => {
     updates.tokenExpirySeconds = body.token_expiry_seconds
   }
 
-  const updated = await updateProviderConfig(db, workspaceId, updates)
+  const updated = await updateSdkConfig(db, workspaceId, updates)
 
   return c.json({
     token_expiry_seconds: updated.tokenExpirySeconds,
@@ -101,10 +101,10 @@ export const UpdateProviderConfigApi = async (c: Context) => {
 
 
 /**
- * GET /api/provider/manage/api-keys
- * Lists API keys for the provider user.
+ * GET /api/sdk/manage/api-keys
+ * Lists API keys for the SDK user.
  */
-export const ListProviderApiKeysApi = async (c: Context) => {
+export const ListSdkApiKeysApi = async (c: Context) => {
   const payload = c.get("jwtPayload")
   const email = payload.sub as string
   const workspaceId = payload.workspaceId as string
@@ -143,10 +143,10 @@ export const ListProviderApiKeysApi = async (c: Context) => {
 }
 
 /**
- * POST /api/provider/manage/api-keys
- * Creates a new API key for the provider.
+ * POST /api/sdk/manage/api-keys
+ * Creates a new API key for the SDK user.
  */
-export const CreateProviderApiKeyApi = async (c: Context) => {
+export const CreateSdkApiKeyApi = async (c: Context) => {
   const payload = c.get("jwtPayload")
   const email = payload.sub as string
   const workspaceId = payload.workspaceId as string
@@ -162,8 +162,8 @@ export const CreateProviderApiKeyApi = async (c: Context) => {
     db,
     userId: user.externalId,
     workspaceId,
-    name: "Provider API Key",
-    scope: { scopes: ["provider"] },
+    name: "SDK API Key",
+    scope: { scopes: ["sdk"] },
   })
 
   if (!result.success) {
@@ -179,10 +179,10 @@ export const CreateProviderApiKeyApi = async (c: Context) => {
 }
 
 /**
- * DELETE /api/provider/manage/api-keys/:id
+ * DELETE /api/sdk/manage/api-keys/:id
  * Revokes an API key.
  */
-export const DeleteProviderApiKeyApi = async (c: Context) => {
+export const DeleteSdkApiKeyApi = async (c: Context) => {
   const keyId = c.req.param("id")
   const payload = c.get("jwtPayload")
   const email = payload.sub as string

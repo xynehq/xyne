@@ -2,9 +2,9 @@ import { type Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { sign } from "hono/jwt"
 import { db } from "@/db/client"
-import { users, workspaces, providerConfigs } from "@/db/schema"
+import { users, workspaces, sdkConfigs } from "@/db/schema"
 import { getUserByEmail } from "@/db/user"
-import { createProviderConfig } from "@/db/providerConfig"
+import { createSdkConfig } from "@/db/sdkConfig"
 import { createId } from "@paralleldrive/cuid2"
 import { eq } from "drizzle-orm"
 import { getLogger } from "@/logger"
@@ -18,12 +18,12 @@ const accessTokenSecret = process.env.ACCESS_TOKEN_SECRET!
 const ACCESS_TOKEN_TTL = 24 * 60 * 60 // 24 hours
 
 /**
- * POST /api/provider/auth/signup
+ * POST /api/sdk/auth/signup
  *
- * Creates a new provider workspace, user, provider_config, and API key.
+ * Creates a new SDK workspace, user, sdk_config, and API key.
  * No auth required (public endpoint).
  */
-export const ProviderSignupApi = async (c: Context) => {
+export const SdkSignupApi = async (c: Context) => {
   const { email, password, name, workspace_name } = c.req.valid("json" as never)
 
   // Check if email already exists
@@ -34,11 +34,11 @@ export const ProviderSignupApi = async (c: Context) => {
 
   const passwordHash = await Bun.password.hash(password as string, "argon2id")
 
-  // Transaction: create workspace + user + provider_config
+  // Transaction: create workspace + user + sdk_config
   const result = await db.transaction(async (trx) => {
     // 1. Create workspace (domain = email domain, createdBy = email)
     const emailStr = email as string
-    const domain = `provider-${emailStr.split("@")[1]}-${createId().slice(0, 6)}`
+    const domain = `sdk-${emailStr.split("@")[1]}-${createId().slice(0, 6)}`
     const workspaceExternalId = createId()
     const [workspace] = await trx
       .insert(workspaces)
@@ -50,7 +50,7 @@ export const ProviderSignupApi = async (c: Context) => {
       })
       .returning()
 
-    // 2. Create user with Provider role + passwordHash
+    // 2. Create user with Sdk role + passwordHash
     const userExternalId = createId()
     const [user] = await trx
       .insert(users)
@@ -62,27 +62,27 @@ export const ProviderSignupApi = async (c: Context) => {
         photoLink: null,
         workspaceExternalId: workspace.externalId,
         lastLogin: new Date(),
-        role: UserRole.Provider,
+        role: UserRole.Sdk,
         passwordHash,
         refreshToken: "",
       })
       .returning()
 
-    // 3. Create provider_config with a random tokenSecret
+    // 3. Create sdk_config with a random tokenSecret
     const tokenSecret = crypto.randomBytes(32).toString("hex")
-    const providerConfig = await createProviderConfig(trx, {
+    const sdkConfig = await createSdkConfig(trx, {
       workspaceId: workspace.externalId,
       tokenSecret,
     })
 
-    return { workspace, user, providerConfig }
+    return { workspace, user, sdkConfig }
   })
 
-  // Sign JWT for the new provider user
+  // Sign JWT for the new SDK user
   const token = await sign(
     {
       sub: email as string,
-      role: UserRole.Provider,
+      role: UserRole.Sdk,
       workspaceId: result.workspace.externalId,
       tokenType: "access",
       exp: Math.floor(Date.now() / 1000) + ACCESS_TOKEN_TTL,
@@ -102,12 +102,12 @@ export const ProviderSignupApi = async (c: Context) => {
 }
 
 /**
- * POST /api/provider/auth/login
+ * POST /api/sdk/auth/login
  *
- * Authenticates a provider user with email + password.
+ * Authenticates an SDK user with email + password.
  * No auth required (public endpoint).
  */
-export const ProviderLoginApi = async (c: Context) => {
+export const SdkLoginApi = async (c: Context) => {
   const { email, password } = c.req.valid("json" as never)
 
   const userRes = await getUserByEmail(db, email as string)
@@ -117,7 +117,7 @@ export const ProviderLoginApi = async (c: Context) => {
 
   const user = userRes[0]
 
-  if (user.role !== UserRole.Provider) {
+  if (user.role !== UserRole.Sdk) {
     throw new HTTPException(401, { message: "Invalid email or password" })
   }
 

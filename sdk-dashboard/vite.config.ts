@@ -12,7 +12,7 @@ export default defineConfig({
   server: {
     port: 3003,
     proxy: {
-      "/api/provider": {
+      "/api/sdk": {
         target: "http://localhost:3002",
         changeOrigin: true,
       },

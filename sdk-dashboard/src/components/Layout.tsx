@@ -23,7 +23,7 @@ export function Layout() {
               <span className="text-sm font-bold text-[#FF4F4F]">X</span>
             </div>
             <div className="min-w-0">
-              <h1 className="text-sm font-semibold tracking-tight truncate">Xyne Provider</h1>
+              <h1 className="text-sm font-semibold tracking-tight truncate">Xyne SDK</h1>
               <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
             </div>
           </div>

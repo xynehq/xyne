@@ -248,7 +248,7 @@ export enum ApiKeyScopes {
   DELETE_COLLECTION_ITEM = "DELETE_COLLECTION_ITEM",
   MESSAGE_FEEDBACK = "MESSAGE_FEEDBACK",
   ENHANCED_MESSAGE_FEEDBACK = "ENHANCED_MESSAGE_FEEDBACK",
-  PROVIDER = "PROVIDER",
+  SDK = "SDK",
 }
 
 export const AutocompleteFileSchema = z
@@ -564,7 +564,7 @@ export enum UserRole {
   TeamLeader = "TeamLeader", // manage Users
   Admin = "Admin", // Service account related changes
   SuperAdmin = "SuperAdmin", // Admin level changes
-  Provider = "Provider", // external provider (email+password auth)
+  Sdk = "Sdk", // external SDK user (email+password auth)
 }
 
 export enum UserAgentRole {

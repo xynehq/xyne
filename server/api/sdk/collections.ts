@@ -19,10 +19,10 @@ import { Subsystem } from "@/types"
 const Logger = getLogger(Subsystem.Server)
 
 /**
- * Resolves the provider's external workspace ID and email to internal integer IDs
+ * Resolves the SDK user's external workspace ID and email to internal integer IDs
  * needed by the collections/collection_items tables.
  */
-async function resolveProviderIdentity(c: Context): Promise<{
+async function resolveSdkIdentity(c: Context): Promise<{
   workspaceId: number
   userId: number
   workspaceExternalId: string
@@ -125,11 +125,11 @@ export async function resolveCollectionId(
 }
 
 /**
- * GET /api/provider/dashboard/collections
- * Lists all collections owned by the current provider user.
+ * GET /api/sdk/dashboard/collections
+ * Lists all collections owned by the current SDK user.
  */
-export const ListProviderCollectionsApi = async (c: Context) => {
-  const { userId } = await resolveProviderIdentity(c)
+export const ListSdkCollectionsApi = async (c: Context) => {
+  const { userId } = await resolveSdkIdentity(c)
 
   const results = await getCollectionsByOwner(db, userId)
 
@@ -147,12 +147,12 @@ export const ListProviderCollectionsApi = async (c: Context) => {
 }
 
 /**
- * POST /api/provider/dashboard/collections
- * Creates a new collection for the provider.
+ * POST /api/sdk/dashboard/collections
+ * Creates a new collection for the SDK user.
  */
-export const CreateProviderCollectionApi = async (c: Context) => {
+export const CreateSdkCollectionApi = async (c: Context) => {
   const { name, description } = c.req.valid("json" as never)
-  const { workspaceId, userId } = await resolveProviderIdentity(c)
+  const { workspaceId, userId } = await resolveSdkIdentity(c)
 
   const collection = await createCollection(db, {
     workspaceId,
@@ -186,12 +186,12 @@ export const CreateProviderCollectionApi = async (c: Context) => {
 }
 
 /**
- * DELETE /api/provider/dashboard/collections/:collectionId
+ * DELETE /api/sdk/dashboard/collections/:collectionId
  * Deletes a collection and all its items.
  */
-export const DeleteProviderCollectionApi = async (c: Context) => {
+export const DeleteSdkCollectionApi = async (c: Context) => {
   const collectionId = c.req.param("collectionId")
-  const { userId, userEmail } = await resolveProviderIdentity(c)
+  const { userId, userEmail } = await resolveSdkIdentity(c)
 
   // Verify collection exists and belongs to this user
   const collection = await getCollectionById(db, collectionId)
@@ -210,19 +210,19 @@ export const DeleteProviderCollectionApi = async (c: Context) => {
   }
 
   Logger.info(
-    `Provider deleted collection ${collectionId}: ${deletedCount} items, ${deletedFiles} files, ${deletedFolders} folders`,
+    `SDK deleted collection ${collectionId}: ${deletedCount} items, ${deletedFiles} files, ${deletedFolders} folders`,
   )
 
   return c.json({ success: true, deletedCount, deletedFiles, deletedFolders })
 }
 
 /**
- * GET /api/provider/dashboard/collections/:collectionId/items
+ * GET /api/sdk/dashboard/collections/:collectionId/items
  * Lists items in a collection (root level).
  */
-export const ListProviderCollectionItemsApi = async (c: Context) => {
+export const ListSdkCollectionItemsApi = async (c: Context) => {
   const collectionId = c.req.param("collectionId")
-  const { userId } = await resolveProviderIdentity(c)
+  const { userId } = await resolveSdkIdentity(c)
 
   const collection = await getCollectionById(db, collectionId)
   if (!collection) {

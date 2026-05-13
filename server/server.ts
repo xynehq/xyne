@@ -457,41 +457,41 @@ import {
 } from "@/health/type"
 import WebhookHandler from "@/services/WebhookHandler"
 import { preloadModelInfoCache } from "./ai/fetchModels"
-import { IssueProviderTokenApi } from "@/api/provider/token"
+import { IssueSdkTokenApi } from "@/api/sdk/token"
 import {
-  ProviderTokenMiddleware,
-} from "@/api/provider/middleware"
+  SdkTokenMiddleware,
+} from "@/api/sdk/middleware"
 import { cors } from "hono/cors"
-import { ProviderSearchApi } from "@/api/provider/search"
-import { ProviderChatApi, ProviderExplainApi } from "@/api/provider/chat"
-import { ProviderIngestApi, ProviderFileUploadApi, ProviderSyncApi } from "@/api/provider/documents"
-import { ProviderSignupApi, ProviderLoginApi } from "@/api/provider/auth"
+import { SdkSearchApi } from "@/api/sdk/search"
+import { SdkChatApi, SdkExplainApi } from "@/api/sdk/chat"
+import { SdkIngestApi, SdkFileUploadApi, SdkSyncApi } from "@/api/sdk/documents"
+import { SdkSignupApi, SdkLoginApi } from "@/api/sdk/auth"
 import {
-  ProviderMeApi,
-  GetProviderConfigApi,
-  UpdateProviderConfigApi,
-  ListProviderApiKeysApi,
-  CreateProviderApiKeyApi,
-  DeleteProviderApiKeyApi,
-} from "@/api/provider/manage"
+  SdkMeApi,
+  GetSdkConfigApi,
+  UpdateSdkConfigApi,
+  ListSdkApiKeysApi,
+  CreateSdkApiKeyApi,
+  DeleteSdkApiKeyApi,
+} from "@/api/sdk/manage"
 import {
-  ListProviderCollectionsApi,
-  CreateProviderCollectionApi,
-  DeleteProviderCollectionApi,
-  ListProviderCollectionItemsApi,
-} from "@/api/provider/collections"
+  ListSdkCollectionsApi,
+  CreateSdkCollectionApi,
+  DeleteSdkCollectionApi,
+  ListSdkCollectionItemsApi,
+} from "@/api/sdk/collections"
 import {
   issueTokenSchema,
-  providerSearchSchema,
-  providerChatSchema,
-  providerExplainSchema,
-  providerIngestSchema,
-  providerSyncSchema,
-  providerSignupSchema,
-  providerLoginSchema,
-  updateProviderConfigSchema,
-  createProviderCollectionSchema,
-} from "@/api/provider/types"
+  sdkSearchSchema,
+  sdkChatSchema,
+  sdkExplainSchema,
+  sdkIngestSchema,
+  sdkSyncSchema,
+  sdkSignupSchema,
+  sdkLoginSchema,
+  updateSdkConfigSchema,
+  createSdkCollectionSchema,
+} from "@/api/sdk/types"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
@@ -2476,15 +2476,15 @@ app
   .delete("/cl/:clId/items/:itemId", DeleteItemApi) // Delete Item in KB by ID
   .post("/cl/poll-status", PollCollectionsStatusApi) // Poll collection items status
 
-// Provider token issuance (API key protected — provider's backend calls this)
+// SDK token issuance (API key protected — SDK backend calls this)
 app
-  .basePath("/api/provider/auth")
+  .basePath("/api/sdk/auth")
   .use("*", ApiKeyMiddleware)
-  .post("/token", zValidator("json", issueTokenSchema), IssueProviderTokenApi)
+  .post("/token", zValidator("json", issueTokenSchema), IssueSdkTokenApi)
 
-// Provider user-facing endpoints (provider token protected — external user calls these)
+// SDK user-facing endpoints (SDK token protected — external user calls these)
 app
-  .basePath("/api/provider")
+  .basePath("/api/sdk")
   .use("*", cors({
     origin: (origin) => origin,
     allowHeaders: ["Authorization", "Content-Type"],
@@ -2492,42 +2492,42 @@ app
     credentials: true,
     maxAge: 86400,
   }))
-  .post("/search", ProviderTokenMiddleware, zValidator("json", providerSearchSchema), ProviderSearchApi)
-  .post("/chat", ProviderTokenMiddleware, zValidator("json", providerChatSchema), ProviderChatApi)
-  .post("/explain", ProviderTokenMiddleware, zValidator("json", providerExplainSchema), ProviderExplainApi)
+  .post("/search", SdkTokenMiddleware, zValidator("json", sdkSearchSchema), SdkSearchApi)
+  .post("/chat", SdkTokenMiddleware, zValidator("json", sdkChatSchema), SdkChatApi)
+  .post("/explain", SdkTokenMiddleware, zValidator("json", sdkExplainSchema), SdkExplainApi)
 
-// Provider management (API key protected — provider's backend pushes docs)
+// SDK management (API key protected — SDK backend pushes docs)
 app
-  .basePath("/api/provider/manage")
+  .basePath("/api/sdk/manage")
   .use("*", ApiKeyMiddleware)
   .post(
     "/documents",
-    zValidator("json", providerIngestSchema),
-    ProviderIngestApi,
+    zValidator("json", sdkIngestSchema),
+    SdkIngestApi,
   )
-  .post("/documents/upload", ProviderFileUploadApi)
-  .get("/collections", ListProviderCollectionsApi)
+  .post("/documents/upload", SdkFileUploadApi)
+  .get("/collections", ListSdkCollectionsApi)
   .post(
     "/collections",
-    zValidator("json", createProviderCollectionSchema),
-    CreateProviderCollectionApi,
+    zValidator("json", createSdkCollectionSchema),
+    CreateSdkCollectionApi,
   )
-  .delete("/collections/:collectionId", DeleteProviderCollectionApi)
-  .get("/collections/:collectionId/items", ListProviderCollectionItemsApi)
+  .delete("/collections/:collectionId", DeleteSdkCollectionApi)
+  .get("/collections/:collectionId/items", ListSdkCollectionItemsApi)
   .post(
     "/sync",
-    zValidator("json", providerSyncSchema),
-    ProviderSyncApi,
+    zValidator("json", sdkSyncSchema),
+    SdkSyncApi,
   )
 
-// Provider dashboard auth (public — no middleware)
+// SDK dashboard auth (public — no middleware)
 app
-  .basePath("/api/provider/dashboard/auth")
-  .post("/signup", zValidator("json", providerSignupSchema), ProviderSignupApi)
-  .post("/login", zValidator("json", providerLoginSchema), ProviderLoginApi)
+  .basePath("/api/sdk/dashboard/auth")
+  .post("/signup", zValidator("json", sdkSignupSchema), SdkSignupApi)
+  .post("/login", zValidator("json", sdkLoginSchema), SdkLoginApi)
 
-// Provider dashboard management (JWT auth via Bearer token + Provider role check)
-const ProviderDashboardAuthMiddleware = async (c: Context, next: Next) => {
+// SDK dashboard management (JWT auth via Bearer token + Sdk role check)
+const SdkDashboardAuthMiddleware = async (c: Context, next: Next) => {
   const authHeader = c.req.header("Authorization")
   if (!authHeader?.startsWith("Bearer ")) {
     throw new HTTPException(401, { message: "Missing Bearer token" })
@@ -2542,45 +2542,45 @@ const ProviderDashboardAuthMiddleware = async (c: Context, next: Next) => {
   await next()
 }
 
-const requireProvider = async (c: Context, next: Next) => {
+const requireSdk = async (c: Context, next: Next) => {
   const payload = c.get("jwtPayload")
-  if (payload?.role !== UserRole.Provider) {
-    throw new HTTPException(403, { message: "Provider access only" })
+  if (payload?.role !== UserRole.Sdk) {
+    throw new HTTPException(403, { message: "SDK access only" })
   }
   await next()
 }
 
-const providerDashboardAuth = [ProviderDashboardAuthMiddleware, requireProvider] as const
+const sdkDashboardAuth = [SdkDashboardAuthMiddleware, requireSdk] as const
 
 app
-  .basePath("/api/provider/dashboard")
-  .get("/me", ...providerDashboardAuth, ProviderMeApi)
+  .basePath("/api/sdk/dashboard")
+  .get("/me", ...sdkDashboardAuth, SdkMeApi)
   .post(
     "/documents",
-    ...providerDashboardAuth,
-    zValidator("json", providerIngestSchema),
-    ProviderIngestApi,
+    ...sdkDashboardAuth,
+    zValidator("json", sdkIngestSchema),
+    SdkIngestApi,
   )
-  .post("/documents/upload", ...providerDashboardAuth, ProviderFileUploadApi)
-  .get("/api-keys", ...providerDashboardAuth, ListProviderApiKeysApi)
-  .post("/api-keys", ...providerDashboardAuth, CreateProviderApiKeyApi)
-  .delete("/api-keys/:id", ...providerDashboardAuth, DeleteProviderApiKeyApi)
-  .get("/config", ...providerDashboardAuth, GetProviderConfigApi)
+  .post("/documents/upload", ...sdkDashboardAuth, SdkFileUploadApi)
+  .get("/api-keys", ...sdkDashboardAuth, ListSdkApiKeysApi)
+  .post("/api-keys", ...sdkDashboardAuth, CreateSdkApiKeyApi)
+  .delete("/api-keys/:id", ...sdkDashboardAuth, DeleteSdkApiKeyApi)
+  .get("/config", ...sdkDashboardAuth, GetSdkConfigApi)
   .put(
     "/config",
-    ...providerDashboardAuth,
-    zValidator("json", updateProviderConfigSchema),
-    UpdateProviderConfigApi,
+    ...sdkDashboardAuth,
+    zValidator("json", updateSdkConfigSchema),
+    UpdateSdkConfigApi,
   )
-  .get("/collections", ...providerDashboardAuth, ListProviderCollectionsApi)
+  .get("/collections", ...sdkDashboardAuth, ListSdkCollectionsApi)
   .post(
     "/collections",
-    ...providerDashboardAuth,
-    zValidator("json", createProviderCollectionSchema),
-    CreateProviderCollectionApi,
+    ...sdkDashboardAuth,
+    zValidator("json", createSdkCollectionSchema),
+    CreateSdkCollectionApi,
   )
-  .delete("/collections/:collectionId", ...providerDashboardAuth, DeleteProviderCollectionApi)
-  .get("/collections/:collectionId/items", ...providerDashboardAuth, ListProviderCollectionItemsApi)
+  .delete("/collections/:collectionId", ...sdkDashboardAuth, DeleteSdkCollectionApi)
+  .get("/collections/:collectionId/items", ...sdkDashboardAuth, ListSdkCollectionItemsApi)
 
 // Proxy function to forward ingestion API calls to sync server
 const proxyToSyncServer = async (

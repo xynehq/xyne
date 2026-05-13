@@ -12,15 +12,15 @@ import { encryptedText } from "../customType"
 import { Encryption } from "@/utils/encryption"
 import { workspaces } from "./workspaces"
 
-const providerEncryption = new Encryption(process.env.ENCRYPTION_KEY!)
+const sdkEncryption = new Encryption(process.env.ENCRYPTION_KEY!)
 
-export const providerConfigs = pgTable("provider_configs", {
+export const sdkConfigs = pgTable("sdk_configs", {
   id: serial("id").primaryKey(),
   workspaceId: text("workspace_id")
     .references(() => workspaces.externalId, { onDelete: "cascade" })
     .unique()
     .notNull(),
-  tokenSecret: encryptedText(providerEncryption)("token_secret").notNull(),
+  tokenSecret: encryptedText(sdkEncryption)("token_secret").notNull(),
   tokenExpirySeconds: integer("token_expiry_seconds").default(3600).notNull(),
   allowedOrigins: jsonb("allowed_origins")
     .default(sql`'[]'::jsonb`)
@@ -31,5 +31,5 @@ export const providerConfigs = pgTable("provider_configs", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
 
-export type ProviderConfig = typeof providerConfigs.$inferSelect
-export type NewProviderConfig = typeof providerConfigs.$inferInsert
+export type SdkConfig = typeof sdkConfigs.$inferSelect
+export type NewSdkConfig = typeof sdkConfigs.$inferInsert

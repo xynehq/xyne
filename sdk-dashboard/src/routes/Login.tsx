@@ -38,7 +38,7 @@ export function Login() {
         <Card>
           <CardHeader className="text-center">
             <CardTitle className="text-xl">Welcome back</CardTitle>
-            <CardDescription>Sign in to your provider account</CardDescription>
+            <CardDescription>Sign in to your SDK account</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">

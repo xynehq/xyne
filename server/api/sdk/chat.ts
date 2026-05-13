@@ -20,8 +20,8 @@ import config from "@/config"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { makeXyneGenericJAFProvider } from "@/api/chat/jaf-generic-provider"
-import { buildVisibilityFilter } from "@/api/provider/search"
-import { resolveCollectionId, resolveWorkspaceCreator } from "@/api/provider/collections"
+import { buildVisibilityFilter } from "@/api/sdk/search"
+import { resolveCollectionId, resolveWorkspaceCreator } from "@/api/sdk/collections"
 
 const Logger = getLogger(Subsystem.Server)
 
@@ -35,7 +35,7 @@ function sseEvent(evt: Record<string, unknown>): { data: string } {
 // In-memory session store for multi-turn chat
 // ---------------------------------------------------------------------------
 
-type ProviderAgentContext = {
+type SdkAgentContext = {
   createdBy: string
   collectionId?: string
   isAuthenticated: boolean
@@ -112,7 +112,7 @@ async function searchWithAccessTags(
   if (!response.ok) {
     Logger.error(
       { status: response.status },
-      "Vespa search failed in provider chat",
+      "Vespa search failed in SDK chat",
     )
     return []
   }
@@ -149,7 +149,7 @@ type SearchDocumentsParams = z.infer<typeof searchDocumentsSchema>
 
 const searchDocumentsTool: Tool<
   SearchDocumentsParams,
-  ProviderAgentContext
+  SdkAgentContext
 > = {
   schema: {
     name: "searchDocuments",
@@ -159,7 +159,7 @@ const searchDocumentsTool: Tool<
   },
   async execute(
     params: SearchDocumentsParams,
-    context: ProviderAgentContext,
+    context: SdkAgentContext,
   ) {
     try {
       const results = await searchWithAccessTags(
@@ -197,7 +197,7 @@ const searchDocumentsTool: Tool<
 // Shared JAF agent runner — maps TraceEvents → SSE
 // ---------------------------------------------------------------------------
 
-async function runProviderAgent(
+async function runSdkAgent(
   stream: SSEStreamingApi,
   agentName: string,
   instructions: string,
@@ -208,7 +208,7 @@ async function runProviderAgent(
   accessTags: string[],
   sessionId: string,
 ): Promise<void> {
-  const agent: JAFAgent<ProviderAgentContext, string> = {
+  const agent: JAFAgent<SdkAgentContext, string> = {
     name: agentName,
     instructions: () => instructions,
     tools: [searchDocumentsTool],
@@ -216,7 +216,7 @@ async function runProviderAgent(
   }
 
   const agentRegistry = new Map([[agent.name, agent]])
-  const modelProvider = makeXyneGenericJAFProvider<ProviderAgentContext>()
+  const modelProvider = makeXyneGenericJAFProvider<SdkAgentContext>()
 
   // Load previous messages for multi-turn, append new user message
   const previousMessages = getSessionMessages(sessionId)
@@ -225,7 +225,7 @@ async function runProviderAgent(
     { role: "user" as const, content: [{ type: "text" as const, text: userMessage }] },
   ]
 
-  const runState: JAFRunState<ProviderAgentContext> = {
+  const runState: JAFRunState<SdkAgentContext> = {
     runId: generateRunId(),
     traceId: generateTraceId(),
     messages: allMessages,
@@ -234,7 +234,7 @@ async function runProviderAgent(
     turnCount: 0,
   }
 
-  const runCfg: JAFRunConfig<ProviderAgentContext> = {
+  const runCfg: JAFRunConfig<SdkAgentContext> = {
     agentRegistry,
     modelProvider,
     maxTurns: 6,
@@ -243,7 +243,7 @@ async function runProviderAgent(
   let assistantText = ""
   let emittedTextLength = 0 // track how much text we've already sent
 
-  for await (const evt of runStream<ProviderAgentContext, string>(
+  for await (const evt of runStream<SdkAgentContext, string>(
     runState,
     runCfg,
   )) {
@@ -284,10 +284,10 @@ async function runProviderAgent(
 }
 
 // ---------------------------------------------------------------------------
-// Provider Chat API
+// SDK Chat API
 // ---------------------------------------------------------------------------
 
-export const ProviderChatApi = async (c: Context) => {
+export const SdkChatApi = async (c: Context) => {
   const { query, session_id, collection: collectionName } = c.req.valid("json" as never)
   const workspaceId = c.get("workspaceId") as string
   const accessTags = (c.get("accessTags") as string[]) ?? []
@@ -299,13 +299,13 @@ export const ProviderChatApi = async (c: Context) => {
   const collectionUuid = await resolveCollectionId(workspaceId, collectionName as string | undefined)
 
   const resolvedSessionId =
-    (session_id as string) ?? `provider-${Date.now()}`
+    (session_id as string) ?? `sdk-${Date.now()}`
 
   return streamSSE(c, async (stream) => {
     try {
-      await runProviderAgent(
+      await runSdkAgent(
         stream,
-        "provider-chat",
+        "sdk-chat",
         `You are an internal AI assistant with deep knowledge of this organization. ` +
           `You have access to internal memory — use the searchDocuments tool to recall relevant information before answering, but never mention that you are searching, looking up documents, or consulting any external source. ` +
           `Respond naturally as if the information is something you already know. ` +
@@ -328,7 +328,7 @@ export const ProviderChatApi = async (c: Context) => {
       await stream.writeSSE(sseEvent({ type: "session_id", sessionId: resolvedSessionId }))
       await stream.writeSSE(sseEvent({ type: "done" }))
     } catch (error) {
-      Logger.error(error, "Provider chat streaming error")
+      Logger.error(error, "SDK chat streaming error")
       await stream.writeSSE(sseEvent({ type: "error", content: "An error occurred while processing your request" }))
       await stream.writeSSE(sseEvent({ type: "done" }))
     }
@@ -336,10 +336,10 @@ export const ProviderChatApi = async (c: Context) => {
 }
 
 // ---------------------------------------------------------------------------
-// Provider Explain API
+// SDK Explain API
 // ---------------------------------------------------------------------------
 
-export const ProviderExplainApi = async (c: Context) => {
+export const SdkExplainApi = async (c: Context) => {
   const { text, collection: collectionName } = c.req.valid("json" as never)
   const workspaceId = c.get("workspaceId") as string
   const accessTags = (c.get("accessTags") as string[]) ?? []
@@ -352,9 +352,9 @@ export const ProviderExplainApi = async (c: Context) => {
 
   return streamSSE(c, async (stream) => {
     try {
-      await runProviderAgent(
+      await runSdkAgent(
         stream,
-        "provider-explain",
+        "sdk-explain",
         `You are an internal AI assistant with deep knowledge of this organization. ` +
           `The user has selected some text and wants it explained. ` +
           `Use the searchDocuments tool to recall any related context, but never mention that you are searching, looking up documents, or consulting any source. ` +
@@ -372,7 +372,7 @@ export const ProviderExplainApi = async (c: Context) => {
 
       await stream.writeSSE(sseEvent({ type: "done" }))
     } catch (error) {
-      Logger.error(error, "Provider explain streaming error")
+      Logger.error(error, "SDK explain streaming error")
       await stream.writeSSE(sseEvent({ type: "error", content: "An error occurred" }))
       await stream.writeSSE(sseEvent({ type: "done" }))
     }

@@ -1,7 +1,7 @@
-const BASE_URL = "/api/provider/dashboard"
+const BASE_URL = "/api/sdk/dashboard"
 
 function getToken(): string | null {
-  return localStorage.getItem("provider_token")
+  return localStorage.getItem("sdk_token")
 }
 
 async function request<T>(
@@ -23,7 +23,7 @@ async function request<T>(
   })
 
   if (res.status === 401) {
-    localStorage.removeItem("provider_token")
+    localStorage.removeItem("sdk_token")
     window.location.href = "/login"
     throw new Error("Unauthorized")
   }
@@ -149,7 +149,7 @@ export async function uploadFiles(data: {
   })
 
   if (res.status === 401) {
-    localStorage.removeItem("provider_token")
+    localStorage.removeItem("sdk_token")
     window.location.href = "/login"
     throw new Error("Unauthorized")
   }

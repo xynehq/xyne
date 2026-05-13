@@ -29,7 +29,7 @@ import {
 import { mkdir, writeFile, unlink } from "fs/promises"
 import { dirname } from "path"
 import * as crypto from "crypto"
-import { resolveCollectionId } from "@/api/provider/collections"
+import { resolveCollectionId } from "@/api/sdk/collections"
 
 const Logger = getLogger(Subsystem.Server)
 
@@ -144,7 +144,7 @@ async function upsertTextDocument(
       buffer.length,
       checksum,
       {
-        source: "provider",
+        source: "sdk",
         visibility: doc.visibility ?? "public",
         access_tags: doc.access_tags ?? [],
         source_url: doc.source_url,
@@ -166,14 +166,14 @@ async function upsertTextDocument(
 }
 
 /**
- * POST /api/provider/manage/documents
- * POST /api/provider/dashboard/documents
+ * POST /api/sdk/manage/documents
+ * POST /api/sdk/dashboard/documents
  *
  * Ingests text documents into a collection using the async DB+queue pattern.
  * Supports upsert: if a file with the same name exists, it is replaced.
  * If doc_id is provided, it is used as the vespaDocId for deterministic Vespa upsert.
  */
-export const ProviderIngestApi = async (c: Context) => {
+export const SdkIngestApi = async (c: Context) => {
   const { collection_id, documents } = c.req.valid("json" as never)
   const workspaceExternalId = resolveWorkspaceId(c)
   const userEmail = resolveUserEmail(c)
@@ -200,18 +200,18 @@ export const ProviderIngestApi = async (c: Context) => {
     return c.json({ collection_id, documents: results, total: results.length })
   } catch (error) {
     if (error instanceof HTTPException) throw error
-    Logger.error(error, "Provider document ingestion failed")
+    Logger.error(error, "SDK document ingestion failed")
     throw new HTTPException(500, { message: "Document ingestion failed" })
   }
 }
 
 /**
- * POST /api/provider/manage/documents/upload
- * POST /api/provider/dashboard/documents/upload
+ * POST /api/sdk/manage/documents/upload
+ * POST /api/sdk/dashboard/documents/upload
  *
  * Uploads files into a collection using the async DB+queue pattern.
  */
-export const ProviderFileUploadApi = async (c: Context) => {
+export const SdkFileUploadApi = async (c: Context) => {
   const workspaceExternalId = resolveWorkspaceId(c)
   const userEmail = resolveUserEmail(c)
   const userId = await resolveUserId(userEmail)
@@ -283,7 +283,7 @@ export const ProviderFileUploadApi = async (c: Context) => {
           file.size,
           checksum,
           {
-            source: "provider",
+            source: "sdk",
             originalFileName: file.name,
           },
           userId,
@@ -322,13 +322,13 @@ export const ProviderFileUploadApi = async (c: Context) => {
     })
   } catch (error) {
     if (error instanceof HTTPException) throw error
-    Logger.error(error, "Provider file upload ingestion failed")
+    Logger.error(error, "SDK file upload ingestion failed")
     throw new HTTPException(500, { message: "File ingestion failed" })
   }
 }
 
 /**
- * POST /api/provider/manage/collections/:collectionId/sync
+ * POST /api/sdk/manage/sync
  *
  * Full sync for a collection from an external source (e.g. docs site sync script).
  * 1. Upserts all provided documents (using doc_id as deterministic vespaDocId)
@@ -336,7 +336,7 @@ export const ProviderFileUploadApi = async (c: Context) => {
  *
  * Documents uploaded via the dashboard (different source) are never touched.
  */
-export const ProviderSyncApi = async (c: Context) => {
+export const SdkSyncApi = async (c: Context) => {
   const { collection: collectionName, source, documents } = c.req.valid("json" as never) as {
     collection: string
     source: string
@@ -426,7 +426,7 @@ export const ProviderSyncApi = async (c: Context) => {
     })
   } catch (error) {
     if (error instanceof HTTPException) throw error
-    Logger.error(error, "Provider sync failed")
+    Logger.error(error, "SDK sync failed")
     throw new HTTPException(500, { message: "Sync failed" })
   }
 }

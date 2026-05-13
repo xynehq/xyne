@@ -60,7 +60,7 @@ function ApiKeysSection() {
         <div>
           <CardTitle className="text-base">API Keys</CardTitle>
           <CardDescription className="mt-1">
-            Use API keys to authenticate your backend with the provider API.
+            Use API keys to authenticate your backend with the SDK API.
           </CardDescription>
         </div>
         <Button
@@ -211,7 +211,7 @@ function ConfigSection() {
       <CardHeader>
         <CardTitle className="text-base">Configuration</CardTitle>
         <CardDescription>
-          Token settings and CORS configuration for your provider.
+          Token settings and CORS configuration for your SDK.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -226,7 +226,7 @@ function ConfigSection() {
             className="w-48"
           />
           <p className="text-xs text-muted-foreground">
-            How long provider tokens last (300–86400 seconds)
+            How long SDK tokens last (300–86400 seconds)
           </p>
         </div>
 
@@ -266,7 +266,7 @@ function ConfigSection() {
             </div>
           )}
           <p className="text-xs text-muted-foreground">
-            Origins allowed to make requests with provider tokens (CORS)
+            Origins allowed to make requests with SDK tokens (CORS)
           </p>
         </div>
 

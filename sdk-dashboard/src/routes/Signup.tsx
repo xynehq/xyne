@@ -40,7 +40,7 @@ export function Signup() {
         <Card>
           <CardHeader className="text-center">
             <CardTitle className="text-xl">Create your account</CardTitle>
-            <CardDescription>Get started with Xyne Provider</CardDescription>
+            <CardDescription>Get started with Xyne SDK</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
