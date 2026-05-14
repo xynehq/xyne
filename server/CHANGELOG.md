@@ -1,3 +1,10 @@
+# [3.59.0](https://github.com/xynehq/xyne/compare/v3.58.1...v3.59.0) (2026-05-14)
+
+
+### Features
+
+* **agentic:** Migrate JAF to pi-mono ([#1307](https://github.com/xynehq/xyne/issues/1307)) ([353042a](https://github.com/xynehq/xyne/commit/353042ac21d9d9bcaa54d66b575ca551fb6a2416))
+
 ## [3.58.1](https://github.com/xynehq/xyne/compare/v3.58.0...v3.58.1) (2026-05-11)
 
 
