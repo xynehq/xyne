@@ -8,7 +8,11 @@ import { streamSSE } from "hono/streaming"
 
 import { SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent"
 
-import { getModelValueFromLabel, getModelConfiguration } from "@/ai/modelConfig"
+import {
+  getModelValueFromLabel,
+  getModelConfiguration,
+  getActualNameFromEnum,
+} from "@/ai/modelConfig"
 import { AIProviders } from "@/ai/types"
 import {
   type ReasoningEmitter,
@@ -161,17 +165,14 @@ export async function AgenticRAG(c: Context): Promise<Response> {
         { email, modelId, requestedModelLabel },
         "Model configuration not found for resolved model ID",
       )
-      throw new HTTPException(400, {
-        message: `Model configuration error: '${modelId}' is not properly configured. Please contact your administrator.`,
-      })
     }
 
     // TODO: add multi provider support
-    if (modelConfig.provider !== AIProviders.LiteLLM) {
-      throw new HTTPException(400, {
-        message: `Agentic mode requires LiteLLM models. Selected model '${modelId}' uses ${modelConfig.provider} provider.`,
-      })
-    }
+    // if (modelConfig.provider !== AIProviders.LiteLLM) {
+    //   throw new HTTPException(400, {
+    //     message: `Agentic mode requires LiteLLM models. Selected model '${modelId}' uses ${modelConfig.provider} provider.`,
+    //   })
+    // }
 
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -419,8 +420,11 @@ export async function AgenticRAG(c: Context): Promise<Response> {
           keepRecentTokens: 50000, // Keep more recent context
         }
 
+        // TODO: handle model configuration based on provider
+        const llmModelName = getActualNameFromEnum(modelId) || modelId
+
         agent = await createRAGAgent<XyneAgentState>({
-          model: modelId,
+          model: llmModelName,
           baseUrl,
           apiKey,
           tools: availableTools,
