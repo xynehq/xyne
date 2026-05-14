@@ -200,8 +200,6 @@ function validateTextItem(item: any): boolean {
   )
 }
 
-
-
 /**
  * Process collected paragraphs into chunks and add to results
  * Returns the overlap text to maintain continuity across images
@@ -240,9 +238,7 @@ function processTextParagraphs(
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i]
-    text_chunks.push(chunk)
-    text_chunk_pos.push(globalSeq.value)
-    
+
     // Determine page numbers for this chunk
     let page_numbers: number[]
     if (i === 0 && hasPrevPageOverlap) {
@@ -252,14 +248,19 @@ function processTextParagraphs(
       // Regular chunk on current page
       page_numbers = [pageNum - 1]
     }
-    
+    const pageLabel =
+      page_numbers.length > 1
+        ? `[Page ${page_numbers[0] + 1}-${page_numbers[page_numbers.length - 1] + 1}]`
+        : `[Page ${page_numbers[0] + 1}]`
+    text_chunks.push(`${pageLabel} ${chunk}`)
+    text_chunk_pos.push(globalSeq.value)
     // Add chunk metadata
     text_chunks_map.push({
       chunk_index: globalSeq.value,
       page_numbers: page_numbers,
       block_labels: ["text"], // Default label for PDF text chunks
     })
-    
+
     // console.log('TEXT DEBUG: Added chunk at position', globalSeq.value, 'content:', chunk)
     globalSeq.value++
   }
@@ -295,6 +296,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
   docid: string = crypto.randomUUID(),
   extractImages: boolean = false,
   describeImages: boolean = true,
+  documentOutline?: string,
 ): Promise<{
   text_chunks: string[]
   image_chunks: string[]
@@ -302,6 +304,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
   image_chunk_pos: number[]
   text_chunks_map: ChunkMetadata[]
   image_chunks_map: ChunkMetadata[]
+  documentOutline?: string
 }> {
   Logger.debug("Starting processing with parameters", {
     docid,
@@ -375,10 +378,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
         await fsPromises.mkdir(outputDir, { recursive: true })
         const imageFilename = `${globalSeq.value}.${type.ext || "png"}`
         imagePath = path.join(outputDir, imageFilename)
-        await fsPromises.writeFile(
-          imagePath,
-          buffer as NodeJS.ArrayBufferView,
-        )
+        await fsPromises.writeFile(imagePath, buffer as NodeJS.ArrayBufferView)
         Logger.info(
           savedLogLabel
             ? `Saved image (${savedLogLabel}) to: ${imagePath}`
@@ -391,12 +391,11 @@ export async function extractTextAndImagesWithChunksFromPDF(
         return false
       }
 
-      const description =
-        imageDescribeBatch.registerImagePathForLaterDescribe(
-          imageHash,
-          path.resolve(imagePath),
-          describeImages,
-        )
+      const description = imageDescribeBatch.registerImagePathForLaterDescribe(
+        imageHash,
+        path.resolve(imagePath),
+        describeImages,
+      )
 
       image_chunks.push(description)
       image_chunk_pos.push(globalSeq.value)
@@ -476,8 +475,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
       return paragraphs.filter((p) => p.trim().length > 0)
     }
 
-
-
     for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
       Logger.debug(`Processing page ${pageNum}`)
 
@@ -487,8 +484,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
 
         // Use textContent-based paragraphs for this page as primary source
         let paragraphs: string[] = await buildParagraphsFromPage(page)
-
-        
 
         let textOperatorCount = (await page.getTextContent()).items.length
 
@@ -507,7 +502,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
         Logger.debug("Text extraction summary for page", {
           pageNum,
           primaryParagraphs: paragraphs.length,
-         
+
           finalParagraphs: paragraphs.length,
           textOperatorCount,
           initialPageOverlap: pageOverlap,
@@ -832,9 +827,8 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     } else {
                       const cnv = createCanvas(width, height)
                       const cctx = cnv.getContext("2d")
-                      
+
                       try {
-                        
                         // @ts-ignore draw directly
                         cctx.drawImage(imgLike, 0, 0)
                         const buffer = cnv.toBuffer("image/png")
@@ -1203,6 +1197,85 @@ export async function extractTextAndImagesWithChunksFromPDF(
     )
 
     Logger.debug("PDF processing completed for document", { docid })
+    let documentOutline: string | undefined = undefined
+    try {
+      const outline = await pdfDocument.getOutline()
+      if (outline && outline.length > 0) {
+        // Resolve a single outline item's destination to a 1-based page number
+        const resolvePageNumber = async (
+          item: any,
+        ): Promise<number | undefined> => {
+          try {
+            let dest = item.dest
+            if (!dest) return undefined
+            // Named destination (string) → resolve to explicit destination array
+            if (typeof dest === "string") {
+              dest = await pdfDocument.getDestination(dest)
+            }
+            if (Array.isArray(dest) && dest.length > 0) {
+              const pageRef = dest[0]
+              if (pageRef && typeof pageRef === "object" && "num" in pageRef) {
+                const pageIndex = await pdfDocument.getPageIndex(pageRef)
+                return pageIndex + 1 // 0-indexed → 1-based
+              }
+            }
+          } catch {
+            // Silently ignore resolution failures for individual items
+          }
+          return undefined
+        }
+
+        const formatOutline = async (
+          items: any[],
+          depth = 0,
+        ): Promise<string> => {
+          let result = ""
+          for (const item of items) {
+            const pageNum = await resolvePageNumber(item)
+            const pageSuffix = pageNum != null ? ` (Page ${pageNum})` : ""
+            result += "  ".repeat(depth) + "- " + item.title + pageSuffix + "\n"
+            if (item.items && item.items.length > 0) {
+              result += await formatOutline(item.items, depth + 1)
+            }
+          }
+          return result
+        }
+        documentOutline = await formatOutline(outline)
+        Logger.debug("Successfully extracted document outline natively.")
+      }
+    } catch (err) {
+      Logger.warn(
+        `Failed to extract document outline natively: ${(err as Error).message}`,
+      )
+    }
+
+    if (!documentOutline && text_chunks.length > 0) {
+      try {
+        Logger.info("Attempting to extract outline via LLM fallback...")
+        const { extractOutlineWithllm } = await import(
+          "./lib/extractOutlineWithLLM"
+        )
+        const joinedFrontMatter = text_chunks
+          .slice(0, Math.min(50, text_chunks.length))
+          .join("\n\n")
+        Logger.info(
+          `Passing ${joinedFrontMatter.slice(0, 50000).length} characters to extractOutlineWithllm`,
+        )
+        const llmOutline = await extractOutlineWithllm(
+          joinedFrontMatter.slice(0, 50000),
+        )
+        if (llmOutline) {
+          documentOutline = llmOutline
+          Logger.info("Successfully extracted outline via LLM.")
+        } else {
+          Logger.info("extractOutlineWithllm returned undefined or empty")
+        }
+      } catch (err) {
+        Logger.warn(
+          `Failed to extract outline via LLM: ${(err as Error).message}`,
+        )
+      }
+    }
     Logger.debug("Processing summary", {
       totalTextChunks: text_chunks.length,
       totalImageChunks: image_chunks.length,
@@ -1225,6 +1298,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
       image_chunk_pos,
       text_chunks_map,
       image_chunks_map,
+      documentOutline,
     }
   } finally {
     if (extractImages) {

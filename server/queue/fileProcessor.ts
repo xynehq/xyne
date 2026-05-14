@@ -407,6 +407,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
           mapChunkMeta(meta, false),
         ),
         pageTitle: pageTitle,
+        documentOutline: processingResult.documentOutline,
         metadata: JSON.stringify(
           mergeCollectionItemMetadata(file.metadata, {
             originalFileName: file.originalName || file.fileName,

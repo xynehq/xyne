@@ -111,8 +111,13 @@ const allowSonnet46 = process.env.ALLOW_SONNET_4_6 === "true"
 const allowOpus46 = process.env.ALLOW_OPUS_4_6 === "true"
 const allowHaiku45 = process.env.ALLOW_HAIKU_4_5 === "true"
 const useAgenticFiltering = process.env.USE_AGENTIC_FILTERING === "true"
+const enableJaf = process.env.ENABLE_JAF === "true"
 const modelList = process.env.MODELS_LIST
 const enableImages = process.env.ENABLE_IMAGES === "true"
+
+// Pi-mono sessions directory
+const piMonoSessionsDir =
+  process.env.PI_MONO_SESSIONS_DIR || "./data/pi-mono-sessions"
 // File processing worker configuration
 let fileProcessingWorkerThreads = parseInt(
   process.env.FILE_PROCESSING_WORKER_THREADS || "4",
@@ -130,6 +135,7 @@ let pdfFileProcessingTeamSize = parseInt(
   process.env.PDF_FILE_PROCESSING_TEAM_SIZE || "2",
   10,
 )
+let fastModelReasoning = false
 let slackHost = process.env.SLACK_HOST
 let VESPA_NAMESPACE = "my_content"
 let ragOffFeature = true
@@ -391,7 +397,7 @@ export default {
   ),
   vespaRetryDelay: parseInt(process.env.VESPA_RETRY_DELAY_MS || "1000", 10),
   chatHistoryPageSize: 21,
-  maxDefaultSummary: 10,
+  maxDefaultSummary: 6, // Reduced from 15 to limit context per document
   maxChunksPerTool: 50,
   maxChunksPerPage: 200,
   chatPageSize: 20, // default page size for ai search
@@ -399,6 +405,7 @@ export default {
   maxGoogleDriveSummary: 50,
   maxUserRequestCount: 15,
   isReasoning,
+  fastModelReasoning,
   StartThinkingToken,
   EndThinkingToken,
   JobExpiryHours: 23,
@@ -442,4 +449,6 @@ export default {
   ZohoOrgId,
   useAgenticFiltering,
   modelList,
+  piMonoSessionsDir,
+  enableJaf,
 }

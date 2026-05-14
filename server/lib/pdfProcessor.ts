@@ -91,6 +91,7 @@ export interface ProcessingResult {
   chunks_map: ChunkMetadata[]
   image_chunks_map: ChunkMetadata[]
   processingMethod?: PdfProcessingMethod
+  documentOutline?: string
 }
 
 export type ProcessingResultDraft = {
@@ -102,6 +103,7 @@ export type ProcessingResultDraft = {
   chunks_map?: ChunkMetadata[]
   image_chunks_map?: ChunkMetadata[]
   processingMethod?: PdfProcessingMethod
+  documentOutline?: string
 }
 
 export class PdfProcessor {
@@ -186,6 +188,7 @@ export class PdfProcessor {
       chunks_map,
       image_chunks_map,
       processingMethod: method,
+      documentOutline: payload.documentOutline,
     }
   }
 
@@ -249,6 +252,7 @@ export class PdfProcessor {
         image_chunks_pos: pdfJsResult.image_chunk_pos,
         chunks_map: pdfJsResult.text_chunks_map,
         image_chunks_map: pdfJsResult.image_chunks_map,
+        documentOutline: pdfJsResult.documentOutline,
       },
       PDF_PROCESSING_METHOD.PDFJS,
     )

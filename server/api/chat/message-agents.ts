@@ -2237,10 +2237,10 @@ export async function afterToolExecutionHook(
     // "documents to analyze", but for deep_document_agent it's a sequential
     // chunk reader. Avoid misleading "select the most useful" copy.
     if (toolName === XyneTools.readDocument) {
-      await emitReasoningEvent(
-        reasoningEmitter,
-        ReasoningSteps.chunksLoaded(rawDocuments.length),
-      )
+      // await emitReasoningEvent(
+      //   reasoningEmitter,
+      //   ReasoningSteps.chunksLoaded(rawDocuments.length),
+      // )
     } else {
       await emitReasoningEvent(
         reasoningEmitter,
