@@ -1,3 +1,10 @@
+# [3.60.0](https://github.com/xynehq/xyne/compare/v3.59.2...v3.60.0) (2026-05-14)
+
+
+### Features
+
+* **docling:** single /status check on POST timeout before retry ([#1341](https://github.com/xynehq/xyne/issues/1341)) ([4de74c1](https://github.com/xynehq/xyne/commit/4de74c1642496dc63c46c269522ec9a3140bb1d2))
+
 ## [3.59.2](https://github.com/xynehq/xyne/compare/v3.59.1...v3.59.2) (2026-05-14)
 
 
