@@ -25,6 +25,9 @@ import config from "@/config"
 import { insertChatTrace } from "@/db/chatTrace"
 import { db } from "@/db/client"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
+import { getAgentByExternalIdWithPermissionCheck } from "@/db/agent"
+import { isCuid } from "@paralleldrive/cuid2"
+import { DEFAULT_TEST_AGENT_ID } from "@/shared/types"
 import { getLogger } from "@/logger"
 import { ChatSSEvents, type ReasoningEventPayload } from "@/shared/types"
 import { getTracer } from "@/tracer"
@@ -73,16 +76,33 @@ export async function AgenticRAG(c: Context): Promise<Response> {
       message,
       chatId,
       selectedModelConfig,
+      agentId: rawAgentId,
     }: {
       message: string
       chatId?: string
       selectedModelConfig?: string
+      agentId?: string
     } = body
 
     if (!message)
       throw new HTTPException(400, { message: "Message is required" })
     message = safeDecodeURIComponent(message)
     rootSpan.setAttribute("message", message)
+
+    // ── Parse and validate agentId ─────────────────────────────────────
+    let normalizedAgentId =
+      typeof rawAgentId === "string" ? rawAgentId.trim() : undefined
+    if (normalizedAgentId === "") {
+      normalizedAgentId = undefined
+    }
+    if (normalizedAgentId === DEFAULT_TEST_AGENT_ID) {
+      normalizedAgentId = undefined
+    }
+    if (normalizedAgentId && !isCuid(normalizedAgentId)) {
+      throw new HTTPException(400, {
+        message: "Invalid agentId. Expected a valid CUID.",
+      })
+    }
 
     let modelId: string = config.defaultBestModel
     if (selectedModelConfig) {
@@ -111,6 +131,41 @@ export async function AgenticRAG(c: Context): Promise<Response> {
       externalId: String(userAndWorkspace.workspace.externalId),
     }
 
+    // ── Fetch agent record if agentId provided ─────────────────────────
+    let agentRecord: Awaited<
+      ReturnType<typeof getAgentByExternalIdWithPermissionCheck>
+    > | null = null
+    let resolvedAgentId: string | undefined
+    let agentPromptForLLM: string | undefined
+    let dedicatedAgentSystemPrompt: string | undefined
+
+    if (normalizedAgentId) {
+      agentRecord = await getAgentByExternalIdWithPermissionCheck(
+        db,
+        normalizedAgentId,
+        workspace.id,
+        user.id,
+      )
+      if (!agentRecord) {
+        throw new HTTPException(403, {
+          message:
+            "Access denied: You do not have permission to use this agent",
+        })
+      }
+      resolvedAgentId = String(agentRecord.externalId)
+      agentPromptForLLM = JSON.stringify(agentRecord)
+      dedicatedAgentSystemPrompt =
+        typeof agentRecord.prompt === "string" &&
+        agentRecord.prompt.trim().length > 0
+          ? agentRecord.prompt.trim()
+          : undefined
+      rootSpan.setAttribute("agentId", resolvedAgentId)
+      Logger.info(
+        { agentId: resolvedAgentId, agentName: agentRecord.name },
+        "[AgenticRAG] Using agent configuration",
+      )
+    }
+
     // Parse attachment metadata early
     const attachmentMetadata = parseAttachmentMetadata(c)
     const bootstrap = await bootstrapChat({
@@ -121,8 +176,42 @@ export async function AgenticRAG(c: Context): Promise<Response> {
       message,
       modelId,
       attachmentMetadata,
+      agentId: resolvedAgentId,
     })
     const { chat: chatRecord, attachmentError, userMessage } = bootstrap
+
+    // Validate that existing chat's agent matches the requested agent
+    const chatAgentId = chatRecord.agentId
+      ? String(chatRecord.agentId)
+      : undefined
+    if (resolvedAgentId && chatAgentId && chatAgentId !== resolvedAgentId) {
+      throw new HTTPException(400, {
+        message:
+          "This chat is already associated with a different agent. Please start a new chat for that agent.",
+      })
+    }
+    // If no agent was requested but chat has an agent, use the chat's agent
+    if (!resolvedAgentId && chatAgentId) {
+      agentRecord = await getAgentByExternalIdWithPermissionCheck(
+        db,
+        chatAgentId,
+        workspace.id,
+        user.id,
+      )
+      if (!agentRecord) {
+        throw new HTTPException(403, {
+          message:
+            "Access denied: You do not have permission to use the agent linked to this conversation",
+        })
+      }
+      resolvedAgentId = chatAgentId
+      agentPromptForLLM = JSON.stringify(agentRecord)
+      dedicatedAgentSystemPrompt =
+        typeof agentRecord.prompt === "string" &&
+        agentRecord.prompt.trim().length > 0
+          ? agentRecord.prompt.trim()
+          : undefined
+    }
 
     // Log attachment storage error if present
     if (attachmentError) {
@@ -195,6 +284,13 @@ export async function AgenticRAG(c: Context): Promise<Response> {
         )
         xyneState.modelId = modelId
         xyneState.delegationEnabled = false
+        // Set agent context for KB search scoping and custom prompts
+        if (agentPromptForLLM) {
+          xyneState.agentPrompt = agentPromptForLLM
+        }
+        if (dedicatedAgentSystemPrompt) {
+          xyneState.dedicatedAgentSystemPrompt = dedicatedAgentSystemPrompt
+        }
 
         // Process document and thread attachments
         if (documentFileIds.length > 0 || threadIds.length > 0) {
@@ -259,6 +355,14 @@ export async function AgenticRAG(c: Context): Promise<Response> {
           : `${config.LiteLLMBaseUrl}/v1`
 
         // ── Create RAG agent via core SDK ────────────────────────────
+        const contextWindow = 250000
+        const maxTokens = 32000
+        const compactionSettings = {
+          enabled: true,
+          reserveTokens: maxTokens + 8192, // Reserve space for response + buffer
+          keepRecentTokens: 50000, // Keep more recent context
+        }
+
         agent = await createRAGAgent<XyneAgentState>({
           model: modelId,
           baseUrl,
@@ -267,12 +371,12 @@ export async function AgenticRAG(c: Context): Promise<Response> {
           systemPrompt,
           sessionManager: SessionManager.open(sessionFilePath),
           settingsManager: SettingsManager.inMemory({
-            compaction: { enabled: true },
+            compaction: compactionSettings,
             retry: { enabled: true, maxRetries: 2 },
           }),
           modelOptions: {
-            contextWindow: 250000,
-            maxTokens: 32000,
+            contextWindow,
+            maxTokens,
             reasoning: true,
           },
           thinkingLevel: "low",

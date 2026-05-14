@@ -397,7 +397,7 @@ export default {
   ),
   vespaRetryDelay: parseInt(process.env.VESPA_RETRY_DELAY_MS || "1000", 10),
   chatHistoryPageSize: 21,
-  maxDefaultSummary: 15,
+  maxDefaultSummary: 6, // Reduced from 15 to limit context per document
   maxChunksPerTool: 50,
   maxChunksPerPage: 200,
   chatPageSize: 20, // default page size for ai search

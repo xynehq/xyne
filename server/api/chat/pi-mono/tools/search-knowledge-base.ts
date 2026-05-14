@@ -96,9 +96,9 @@ const searchKnowledgeBaseParams = Type.Object({
   limit: Type.Optional(
     Type.Number({
       minimum: 1,
-      maximum: 15,
+      maximum: 10,
       description:
-        "Maximum number of KB fragments to return (up to 15). Keep this tight for precision-first retrieval; raise it only when the user needs broader coverage.",
+        "Maximum number of KB fragments to return (up to 10). Keep this tight for precision-first retrieval; raise it only when the user needs broader coverage.",
     }),
   ),
   offset: Type.Optional(

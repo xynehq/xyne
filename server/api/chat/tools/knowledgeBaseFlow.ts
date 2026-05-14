@@ -282,7 +282,7 @@ const CollectionLsProjectionPayloadSchema = z.object({
       type: z.enum(["folder", "file"]),
       name: z.string(),
       path: z.string(),
-      vespa_doc_id: z.string().nullable(),
+      vespa_doc_id: z.string().nullish(),
     }),
   ),
   nodeIdByPath: z.record(z.string(), z.string()),

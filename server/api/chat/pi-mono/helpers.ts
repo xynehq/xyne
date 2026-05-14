@@ -270,6 +270,7 @@ export async function bootstrapChat(params: {
   message: string
   modelId?: string
   attachmentMetadata: AttachmentMetadata[]
+  agentId?: string
 }): Promise<{
   chat: SelectChat
   userMessage: SelectMessage
@@ -295,6 +296,7 @@ export async function bootstrapChat(params: {
         title: "Untitled",
         attachments: [],
         chatType: ChatType.Default,
+        ...(params.agentId ? { agentId: params.agentId } : {}),
       } as unknown as Omit<InsertChat, "externalId">
       const chat = await insertChat(tx, chatInsert)
 
