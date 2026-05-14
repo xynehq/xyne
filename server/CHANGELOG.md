@@ -1,3 +1,10 @@
+## [3.59.1](https://github.com/xynehq/xyne/compare/v3.59.0...v3.59.1) (2026-05-14)
+
+
+### Bug Fixes
+
+* **retrigger:** retrigger build ([595699c](https://github.com/xynehq/xyne/commit/595699cf8369ec4f597d16322b9d8dfbd11b6b97))
+
 # [3.59.0](https://github.com/xynehq/xyne/compare/v3.58.1...v3.59.0) (2026-05-14)
 
 
