@@ -1,3 +1,10 @@
+## [3.59.2](https://github.com/xynehq/xyne/compare/v3.59.1...v3.59.2) (2026-05-14)
+
+
+### Bug Fixes
+
+* **model_mapping:** fixed gemma model mapping ([3519100](https://github.com/xynehq/xyne/commit/3519100012f2766e877e08b8731c27a7e8a966f7))
+
 ## [3.59.1](https://github.com/xynehq/xyne/compare/v3.59.0...v3.59.1) (2026-05-14)
 
 
