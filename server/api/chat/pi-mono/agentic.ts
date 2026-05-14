@@ -8,7 +8,8 @@ import { streamSSE } from "hono/streaming"
 
 import { SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent"
 
-import { getModelValueFromLabel } from "@/ai/modelConfig"
+import { getModelValueFromLabel, getModelConfiguration } from "@/ai/modelConfig"
+import { AIProviders } from "@/ai/types"
 import {
   type ReasoningEmitter,
   ReasoningSteps,
@@ -30,6 +31,7 @@ import { isCuid } from "@paralleldrive/cuid2"
 import { DEFAULT_TEST_AGENT_ID } from "@/shared/types"
 import { getLogger } from "@/logger"
 import { ChatSSEvents, type ReasoningEventPayload } from "@/shared/types"
+import { Models } from "@/ai/types"
 import { getTracer } from "@/tracer"
 import { Subsystem, type UserMetadataType } from "@/types"
 import { getErrorMessage } from "@/utils"
@@ -105,15 +107,70 @@ export async function AgenticRAG(c: Context): Promise<Response> {
     }
 
     let modelId: string = config.defaultBestModel
+    let requestedModelLabel: string | undefined
+
     if (selectedModelConfig) {
       try {
         const parsed = JSON.parse(selectedModelConfig)
         if (parsed.model) {
-          modelId = getModelValueFromLabel(parsed.model) || parsed.model
+          requestedModelLabel = parsed.model
+          const resolvedModel = getModelValueFromLabel(parsed.model)
+          if (resolvedModel) {
+            modelId = resolvedModel as string
+            Logger.info(
+              { email, requestedModel: parsed.model, resolvedModelId: modelId },
+              "Resolved model label to model ID",
+            )
+          } else if (parsed.model in Models) {
+            modelId = parsed.model
+            Logger.info(
+              { email, modelId },
+              "Using model ID directly from Models enum",
+            )
+          } else {
+            // Model could not be resolved - this is a configuration mismatch
+            Logger.error(
+              {
+                email,
+                requestedModel: parsed.model,
+                availableModels: Object.keys(Models),
+              },
+              "Model resolution failed: requested model not found in configuration",
+            )
+            throw new HTTPException(400, {
+              message: `Invalid model '${parsed.model}'. This model is not available in the current configuration. Please select a different model or contact your administrator.`,
+            })
+          }
         }
-      } catch {
-        /* ignore */
+      } catch (error) {
+        if (error instanceof HTTPException) {
+          throw error
+        }
+        Logger.error({ error, email }, "Failed to parse selectedModelConfig")
+        throw new HTTPException(400, {
+          message:
+            "Invalid model configuration. Please try again or select a different model.",
+        })
       }
+    }
+
+    // Validate that the resolved model exists in configuration
+    const modelConfig = getModelConfiguration(modelId)
+    if (!modelConfig) {
+      Logger.error(
+        { email, modelId, requestedModelLabel },
+        "Model configuration not found for resolved model ID",
+      )
+      throw new HTTPException(400, {
+        message: `Model configuration error: '${modelId}' is not properly configured. Please contact your administrator.`,
+      })
+    }
+
+    // TODO: add multi provider support
+    if (modelConfig.provider !== AIProviders.LiteLLM) {
+      throw new HTTPException(400, {
+        message: `Agentic mode requires LiteLLM models. Selected model '${modelId}' uses ${modelConfig.provider} provider.`,
+      })
     }
 
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
@@ -353,8 +410,7 @@ export async function AgenticRAG(c: Context): Promise<Response> {
         const baseUrl = config.LiteLLMBaseUrl?.endsWith("/v1")
           ? config.LiteLLMBaseUrl
           : `${config.LiteLLMBaseUrl}/v1`
-
-        // ── Create RAG agent via core SDK ────────────────────────────
+        const apiKey = config.LiteLLMApiKey
         const contextWindow = 250000
         const maxTokens = 32000
         const compactionSettings = {
@@ -366,7 +422,7 @@ export async function AgenticRAG(c: Context): Promise<Response> {
         agent = await createRAGAgent<XyneAgentState>({
           model: modelId,
           baseUrl,
-          apiKey: config.LiteLLMApiKey,
+          apiKey,
           tools: availableTools,
           systemPrompt,
           sessionManager: SessionManager.open(sessionFilePath),
@@ -554,11 +610,28 @@ export async function AgenticRAG(c: Context): Promise<Response> {
                 lastStopReason = msg.stopReason
               }
               if (msg.role === "assistant" && msg.stopReason === "error") {
+                // Check if content is empty (common for model/configuration errors)
+                const hasEmptyContent =
+                  !msg.content ||
+                  (Array.isArray(msg.content) && msg.content.length === 0) ||
+                  (typeof msg.content === "string" && msg.content.trim() === "")
+
+                let errorMessage =
+                  "An error occurred while processing your request."
+
+                if (hasEmptyContent) {
+                  errorMessage = `Model '${modelId}' is not available or not properly configured. Please try a different model or contact your administrator.`
+                  Logger.error(
+                    { email, modelId, chatId: chatRecord.externalId },
+                    "LLM error with empty content - likely model configuration issue",
+                  )
+                }
+
                 await stream.writeSSE({
                   event: ChatSSEvents.Error,
                   data: JSON.stringify({
                     error: "llm_error",
-                    message: "LLM error",
+                    message: errorMessage,
                   }),
                 })
               }
