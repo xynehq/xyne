@@ -579,6 +579,7 @@ describe("lsKnowledgeBase", () => {
         collection_id: collectionAlpha.id,
         parent_id: null,
         depth: 0,
+        vespa_doc_id: "clfd-default",
         details: {
           type: "folder",
           name: "Projects",
@@ -614,6 +615,7 @@ describe("lsKnowledgeBase", () => {
         collection_id: collectionAlpha.id,
         parent_id: apiFolder.id,
         depth: 0,
+        vespa_doc_id: "clf-spec",
       },
     ])
   })
