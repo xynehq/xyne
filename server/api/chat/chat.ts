@@ -499,7 +499,9 @@ const checkAndYieldCitations = async function* (
   let chunkMatch = null
   let chunkDocKeyMatch = null
 
-  const textToChunkCitationIndexWithDocKey = /K\[([A-Za-z0-9_-]+)_([0-9]+)\]/g
+  // See server/api/chat/utils.ts for pattern rationale.
+  const textToChunkCitationIndexWithDocKey =
+    /(?:K[\[\(]+|[\[\(]+K|[\[\(]+(?=\d))([A-Za-z0-9_-]+)_([0-9]+)[\]\)]/g
 
   // Reset global RegExp state so this function can be called repeatedly per request.
   textToCitationIndex.lastIndex = 0

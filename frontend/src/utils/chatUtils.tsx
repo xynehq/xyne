@@ -5,12 +5,16 @@ import type { Citation } from "@/components/CitationLink"
 export { generateUUID } from "@/utils/uuid"
 
 export const textToCitationIndex = /\[(\d+)\]/g
-export const textToImageCitationIndex = /(?<!K)\[(\d+_\d+)\]/g
-// KB citations emitted by stronger models:
-//   K[<docIndex>_<chunkIndex>] e.g. K[1_21]
-// We also support weaker models emitting doc keys directly:
-//   K[<docKey>_<chunkIndex>] e.g. K[docId_21]
-export const textToChunkCitationIndex = /K\[([A-Za-z0-9_-]+)_([0-9]+)\]/g
+// Image citations from `[N_M]` are now treated as KB chunks. Kept as never-match
+// so existing image-replace passes are silently no-ops.
+export const textToImageCitationIndex = /(?!)/g
+// KB chunk citations. Matches all six variants emitted by various models:
+//   K[1_0], [K1_0], [1_0], K(1_0), (K1_0), (1_0) — and the alphanumeric doc-key
+//   forms like K[attf_uuid_21], [Kattf_uuid_21]. Alphanumeric body REQUIRES a K
+//   marker so bare `[var_1]` (user content) is left alone; the `(?=\d)` lookahead
+//   on the bare-bracket alternative allows numeric `[1_0]` through.
+export const textToChunkCitationIndex =
+  /(?:K[\[\(]+|[\[\(]+K|[\[\(]+(?=\d))([A-Za-z0-9_-]+)_([0-9]+)[\]\)]/g
 
 // Function to clean citation numbers from response text
 export const cleanCitationsFromResponse = (text: string): string => {

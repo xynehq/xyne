@@ -28,8 +28,10 @@ export function formatFragmentsForLLM(
 }
 
 export const textToCitationIndex = /\[(\d+)\]/g
-export const textToImageCitationIndex = /(?<!K)\[(\d+_\d+)\]/g
-export const textToChunkCitationIndex = /K\[(\d+_\d+)\]/g
+// Image citations from `[N_M]` are now treated as KB chunks (see utils.ts).
+export const textToImageCitationIndex = /(?!)/g
+// Matches K[N_M], [KN_M], [N_M], K(N_M), (KN_M), (N_M) — numeric body only.
+export const textToChunkCitationIndex = /[K\[\(]+(\d+_\d+)[\]\)]/g
 
 export const checkAndYieldCitationsForAgent = async function* (
   textInput: string,
