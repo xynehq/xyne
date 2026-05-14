@@ -39,6 +39,39 @@ export const userMetadata: UserMetadataType = {
   dateForAI: getDateForAI({ userTimeZone: "Asia/Kolkata" }),
 }
 
+function computeReturnedChunkIndices(
+  fields: any,
+  maxSummaryChunks: number | undefined,
+): number[] | undefined {
+  if (!fields.chunks_pos_summary || !Array.isArray(fields.chunks_pos_summary)) {
+    return undefined
+  }
+
+  let chunks: Array<{ chunk: string; index: number; score: number }> = []
+
+  if (fields.matchfeatures) {
+    chunks = getSortedScoredChunks(
+      fields.matchfeatures,
+      fields.chunks_summary as string[],
+    )
+  } else {
+    // No matchfeatures, chunks stay in original order
+    chunks =
+      fields.chunks_summary?.map((chunk: any, idx: number) => ({
+        chunk: typeof chunk === "string" ? chunk : chunk.chunk,
+        index: idx,
+        score: 0,
+      })) || []
+  }
+
+  const returnedChunkIndices = chunks
+    .slice(0, maxSummaryChunks)
+    .map((v) => fields.chunks_pos_summary?.[v.index] ?? v.index)
+    .filter((idx: number) => idx !== undefined && idx !== null)
+
+  return returnedChunkIndices
+}
+
 export async function formatSearchToolResponse(
   searchResults: VespaSearchResponse | null,
   searchContext: {
@@ -89,24 +122,44 @@ export async function formatSearchToolResponse(
       const citation = searchToCitation(r)
       // One child = one document (Vespa returns docs with chunks scored); use docId as fragment id.
       const fragmentId = citation.docId
-      const renderMetadata: AnswerContextRenderMetadata = {
-        visibleChunkIndices: [],
+
+      // Determine if chunk citations are enabled for KB files
+      const allowChunkCitations = r.fields?.sddocname === KbItemsSchema
+
+      // Calculate which chunks will actually be returned in the content
+      // This is needed for accurate deduplication
+      let returnedChunkIndices: number[] | undefined
+      if (allowChunkCitations) {
+        const fields = r.fields as any
+        const maxSummaryChunks =
+          config.maxDefaultSummary ?? fields.chunks_summary?.length
+
+        returnedChunkIndices = computeReturnedChunkIndices(
+          fields,
+          maxSummaryChunks,
+        )
       }
+
+      // Enhance citation with returnedChunkIndices for deduplication
+      const enhancedCitation: Citation = {
+        ...citation,
+        returnedChunkIndices,
+      }
+
       return {
         id: fragmentId,
         content: await answerContextMap(
           r,
           metadataForContext,
-          idx < chunksPerDocument.length ? chunksPerDocument[idx] : config.maxDefaultSummary,
+          config.maxDefaultSummary,
           undefined,
-          r.fields?.sddocname === KbItemsSchema,
+          allowChunkCitations,
           builtUserQuery || undefined,
           precomputedDbContext,
-          renderMetadata,
         ),
-        source: citation,
+        source: enhancedCitation,
         confidence: r.relevance || 0.7,
-        visibleChunkIndices: renderMetadata.visibleChunkIndices,
+        visibleChunkIndices: returnedChunkIndices || [],
       }
     }),
   )
@@ -139,13 +192,17 @@ export async function formatSearchToolResponseAsRawDocuments(
 
   const rawDocuments: ToolRawDocument[] = children.map((r, idx) => {
     const citation = searchToCitation(r)
-    const fields = r.fields as { chunks_summary?: string[]; matchfeatures?: unknown } | undefined
+    const fields = r.fields as
+      | { chunks_summary?: string[]; matchfeatures?: unknown }
+      | undefined
     const chunksSummary = fields?.chunks_summary ?? []
     const matchfeatures = fields?.matchfeatures
     const scoredChunks = getSortedScoredChunks(
       matchfeatures as Parameters<typeof getSortedScoredChunks>[0],
       chunksSummary,
-      idx < chunksPerDocument.length ? chunksPerDocument[idx] : config.maxDefaultSummary,
+      idx < chunksPerDocument.length
+        ? chunksPerDocument[idx]
+        : config.maxDefaultSummary,
     )
     const chunks: RawChunkWithScore[] = scoredChunks.map((sc) => ({
       chunkKey: `i:${sc.index}`,
@@ -201,7 +258,8 @@ export function formatChatMemoryToolResponse(
       title: `Conversation turn ${f.turnNumber}`,
       url: "",
       app: Apps.ChatMemory,
-      entity: ChatMemoryEntity.ConversationTurn as unknown as Citation["entity"],
+      entity:
+        ChatMemoryEntity.ConversationTurn as unknown as Citation["entity"],
     }
     return {
       id: f.docId,
@@ -305,7 +363,10 @@ export function mapCitationsForAgentDocument(citations: unknown): Array<{
 }> {
   if (!Array.isArray(citations)) return []
   return citations
-    .filter((citation): citation is Citation => !!citation && typeof citation === "object")
+    .filter(
+      (citation): citation is Citation =>
+        !!citation && typeof citation === "object",
+    )
     .map((citation) => {
       const entityValue =
         citation.entity && typeof citation.entity === "object"

@@ -1,10 +1,11 @@
 import React from "react"
+import AgentThinkingPanel from "./AgentThinkingPanel"
 import {
-  useReasoningContext,
   AgentBlock,
-  ToolBlock,
-  ReasoningStepComponent,
   PlanCard,
+  ReasoningStepComponent,
+  ToolBlock,
+  useReasoningContext,
 } from "./ReasoningContext"
 
 /**
@@ -19,6 +20,7 @@ const MergedReasoning: React.FC = () => {
   const {
     flatItems,
     agentPlans,
+    agentThinking,
     citations,
     citationMap,
     getAppIcon,
@@ -81,6 +83,17 @@ const MergedReasoning: React.FC = () => {
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {/* ── Agent Thinking Panel ── */}
+        {agentThinking && (
+          <div className="mt-3">
+            <AgentThinkingPanel
+              thinking={agentThinking}
+              isStreaming={false}
+              defaultExpanded={false}
+            />
           </div>
         )}
       </div>

@@ -6,10 +6,7 @@ import { z } from "zod"
 import { entitySchema } from "@/shared/types"
 import type { ConverseResponse } from "@/ai/types"
 
-const {
-  defaultBestModel,
-  defaultFastModel,
-} = config
+const { defaultBestModel, defaultFastModel } = config
 // this is not always the case but unless our router detects that we need
 // these we will by default remove them
 const nonWorkMailLabels = ["CATEGORY_UPDATES", "CATEGORY_PROMOTIONS"]
@@ -70,6 +67,8 @@ export const MinimalCitationSchema = z.object({
   closedAt: z.string().optional(), // ISO timestamp for ticket closure
   status: z.string().optional(), // Ticket status (Open, Closed, etc.)
   ticketNumber: z.string().optional(), // Ticket number
+  chunkIndices: z.array(z.number()).optional(),
+  returnedChunkIndices: z.array(z.number()).optional(),
 })
 
 export type Citation = z.infer<typeof MinimalCitationSchema>

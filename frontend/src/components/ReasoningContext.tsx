@@ -1,3 +1,30 @@
+import XyneIcon from "@/assets/assistant-logo.svg?react"
+import DriveIcon from "@/assets/drive.svg?react"
+import GmailIcon from "@/assets/gmail.svg?react"
+import GoogleCalendarIcon from "@/assets/googleCalendar.svg?react"
+import McpIcon from "@/assets/mcp.svg?react"
+import SlackIcon from "@/assets/slack.svg?react"
+import { useTheme } from "@/components/ThemeContext"
+import { cn, splitGroupedCitationsWithSpaces } from "@/lib/utils"
+import { textToCitationIndex } from "@/utils/chatUtils.tsx"
+import MarkdownPreview from "@uiw/react-markdown-preview"
+import {
+  ArrowRight,
+  BookOpen,
+  Bot,
+  Brain,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Circle,
+  Globe,
+  List,
+  MessageSquare,
+  PenLine,
+  Search,
+  Users,
+  XCircle,
+} from "lucide-react"
 import React, {
   createContext,
   useContext,
@@ -7,35 +34,8 @@ import React, {
   useEffect,
   memo,
 } from "react"
-import {
-  ChevronRight,
-  ChevronDown,
-  CheckCircle2,
-  Circle,
-  XCircle,
-  Users,
-  Brain,
-  Globe,
-  Search,
-  Bot,
-  MessageSquare,
-  PenLine,
-  BookOpen,
-  List,
-  ArrowRight,
-} from "lucide-react"
-import { cn, splitGroupedCitationsWithSpaces } from "@/lib/utils"
-import { ReasoningEventType, Citation, XyneTools } from "shared/types"
-import type { ReasoningStage, PlanSubTask } from "shared/types"
-import MarkdownPreview from "@uiw/react-markdown-preview"
-import { useTheme } from "@/components/ThemeContext"
-import DriveIcon from "@/assets/drive.svg?react"
-import SlackIcon from "@/assets/slack.svg?react"
-import GmailIcon from "@/assets/gmail.svg?react"
-import GoogleCalendarIcon from "@/assets/googleCalendar.svg?react"
-import XyneIcon from "@/assets/assistant-logo.svg?react"
-import McpIcon from "@/assets/mcp.svg?react"
-import { textToCitationIndex } from "@/utils/chatUtils.tsx"
+import { Citation, ReasoningEventType, XyneTools } from "shared/types"
+import type { PlanSubTask, ReasoningStage } from "shared/types"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -66,27 +66,55 @@ export interface ParsedReasoning {
   steps: ReasoningStep[]
   orchestratorPlan?: PlanInfo
   agentPlans: Record<string, PlanInfo>
+  agentThinking: string // Raw thinking content from the LLM (concatenated deltas)
 }
 
 export type FlatItem =
   | { kind: "step"; step: ReasoningStep; key: string }
-  | { kind: "agent"; agentName: string; steps: ReasoningStep[]; key: string; planKey: string }
-  | { kind: "tool"; toolExecutionId: string; toolName: string; steps: ReasoningStep[]; key: string }
+  | {
+      kind: "agent"
+      agentName: string
+      steps: ReasoningStep[]
+      key: string
+      planKey: string
+    }
+  | {
+      kind: "tool"
+      toolExecutionId: string
+      toolName: string
+      steps: ReasoningStep[]
+      key: string
+    }
 
 export type StepOrToolItem =
   | { kind: "step"; step: ReasoningStep; key: string }
-  | { kind: "tool"; toolExecutionId: string; toolName: string; steps: ReasoningStep[]; key: string }
+  | {
+      kind: "tool"
+      toolExecutionId: string
+      toolName: string
+      steps: ReasoningStep[]
+      key: string
+    }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 export const WINDOW_SIZE = 2
 
-export const STAGE_UI: Record<ReasoningStage, { icon: React.ReactNode; label: string }> = {
-  understanding: { icon: <MessageSquare className="w-4 h-4" />, label: "Understanding" },
+export const STAGE_UI: Record<
+  ReasoningStage,
+  { icon: React.ReactNode; label: string }
+> = {
+  understanding: {
+    icon: <MessageSquare className="w-4 h-4" />,
+    label: "Understanding",
+  },
   gathering: { icon: <Search className="w-4 h-4" />, label: "Searching" },
   analyzing: { icon: <Brain className="w-4 h-4" />, label: "Analyzing" },
   consulting: { icon: <Bot className="w-4 h-4" />, label: "Consulting agent" },
-  preparing: { icon: <PenLine className="w-4 h-4" />, label: "Preparing answer" },
+  preparing: {
+    icon: <PenLine className="w-4 h-4" />,
+    label: "Preparing answer",
+  },
 }
 
 export const TOOL_BLOCK_NAMES: Record<string, string> = {
@@ -213,7 +241,8 @@ export function buildToolGroupItems(steps: ReasoningStep[]): StepOrToolItem[] {
   const toolBlocks: Record<string, ReasoningStep[]> = {}
   for (const step of steps) {
     if (step.toolExecutionId) {
-      if (!toolBlocks[step.toolExecutionId]) toolBlocks[step.toolExecutionId] = []
+      if (!toolBlocks[step.toolExecutionId])
+        toolBlocks[step.toolExecutionId] = []
       toolBlocks[step.toolExecutionId].push(step)
     }
   }
@@ -227,10 +256,20 @@ export function buildToolGroupItems(steps: ReasoningStep[]): StepOrToolItem[] {
         const toolSteps = toolBlocks[id] ?? []
         const rawName = toolSteps.find((s) => s.toolName)?.toolName ?? ""
         const toolName = TOOL_BLOCK_NAMES[rawName] || rawName || "Tool"
-        items.push({ kind: "tool", toolExecutionId: id, toolName, steps: toolSteps, key: `tool-${id}` })
+        items.push({
+          kind: "tool",
+          toolExecutionId: id,
+          toolName,
+          steps: toolSteps,
+          key: `tool-${id}`,
+        })
       }
     } else {
-      items.push({ kind: "step", step, key: step.stepId ?? String(step.timestamp) })
+      items.push({
+        kind: "step",
+        step,
+        key: step.stepId ?? String(step.timestamp),
+      })
     }
   }
   return items
@@ -241,10 +280,12 @@ export function buildFlatItems(substeps: ReasoningStep[]): FlatItem[] {
   const toolBlocks: Record<string, ReasoningStep[]> = {}
   for (const step of substeps) {
     if (step.delegationRunId) {
-      if (!agentBlocks[step.delegationRunId]) agentBlocks[step.delegationRunId] = []
+      if (!agentBlocks[step.delegationRunId])
+        agentBlocks[step.delegationRunId] = []
       agentBlocks[step.delegationRunId].push(step)
     } else if (step.toolExecutionId) {
-      if (!toolBlocks[step.toolExecutionId]) toolBlocks[step.toolExecutionId] = []
+      if (!toolBlocks[step.toolExecutionId])
+        toolBlocks[step.toolExecutionId] = []
       toolBlocks[step.toolExecutionId].push(step)
     }
   }
@@ -271,10 +312,20 @@ export function buildFlatItems(substeps: ReasoningStep[]): FlatItem[] {
         const toolSteps = toolBlocks[id] ?? []
         const rawName = toolSteps.find((s) => s.toolName)?.toolName ?? ""
         const toolName = TOOL_BLOCK_NAMES[rawName] || rawName || "Tool"
-        items.push({ kind: "tool", toolExecutionId: id, toolName, steps: toolSteps, key: `tool-${id}` })
+        items.push({
+          kind: "tool",
+          toolExecutionId: id,
+          toolName,
+          steps: toolSteps,
+          key: `tool-${id}`,
+        })
       }
     } else {
-      items.push({ kind: "step", step, key: step.stepId ?? String(step.timestamp) })
+      items.push({
+        kind: "step",
+        step,
+        key: step.stepId ?? String(step.timestamp),
+      })
     }
   }
   return items
@@ -299,7 +350,9 @@ function parseReasoningEvent(
   return {
     type,
     content: displayText,
-    timestamp: (data.timestamp as number | undefined) ?? generateStableId(displayText, lineIndex),
+    timestamp:
+      (data.timestamp as number | undefined) ??
+      generateStableId(displayText, lineIndex),
     status: "info",
     substeps: [],
     toolName: data.toolName as string | undefined,
@@ -317,19 +370,47 @@ function parseReasoningEvent(
 }
 
 export const parseReasoningContent = (content: string): ParsedReasoning => {
-  if (!content.trim()) return { steps: [], agentPlans: {} }
+  if (!content.trim()) return { steps: [], agentPlans: {}, agentThinking: "" }
   const lines = content.split("\n").filter((line) => line.trim())
   const steps: ReasoningStep[] = []
   let currentIteration: ReasoningStep | null = null
   let orchestratorPlan: PlanInfo | undefined
   const agentPlans: Record<string, PlanInfo> = {}
+  let agentThinking = ""
 
   lines.forEach((line, lineIndex) => {
     let parsed: (ReasoningStep & { _plan?: PlanInfo }) | null = null
     try {
       const data = JSON.parse(line) as Record<string, unknown>
+
+      // Handle agent thinking events
+      if (data.type === "thinking_start") {
+        if (agentThinking) agentThinking += "\n\n"
+        agentThinking += "--- Thinking started ---\n"
+        return
+      }
+      if (data.type === "thinking_delta" && typeof data.delta === "string") {
+        agentThinking += data.delta
+        return
+      }
+      if (data.type === "thinking_end") {
+        agentThinking += "\n--- Thinking ended ---"
+        return
+      }
+
+      // Skip raw thinking events from being added as reasoning steps
+      if (
+        data.type === "thinking_start" ||
+        data.type === "thinking_delta" ||
+        data.type === "thinking_end"
+      ) {
+        return
+      }
+
       if (typeof data.type === "string") {
-        parsed = parseReasoningEvent(data, lineIndex) as ReasoningStep & { _plan?: PlanInfo }
+        parsed = parseReasoningEvent(data, lineIndex) as ReasoningStep & {
+          _plan?: PlanInfo
+        }
       }
     } catch {
       const trimmed = line.trim()
@@ -350,11 +431,19 @@ export const parseReasoningContent = (content: string): ParsedReasoning => {
     }
     if (parsed.type === ReasoningEventType.TurnStarted && parsed.agent) return
 
-    if (parsed.type === ReasoningEventType.PlanCreated && parsed._plan && !parsed.agent) {
+    if (
+      parsed.type === ReasoningEventType.PlanCreated &&
+      parsed._plan &&
+      !parsed.agent
+    ) {
       orchestratorPlan = parsed._plan
       return
     }
-    if (parsed.type === ReasoningEventType.PlanCreated && parsed._plan && parsed.agent) {
+    if (
+      parsed.type === ReasoningEventType.PlanCreated &&
+      parsed._plan &&
+      parsed.agent
+    ) {
       const planKey = parsed.delegationRunId ?? parsed.agent
       agentPlans[planKey] = parsed._plan
       return
@@ -373,7 +462,7 @@ export const parseReasoningContent = (content: string): ParsedReasoning => {
     steps.push(parsed)
   })
 
-  return { steps, orchestratorPlan, agentPlans }
+  return { steps, orchestratorPlan, agentPlans, agentThinking }
 }
 
 export const getCurrentProgressState = (
@@ -388,7 +477,9 @@ export const getCurrentProgressState = (
       if (completionDurationMs < 1000) {
         durationText = `${completionDurationMs}ms`
       } else if (completionDurationMs < 60_000) {
-        const secs = (completionDurationMs / 1000).toFixed(1).replace(/\.0$/, "")
+        const secs = (completionDurationMs / 1000)
+          .toFixed(1)
+          .replace(/\.0$/, "")
         durationText = `${secs}s`
       } else {
         const totalSecs = Math.round(completionDurationMs / 1000)
@@ -404,7 +495,10 @@ export const getCurrentProgressState = (
 
   const lastTop = steps[steps.length - 1]
   let latestStage: ReasoningStage | undefined
-  if (lastTop.type === ReasoningEventType.TurnStarted && lastTop.substeps?.length) {
+  if (
+    lastTop.type === ReasoningEventType.TurnStarted &&
+    lastTop.substeps?.length
+  ) {
     for (let i = lastTop.substeps.length - 1; i >= 0; i--) {
       if (lastTop.substeps[i].stage) {
         latestStage = lastTop.substeps[i].stage
@@ -421,7 +515,11 @@ export const getCurrentProgressState = (
       }
     }
   }
-  return { text: latestStage ? STAGE_PROGRESS_TEXT[latestStage] : "Understanding your query..." }
+  return {
+    text: latestStage
+      ? STAGE_PROGRESS_TEXT[latestStage]
+      : "Understanding your query...",
+  }
 }
 
 // ─── Shared Sub-components ────────────────────────────────────────────────────
@@ -429,74 +527,82 @@ export const getCurrentProgressState = (
 function SubTaskIcon({ status }: { status: PlanSubTask["status"] }) {
   switch (status) {
     case "completed":
-      return <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
+      return (
+        <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
+      )
     case "in_progress":
       return <ArrowRight className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
     case "blocked":
     case "failed":
       return <XCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
     default:
-      return <Circle className="w-3.5 h-3.5 text-gray-300 dark:text-gray-600 flex-shrink-0" />
+      return (
+        <Circle className="w-3.5 h-3.5 text-gray-300 dark:text-gray-600 flex-shrink-0" />
+      )
   }
 }
 
-export const PlanCard: React.FC<{ plan: PlanInfo; isStreaming: boolean; label?: string }> = memo(
-  ({ plan, isStreaming, label }) => {
-    const [expanded, setExpanded] = useState(false)
-    const hasInProgress = plan.subTasks.some((t) => t.status === "in_progress")
-    const completedCount = plan.subTasks.filter((t) => t.status === "completed").length
-    const total = plan.subTasks.length
-    return (
-      <div className="mb-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-slate-800 text-xs">
-        <button
-          type="button"
-          onClick={() => setExpanded((e) => !e)}
-          className="group w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-        >
-          <span className="relative flex items-center justify-center w-3 h-3 flex-shrink-0">
-            <List className="w-3 h-3 text-gray-400 group-hover:opacity-0 transition-opacity" />
-            {expanded ? (
-              <ChevronDown className="absolute w-3 h-3 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-            ) : (
-              <ChevronRight className="absolute w-3 h-3 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-            )}
-          </span>
-          <Brain className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
-          <span className="flex-1 font-medium text-gray-700 dark:text-gray-300 truncate">
-            {label ?? plan.goal}
-          </span>
-          <span className="text-gray-400 flex-shrink-0 tabular-nums">
-            {completedCount}/{total}
-            {isStreaming && hasInProgress && !expanded && (
-              <ArrowRight className="inline w-3 h-3 ml-1 text-blue-500" />
-            )}
-          </span>
-        </button>
-        {expanded && (
-          <div className="px-3 pb-2 space-y-1">
-            {plan.subTasks.map((task) => (
-              <div key={task.id} className="flex items-start gap-2 py-0.5">
-                <SubTaskIcon status={task.status} />
-                <span
-                  className={cn(
-                    "leading-snug",
-                    task.status === "completed"
-                      ? "text-gray-400 dark:text-gray-500 line-through"
-                      : task.status === "in_progress"
-                        ? "text-blue-600 dark:text-blue-400 font-medium"
-                        : "text-gray-600 dark:text-gray-400",
-                  )}
-                >
-                  {task.description}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    )
-  },
-)
+export const PlanCard: React.FC<{
+  plan: PlanInfo
+  isStreaming: boolean
+  label?: string
+}> = memo(({ plan, isStreaming, label }) => {
+  const [expanded, setExpanded] = useState(false)
+  const hasInProgress = plan.subTasks.some((t) => t.status === "in_progress")
+  const completedCount = plan.subTasks.filter(
+    (t) => t.status === "completed",
+  ).length
+  const total = plan.subTasks.length
+  return (
+    <div className="mb-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-slate-800 text-xs">
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className="group w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+      >
+        <span className="relative flex items-center justify-center w-3 h-3 flex-shrink-0">
+          <List className="w-3 h-3 text-gray-400 group-hover:opacity-0 transition-opacity" />
+          {expanded ? (
+            <ChevronDown className="absolute w-3 h-3 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+          ) : (
+            <ChevronRight className="absolute w-3 h-3 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+          )}
+        </span>
+        <Brain className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+        <span className="flex-1 font-medium text-gray-700 dark:text-gray-300 truncate">
+          {label ?? plan.goal}
+        </span>
+        <span className="text-gray-400 flex-shrink-0 tabular-nums">
+          {completedCount}/{total}
+          {isStreaming && hasInProgress && !expanded && (
+            <ArrowRight className="inline w-3 h-3 ml-1 text-blue-500" />
+          )}
+        </span>
+      </button>
+      {expanded && (
+        <div className="px-3 pb-2 space-y-1">
+          {plan.subTasks.map((task) => (
+            <div key={task.id} className="flex items-start gap-2 py-0.5">
+              <SubTaskIcon status={task.status} />
+              <span
+                className={cn(
+                  "leading-snug",
+                  task.status === "completed"
+                    ? "text-gray-400 dark:text-gray-500 line-through"
+                    : task.status === "in_progress"
+                      ? "text-blue-600 dark:text-blue-400 font-medium"
+                      : "text-gray-600 dark:text-gray-400",
+                )}
+              >
+                {task.description}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+})
 PlanCard.displayName = "PlanCard"
 
 export const ReasoningStepComponent: React.FC<{
@@ -507,77 +613,104 @@ export const ReasoningStepComponent: React.FC<{
   depth?: number
   citations?: Citation[]
   citationMap?: Record<number, number>
-  getAppIcon: (stepType?: string, stepIndex?: number, toolName?: string) => JSX.Element | null
-}> = memo(({ step, index, isStreaming, isLastStep, depth = 0, citations, citationMap, getAppIcon }) => {
-  const { theme } = useTheme()
-  const stepIcon = getStageIcon(step.stage) ?? getAppIcon(step.type, index, step.toolName)
-  return (
-    <div
-      className={cn(
-        "w-full max-w-full space-y-1",
-        "ml-8",
-        depth > 0 && "ml-6",
-      )}
-    >
-      <div className="w-full max-w-full">
-        <div className="flex items-center space-x-2 py-1 w-full max-w-full pr-4">
-          {stepIcon && (
-            <span className="text-gray-500 dark:text-gray-400 flex-shrink-0">{stepIcon}</span>
-          )}
-          <div className="flex-1 min-w-0 w-full">
-            <div className="text-sm leading-relaxed text-gray-700 dark:text-gray-300">
-              <MarkdownPreview
-                source={processReasoningWithCitations(step.content || "", citations, citationMap)}
-                wrapperElement={{ "data-color-mode": theme }}
-                style={{
-                  padding: 0,
-                  backgroundColor: "transparent",
-                  fontSize: "inherit",
-                  color: "inherit",
-                  display: "block",
-                  overflowWrap: "break-word",
-                  wordBreak: "break-word",
-                  maxWidth: "100%",
-                  overflow: "hidden",
-                }}
-                components={{
-                  p: ({ children }) => <div className="mb-2">{children}</div>,
-                  ul: ({ children }) => (
-                    <ul className="list-disc pl-4 mt-1 space-y-0.5">{children}</ul>
-                  ),
-                  li: ({ children }) => <li className="text-sm">{children}</li>,
-                  strong: ({ children }) => (
-                    <strong className="font-semibold text-gray-700 dark:text-gray-200">
-                      {children}
-                    </strong>
-                  ),
-                  a: ({ href, children }) => (
-                    <a
-                      href={href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 dark:text-blue-400 hover:underline"
-                    >
-                      {children}
-                    </a>
-                  ),
-                }}
-              />
-            </div>
-            {step.type === ReasoningEventType.ToolExecuting && step.toolQuery && (
-              <div
-                className="mt-0.5 text-xs text-gray-400 dark:text-gray-500 italic truncate"
-                title={step.toolQuery}
-              >
-                "{step.toolQuery}"
-              </div>
+  getAppIcon: (
+    stepType?: string,
+    stepIndex?: number,
+    toolName?: string,
+  ) => JSX.Element | null
+}> = memo(
+  ({
+    step,
+    index,
+    isStreaming,
+    isLastStep,
+    depth = 0,
+    citations,
+    citationMap,
+    getAppIcon,
+  }) => {
+    const { theme } = useTheme()
+    const stepIcon =
+      getStageIcon(step.stage) ?? getAppIcon(step.type, index, step.toolName)
+    return (
+      <div
+        className={cn(
+          "w-full max-w-full space-y-1",
+          "ml-8",
+          depth > 0 && "ml-6",
+        )}
+      >
+        <div className="w-full max-w-full">
+          <div className="flex items-center space-x-2 py-1 w-full max-w-full pr-4">
+            {stepIcon && (
+              <span className="text-gray-500 dark:text-gray-400 flex-shrink-0">
+                {stepIcon}
+              </span>
             )}
+            <div className="flex-1 min-w-0 w-full">
+              <div className="text-sm leading-relaxed text-gray-700 dark:text-gray-300">
+                <MarkdownPreview
+                  source={processReasoningWithCitations(
+                    step.content || "",
+                    citations,
+                    citationMap,
+                  )}
+                  wrapperElement={{ "data-color-mode": theme }}
+                  style={{
+                    padding: 0,
+                    backgroundColor: "transparent",
+                    fontSize: "inherit",
+                    color: "inherit",
+                    display: "block",
+                    overflowWrap: "break-word",
+                    wordBreak: "break-word",
+                    maxWidth: "100%",
+                    overflow: "hidden",
+                  }}
+                  components={{
+                    p: ({ children }) => <div className="mb-2">{children}</div>,
+                    ul: ({ children }) => (
+                      <ul className="list-disc pl-4 mt-1 space-y-0.5">
+                        {children}
+                      </ul>
+                    ),
+                    li: ({ children }) => (
+                      <li className="text-sm">{children}</li>
+                    ),
+                    strong: ({ children }) => (
+                      <strong className="font-semibold text-gray-700 dark:text-gray-200">
+                        {children}
+                      </strong>
+                    ),
+                    a: ({ href, children }) => (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 dark:text-blue-400 hover:underline"
+                      >
+                        {children}
+                      </a>
+                    ),
+                  }}
+                />
+              </div>
+              {step.type === ReasoningEventType.ToolExecuting &&
+                step.toolQuery && (
+                  <div
+                    className="mt-0.5 text-xs text-gray-400 dark:text-gray-500 italic truncate"
+                    title={step.toolQuery}
+                  >
+                    "{step.toolQuery}"
+                  </div>
+                )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  )
-})
+    )
+  },
+)
 ReasoningStepComponent.displayName = "ReasoningStepComponent"
 
 export const ToolBlock: React.FC<{
@@ -586,49 +719,57 @@ export const ToolBlock: React.FC<{
   isStreaming: boolean
   citations?: Citation[]
   citationMap?: Record<number, number>
-  getAppIcon: (stepType?: string, stepIndex?: number, toolName?: string) => JSX.Element | null
-}> = memo(({ toolName, steps, isStreaming, citations, citationMap, getAppIcon }) => {
-  const [expanded, setExpanded] = useState(() => isStreaming)
-  useEffect(() => {
-    setExpanded(isStreaming)
-  }, [isStreaming])
-  return (
-    <div className="w-full">
-      <button
-        type="button"
-        onClick={() => setExpanded((e) => !e)}
-        className="flex items-center gap-1.5 py-0.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 w-full text-left rounded"
-      >
-        {expanded ? (
-          <ChevronDown className="w-3 h-3 flex-shrink-0" />
-        ) : (
-          <ChevronRight className="w-3 h-3 flex-shrink-0" />
+  getAppIcon: (
+    stepType?: string,
+    stepIndex?: number,
+    toolName?: string,
+  ) => JSX.Element | null
+}> = memo(
+  ({ toolName, steps, isStreaming, citations, citationMap, getAppIcon }) => {
+    const [expanded, setExpanded] = useState(() => isStreaming)
+    useEffect(() => {
+      setExpanded(isStreaming)
+    }, [isStreaming])
+    return (
+      <div className="w-full">
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className="flex items-center gap-1.5 py-0.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 w-full text-left rounded"
+        >
+          {expanded ? (
+            <ChevronDown className="w-3 h-3 flex-shrink-0" />
+          ) : (
+            <ChevronRight className="w-3 h-3 flex-shrink-0" />
+          )}
+          <span className="font-medium">{toolName}</span>
+          {!expanded && (
+            <span className="text-gray-400 dark:text-gray-500 ml-1">
+              ({steps.length})
+            </span>
+          )}
+        </button>
+        {expanded && (
+          <div className="ml-4 space-y-1 mt-0.5">
+            {steps.map((substep) => (
+              <ReasoningStepComponent
+                key={substep.stepId ?? substep.timestamp}
+                step={substep}
+                index={0}
+                isStreaming={isStreaming}
+                isLastStep={false}
+                depth={1}
+                citations={citations}
+                citationMap={citationMap}
+                getAppIcon={getAppIcon}
+              />
+            ))}
+          </div>
         )}
-        <span className="font-medium">{toolName}</span>
-        {!expanded && (
-          <span className="text-gray-400 dark:text-gray-500 ml-1">({steps.length})</span>
-        )}
-      </button>
-      {expanded && (
-        <div className="ml-4 space-y-1 mt-0.5">
-          {steps.map((substep) => (
-            <ReasoningStepComponent
-              key={substep.stepId ?? substep.timestamp}
-              step={substep}
-              index={0}
-              isStreaming={isStreaming}
-              isLastStep={false}
-              depth={1}
-              citations={citations}
-              citationMap={citationMap}
-              getAppIcon={getAppIcon}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-})
+      </div>
+    )
+  },
+)
 ToolBlock.displayName = "ToolBlock"
 
 /**
@@ -643,7 +784,11 @@ export const AgentBlock: React.FC<{
   isStreaming: boolean
   citations?: Citation[]
   citationMap?: Record<number, number>
-  getAppIcon: (stepType?: string, stepIndex?: number, toolName?: string) => JSX.Element | null
+  getAppIcon: (
+    stepType?: string,
+    stepIndex?: number,
+    toolName?: string,
+  ) => JSX.Element | null
   variant?: "inline" | "box"
 }> = memo(
   ({
@@ -667,7 +812,8 @@ export const AgentBlock: React.FC<{
       <div
         className={cn(
           "w-full",
-          variant === "inline" && "border-l-2 border-gray-200 dark:border-gray-600 pl-3 ml-1",
+          variant === "inline" &&
+            "border-l-2 border-gray-200 dark:border-gray-600 pl-3 ml-1",
         )}
       >
         <button
@@ -685,12 +831,20 @@ export const AgentBlock: React.FC<{
         </button>
         {expanded && (
           <div className="mt-1 space-y-2">
-            {plan && <PlanCard plan={plan} isStreaming={isStreaming} label={`${agentName} plan`} />}
+            {plan && (
+              <PlanCard
+                plan={plan}
+                isStreaming={isStreaming}
+                label={`${agentName} plan`}
+              />
+            )}
             {toolGroupItems.length > 0 && (
               <div
                 className={cn(
                   "relative py-1",
-                  !isStreaming && variant === "inline" && "max-h-40 overflow-y-auto scrollbar-hide",
+                  !isStreaming &&
+                    variant === "inline" &&
+                    "max-h-40 overflow-y-auto scrollbar-hide",
                 )}
                 style={
                   !isStreaming && variant === "inline"
@@ -703,7 +857,12 @@ export const AgentBlock: React.FC<{
                 )}
                 <div className="space-y-1">
                   {visibleItems.map((item) => (
-                    <div key={item.key} className={isStreaming ? "reasoning-step-enter" : undefined}>
+                    <div
+                      key={item.key}
+                      className={
+                        isStreaming ? "reasoning-step-enter" : undefined
+                      }
+                    >
                       {item.kind === "tool" ? (
                         <ToolBlock
                           toolName={item.toolName}
@@ -745,10 +904,15 @@ export interface ReasoningContextValue {
   flatItems: FlatItem[]
   orchestratorPlan?: PlanInfo
   agentPlans: Record<string, PlanInfo>
+  agentThinking: string
   isStreaming: boolean
   citations?: Citation[]
   citationMap?: Record<number, number>
-  getAppIcon: (stepType?: string, stepIndex?: number, toolName?: string) => JSX.Element | null
+  getAppIcon: (
+    stepType?: string,
+    stepIndex?: number,
+    toolName?: string,
+  ) => JSX.Element | null
   progressState: { text: string }
 }
 
@@ -756,7 +920,8 @@ const ReasoningCtx = createContext<ReasoningContextValue | null>(null)
 
 export const useReasoningContext = (): ReasoningContextValue => {
   const ctx = useContext(ReasoningCtx)
-  if (!ctx) throw new Error("useReasoningContext must be used within ReasoningProvider")
+  if (!ctx)
+    throw new Error("useReasoningContext must be used within ReasoningProvider")
   return ctx
 }
 
@@ -768,7 +933,14 @@ export const ReasoningProvider: React.FC<{
   citations?: Citation[]
   citationMap?: Record<number, number>
   children: React.ReactNode
-}> = ({ content, isStreaming, timeTakenMs, citations, citationMap, children }) => {
+}> = ({
+  content,
+  isStreaming,
+  timeTakenMs,
+  citations,
+  citationMap,
+  children,
+}) => {
   // Use backend-provided duration directly; reset to null while streaming.
   const completionDurationMs = isStreaming ? null : (timeTakenMs ?? null)
 
@@ -814,11 +986,11 @@ export const ReasoningProvider: React.FC<{
   )
 
   const parsed = useMemo((): ParsedReasoning => {
-    if (!content.trim()) return { steps: [], agentPlans: {} }
+    if (!content.trim()) return { steps: [], agentPlans: {}, agentThinking: "" }
     return parseReasoningContent(content)
   }, [content])
 
-  const { steps, orchestratorPlan, agentPlans } = parsed
+  const { steps, orchestratorPlan, agentPlans, agentThinking } = parsed
 
   const turns = useMemo(
     () => steps.filter((s) => s.type === ReasoningEventType.TurnStarted),
@@ -849,6 +1021,7 @@ export const ReasoningProvider: React.FC<{
       flatItems,
       orchestratorPlan,
       agentPlans,
+      agentThinking,
       isStreaming,
       citations,
       citationMap,
@@ -860,6 +1033,7 @@ export const ReasoningProvider: React.FC<{
       flatItems,
       orchestratorPlan,
       agentPlans,
+      agentThinking,
       isStreaming,
       citations,
       citationMap,

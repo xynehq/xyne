@@ -1,13 +1,14 @@
-import React, { useMemo } from "react"
 import { Loader2 } from "lucide-react"
+import React, { useMemo } from "react"
+import AgentThinkingPanel from "./AgentThinkingPanel"
 import {
-  useReasoningContext,
   AgentBlock,
-  ToolBlock,
-  ReasoningStepComponent,
-  PlanCard,
-  WINDOW_SIZE,
   type FlatItem,
+  PlanCard,
+  ReasoningStepComponent,
+  ToolBlock,
+  WINDOW_SIZE,
+  useReasoningContext,
 } from "./ReasoningContext"
 
 /**
@@ -26,6 +27,7 @@ const StreamingReasoning: React.FC = () => {
   const {
     flatItems,
     agentPlans,
+    agentThinking,
     isStreaming,
     citations,
     citationMap,
@@ -36,7 +38,8 @@ const StreamingReasoning: React.FC = () => {
   // Non-agent items belong to the main orchestrator box
   type NonAgentItem = FlatItem & { kind: "step" | "tool" }
   const mainItems = useMemo(
-    () => flatItems.filter((item): item is NonAgentItem => item.kind !== "agent"),
+    () =>
+      flatItems.filter((item): item is NonAgentItem => item.kind !== "agent"),
     [flatItems],
   )
 
@@ -138,6 +141,14 @@ const StreamingReasoning: React.FC = () => {
           />
         </div>
       ))}
+
+      {/* ── Agent Thinking Panel ── */}
+      {(agentThinking || isStreaming) && (
+        <AgentThinkingPanel
+          thinking={agentThinking}
+          isStreaming={isStreaming}
+        />
+      )}
     </div>
   )
 }
