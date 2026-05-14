@@ -15,6 +15,10 @@ const DEFAULT_DOCLING_TIMEOUT_MS = 300000
 const DEFAULT_MAX_RETRIES = 3
 const DEFAULT_RETRY_DELAY_MS = 1000
 
+// On a POST /process timeout, do a single GET /status/{doc_id} to find out
+// what really happened on the docling side before retrying.
+const STATUS_FETCH_TIMEOUT_MS = 10_000
+
 type DoclingCallOptions = {
   timeoutMs?: number
 }
@@ -192,6 +196,51 @@ function ensureUniqueFileName(name: string, usedNames: Set<string>): string {
   }
 }
 
+interface DoclingStatusEntry {
+  doc_id: string
+  filename?: string | null
+  state: "running" | "done" | "failed"
+  stage?: string | null
+  started_at?: number | null
+  completed_at?: number | null
+  duration_seconds?: number | null
+  error?: string | null
+}
+
+/**
+ * Single GET /status/{docId}. Returns `null` if the entry is missing (404),
+ * unreachable, or malformed — the caller treats null as "unknown, just retry".
+ */
+async function fetchDoclingStatus(
+  docId: string,
+  baseUrl: string,
+  fileName: string,
+): Promise<DoclingStatusEntry | null> {
+  const statusUrl = `${baseUrl}/status/${docId}`
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), STATUS_FETCH_TIMEOUT_MS)
+  try {
+    const resp = await fetch(statusUrl, { signal: controller.signal })
+    if (resp.status === 404) return null
+    if (!resp.ok) {
+      Logger.warn(
+        `Docling /status returned ${resp.status} for docId=${docId}`,
+        { fileName, docId, statusUrl },
+      )
+      return null
+    }
+    return (await resp.json()) as DoclingStatusEntry
+  } catch (err) {
+    Logger.warn(
+      `Docling /status fetch failed for docId=${docId}: ${(err as Error).message}`,
+      { fileName, docId },
+    )
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /**
  * Call docling service with retry logic
  */
@@ -203,7 +252,12 @@ async function callDoclingService(
 ): Promise<DoclingResponse> {
   const baseUrl = DOCLING_BASE_URL.replace(/\/+$/, "")
   const apiUrl = `${baseUrl}/process`
-  const timeoutMs = getEffectiveDoclingTimeoutMs(options?.timeoutMs)
+  // currentTimeoutMs grows on every "done while we were timed out" race or
+  // "still running" outcome — that's direct evidence the calculated timeout
+  // was too tight for this document. Grow linearly by adding the original
+  // calculated value each time (T, 2T, 3T, ...), not exponentially.
+  const initialTimeoutMs = getEffectiveDoclingTimeoutMs(options?.timeoutMs)
+  let currentTimeoutMs = initialTimeoutMs
 
   const formData = new FormData()
   // Create blob from buffer bytes - use type assertion to bypass strict typing
@@ -217,7 +271,7 @@ async function callDoclingService(
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    const timer = setTimeout(() => controller.abort(), currentTimeoutMs)
 
     try {
       Logger.info(
@@ -225,10 +279,10 @@ async function callDoclingService(
           fileName,
           docId,
           fileSize: buffer.length,
-          timeoutMs,
+          timeoutMs: currentTimeoutMs,
           url: apiUrl,
         },
-        `Calling docling service (attempt ${attempt}/${MAX_RETRIES}) timeoutMs=${timeoutMs} fileSize=${buffer.length} docId=${docId}`,
+        `Calling docling service (attempt ${attempt}/${MAX_RETRIES}) timeoutMs=${currentTimeoutMs} fileSize=${buffer.length} docId=${docId}`,
       )
 
       const response = await fetch(apiUrl, {
@@ -262,6 +316,75 @@ async function callDoclingService(
     } catch (error) {
       clearTimeout(timer)
       lastError = error instanceof Error ? error : new Error(String(error))
+
+      const isTimeout =
+        lastError.name === "AbortError" || controller.signal.aborted
+
+      if (isTimeout) {
+        // One-shot check of docling's view of this doc_id before we retry.
+        // Only `failed` keeps the same timeout (the failure was unrelated to
+        // timing); every other outcome — done, still running, status
+        // unreachable — is treated as evidence the timeout was too tight,
+        // so the next attempt waits longer.
+        //   done     → race; result was lost. Bump timeout, LOUD log, retry.
+        //   failed   → docling-side error. Retry at same timeout.
+        //   running  → docling still busy. Bump timeout, retry.
+        //   null     → /status unreachable / not_found. Bump timeout, retry.
+        const status = await fetchDoclingStatus(docId, baseUrl, fileName)
+        const prevTimeoutMs = currentTimeoutMs
+
+        if (status?.state === "done") {
+          currentTimeoutMs = currentTimeoutMs + initialTimeoutMs
+          Logger.error(
+            `!!! DOCLING DONE-WHILE-TIMED-OUT RACE !!! docling reported state=done for docId=${docId} but the HTTP client aborted at ${prevTimeoutMs}ms. The processed result has been discarded on the docling side and there is no /result endpoint to recover it. Calculated timeout was too tight — bumping timeout from ${prevTimeoutMs}ms to ${currentTimeoutMs}ms and retrying upload. If this fires repeatedly for this file, raise DOCLING_TIMEOUT_PER_PAGE_MS / DOCLING_TIMEOUT_PER_100KB_MS in pdfProcessor.ts.`,
+            {
+              fileName,
+              docId,
+              prevTimeoutMs,
+              newTimeoutMs: currentTimeoutMs,
+              attempt,
+              doclingDurationSeconds: status.duration_seconds,
+              doclingStage: status.stage,
+            },
+          )
+        } else if (status?.state === "failed") {
+          Logger.warn(
+            `Docling reported state=failed for docId=${docId}: ${status.error ?? "no error message"}; retrying upload at same timeout=${currentTimeoutMs}ms.`,
+            {
+              fileName,
+              docId,
+              doclingError: status.error,
+              doclingStage: status.stage,
+              attempt,
+            },
+          )
+        } else if (status?.state === "running") {
+          currentTimeoutMs = currentTimeoutMs + initialTimeoutMs
+          Logger.warn(
+            `Docling POST timed out after ${prevTimeoutMs}ms but /status still shows state=running for docId=${docId} (stage=${status.stage ?? "unknown"}); bumping timeout to ${currentTimeoutMs}ms and retrying.`,
+            {
+              fileName,
+              docId,
+              prevTimeoutMs,
+              newTimeoutMs: currentTimeoutMs,
+              doclingStage: status.stage,
+              attempt,
+            },
+          )
+        } else {
+          currentTimeoutMs = currentTimeoutMs + initialTimeoutMs
+          Logger.warn(
+            `Docling POST timed out after ${prevTimeoutMs}ms; /status unavailable for docId=${docId}; bumping timeout to ${currentTimeoutMs}ms and retrying.`,
+            {
+              fileName,
+              docId,
+              prevTimeoutMs,
+              newTimeoutMs: currentTimeoutMs,
+              attempt,
+            },
+          )
+        }
+      }
 
       if (attempt < MAX_RETRIES) {
         Logger.warn(
