@@ -498,6 +498,21 @@ export const startStream = async (
     responseQueue.addChunk(event.data)
   })
 
+  // Cite-pass: server emits this once, after synthesis ends, with the full
+  // answer text re-written to include K[N_M] markers. Frontend REPLACES the
+  // streamed plain text with this cited version so the existing markdown
+  // citation renderer (processMessage + CitationLink) lights up the inline
+  // pills. The streamed `ResponseUpdate` chunks are append-only and don't
+  // carry citations on their own.
+  streamState.es.addEventListener(ChatSSEvents.ResponseCited, (event) => {
+    const citedAnswer = event.data
+    if (!citedAnswer) return
+    streamState.partial = citedAnswer
+    streamState.response = citedAnswer
+    streamState.displayPartial = citedAnswer
+    notifySubscribers(streamKey)
+  })
+
   streamState.es.addEventListener(ChatSSEvents.Reasoning, (event) => {
     appendReasoningData(streamState, event.data)
     notifySubscribers(streamKey)
@@ -1252,6 +1267,32 @@ export const useChatStream = (
         )
         responseQueue.addChunk(event.data)
 
+        notifySubscribers(retryStreamKey)
+      })
+
+      // Cite-pass on retry stream: replace the streamed plain text with the
+      // cited version emitted after synthesis. Same idea as the matching
+      // handler on the primary stream above; see the ResponseCited comment
+      // there for details.
+      eventSource.addEventListener(ChatSSEvents.ResponseCited, (event) => {
+        const citedAnswer = event.data
+        if (!citedAnswer) return
+        streamState.partial = citedAnswer
+        streamState.response = citedAnswer
+        streamState.displayPartial = citedAnswer
+        if (chatId) {
+          queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
+            if (!old?.messages) return old
+            return {
+              ...old,
+              messages: old.messages.map((m: any) =>
+                m.externalId === messageId && m.messageRole === "assistant"
+                  ? { ...m, message: citedAnswer }
+                  : m,
+              ),
+            }
+          })
+        }
         notifySubscribers(retryStreamKey)
       })
 
