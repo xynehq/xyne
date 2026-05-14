@@ -724,13 +724,20 @@ const searchToCitations = (results: VespaSearchResults[]): Citation[] => {
 }
 
 export const textToCitationIndex = /\[(\d+)\]/g
-export const textToImageCitationIndex = /(?<!K)\[(\d+_\d+)\]/g
-export const textToChunkCitationIndex = /K\[(\d+_\d+)\]/g
-// Fallback for weaker LLMs emitting KB citations as:
-//   K[<docId>_<chunkIndex>]  (e.g. K[attf_<uuid>_21])
-// instead of the expected:
-//   K[<docIndex>_<chunkIndex>] (e.g. K[1_21])
-const textToChunkCitationIndexWithDocKey = /K\[([A-Za-z0-9_-]+)_([0-9]+)\]/g
+// Image citations from `[N_M]` are now treated as KB chunks, so this regex
+// is intentionally never-match. Kept exported because downstream code imports it.
+export const textToImageCitationIndex = /(?!)/g
+// Numeric KB chunk citations. Matches all six emitted variants:
+//   K[1_0], [K1_0], [1_0], K(1_0), (K1_0), (1_0)
+// The `[K\[\(]+` prefix accepts K/`[`/`(` in any combination; the captured body
+// is strictly numeric so plain user text like `[var_1]` doesn't get swallowed.
+export const textToChunkCitationIndex = /[K\[\(]+(\d+_\d+)[\]\)]/g
+// Fallback for weaker LLMs emitting KB citations with an alphanumeric doc key
+// e.g. K[attf_<uuid>_21]. Alphanumeric body REQUIRES a K marker (either before
+// or inside the bracket/paren) so bare `[var_1]` is left alone. The `(?=\d)`
+// lookahead lets bare brackets/parens fall through to the numeric form above.
+const textToChunkCitationIndexWithDocKey =
+  /(?:K[\[\(]+|[\[\(]+K|[\[\(]+(?=\d))([A-Za-z0-9_-]+)_([0-9]+)[\]\)]/g
 
 export const processMessage = (
   text: string,
