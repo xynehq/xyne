@@ -325,7 +325,7 @@ export const handleAttachmentUpload = async (c: Context) => {
             undefined,
             IMAGE_CONTEXT_CONFIG.enabled,
             IMAGE_CONTEXT_CONFIG.enabled,
-            false,
+            true,
             true,
           )
 
