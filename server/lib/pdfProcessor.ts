@@ -1,12 +1,9 @@
 import config from "@/config"
-import { PdfPageCountExceededError } from "@/integrations/dataSource/errors"
 import { chunkByDoclingFromBuffer } from "@/lib/chunkByDocling"
 import { chunkByOCRFromBuffer } from "@/lib/chunkByOCR"
-import { extractTextAndImagesWithChunksFromPDFviaGemini } from "@/lib/chunkPdfWithGemini"
 import { Subsystem, getLogger } from "@/logger"
 import { extractTextAndImagesWithChunksFromPDF } from "@/pdfChunks"
 import { type ChunkMetadata } from "@/types"
-import { PDFDocument } from "pdf-lib"
 
 const Logger = getLogger(Subsystem.Ingest).child({
   module: "pdfProcessor",
@@ -22,17 +19,14 @@ export const PDF_PROCESSING_METHOD = {
 export type PdfProcessingMethod =
   (typeof PDF_PROCESSING_METHOD)[keyof typeof PDF_PROCESSING_METHOD]
 
-const PDF_GEMINI_PAGE_THRESHOLD = 40
-const MAX_PDF_PAGE_COUNT = 1000
 const DEFAULT_DOCLING_TIMEOUT_FALLBACK_MS = 30 * 60 * 1000
-const DOCLING_TIMEOUT_PER_PAGE_MS = 15 * 1000
 const DOCLING_TIMEOUT_PER_100KB_MS = 10 * 1000
 const ONE_HUNDRED_KB_BYTES = 100 * 1024
 
 type DoclingPreflight = {
-  pageCount: number | null
   timeoutMs: number
   usedFallbackTimeout: boolean
+  timeoutStrategy: "size-only" | "fallback"
 }
 
 function getConfiguredDoclingBaseTimeoutMs(): number {
@@ -53,32 +47,23 @@ const DOCLING_BASE_TIMEOUT_MS = getConfiguredDoclingBaseTimeoutMs()
 
 export function calculateDoclingTimeoutMs(
   fileSizeBytes: number,
-  pageCount: number | null,
   baseTimeoutMs: number = DOCLING_BASE_TIMEOUT_MS,
 ): DoclingPreflight {
-  if (
-    !Number.isFinite(fileSizeBytes) ||
-    fileSizeBytes <= 0 ||
-    !Number.isFinite(pageCount) ||
-    (pageCount as number) <= 0
-  ) {
+  if (!Number.isFinite(fileSizeBytes) || fileSizeBytes <= 0) {
     return {
-      pageCount: pageCount ?? null,
       timeoutMs: DEFAULT_DOCLING_TIMEOUT_FALLBACK_MS,
       usedFallbackTimeout: true,
+      timeoutStrategy: "fallback",
     }
   }
 
   const sizeUnits = Math.ceil(fileSizeBytes / ONE_HUNDRED_KB_BYTES)
-  const timeoutMs =
-    baseTimeoutMs +
-    (pageCount as number) * DOCLING_TIMEOUT_PER_PAGE_MS +
-    sizeUnits * DOCLING_TIMEOUT_PER_100KB_MS
+  const timeoutMs = baseTimeoutMs + sizeUnits * DOCLING_TIMEOUT_PER_100KB_MS
 
   return {
-    pageCount: pageCount as number,
     timeoutMs,
     usedFallbackTimeout: false,
+    timeoutStrategy: "size-only",
   }
 }
 
@@ -192,57 +177,6 @@ export class PdfProcessor {
     }
   }
 
-  private static async getPdfPageCount(buffer: Buffer): Promise<number | null> {
-    const start = Date.now()
-    Logger.info(
-      {
-        fileSizeBytes: buffer.length,
-      },
-      "PDF processing stage: reading PDF page count",
-    )
-    try {
-      const document = await PDFDocument.load(buffer)
-      const pageCount = document.getPageCount()
-      Logger.info(
-        {
-          pageCount,
-          fileSizeBytes: buffer.length,
-          durationMs: Date.now() - start,
-        },
-        "PDF processing stage: PDF page count read",
-      )
-      return pageCount
-    } catch (error) {
-      Logger.warn(
-        error,
-        "Failed to determine PDF page count, skipping Gemini eligibility check",
-      )
-      return null
-    }
-  }
-
-  /**
-   * Helper method to process PDF with Gemini and transform the result
-   */
-  private static async processWithGemini(
-    buffer: Buffer,
-    vespaDocId: string,
-  ): Promise<ProcessingResult> {
-    const geminiResult = await extractTextAndImagesWithChunksFromPDFviaGemini(
-      buffer,
-      vespaDocId,
-    )
-    return this.finalizeProcessingResult(
-      {
-        chunks: geminiResult.text_chunks,
-        chunks_pos: geminiResult.text_chunk_pos,
-        image_chunks: geminiResult.image_chunks,
-        image_chunks_pos: geminiResult.image_chunk_pos,
-      },
-      PDF_PROCESSING_METHOD.GEMINI,
-    )
-  }
-
   /**
    * Helper method to process PDF with PDF.js and transform the result
    */
@@ -287,11 +221,11 @@ export class PdfProcessor {
       {
         fileName,
         fileSizeBytes: buffer.length,
-        pageCount: preflight.pageCount,
         computedTimeoutMs: preflight.timeoutMs,
         usedFallbackTimeout: preflight.usedFallbackTimeout,
+        timeoutStrategy: preflight.timeoutStrategy,
       },
-      `Computed docling request preflight timeoutMs=${preflight.timeoutMs} pageCount=${preflight.pageCount ?? "unknown"} fallback=${preflight.usedFallbackTimeout} fileSizeBytes=${buffer.length}`,
+      `Computed docling request timeoutMs=${preflight.timeoutMs} strategy=${preflight.timeoutStrategy} fallback=${preflight.usedFallbackTimeout} fileSizeBytes=${buffer.length}`,
     )
 
     const doclingResult = await chunkByDoclingFromBuffer(
@@ -329,8 +263,11 @@ export class PdfProcessor {
    * 1. Try OCR first (if enabled via useOCR)
    *    - If DOCLING_ENABLED is true, use Docling
    *    - Otherwise, use Paddle OCR (if OCR_PROVIDERS configured)
-   * 2. If OCR fails and PDF < 40 pages, try Gemini
-   * 3. If all above fail or PDF >= 40 pages, use PDF.js
+   * 2. If OCR fails, use PDF.js
+   *
+   * We intentionally do not pre-load the PDF to count pages here. Large PDFs
+   * can spend minutes in PDFDocument.load() before Docling receives any work.
+   * Docling timeout is therefore derived from file size only.
    * Set PDF_PROCESSING_DISABLE_FALLBACKS=true to fail ingestion on the first
    * selected processing strategy error instead of trying later strategies.
    *
@@ -362,20 +299,14 @@ export class PdfProcessor {
       },
       "PDF processing stage: fallback processor started",
     )
-    const pageCount = await this.getPdfPageCount(buffer)
     Logger.info(
       {
         fileName,
         vespaDocId,
-        pageCount,
-        maxPdfPageCount: MAX_PDF_PAGE_COUNT,
         durationMs: Date.now() - start,
       },
-      "PDF processing stage: page count check complete",
+      "PDF processing stage: page count preflight skipped",
     )
-    if (pageCount !== null && pageCount > MAX_PDF_PAGE_COUNT) {
-      throw new PdfPageCountExceededError(pageCount, MAX_PDF_PAGE_COUNT)
-    }
     const disableFallbacks = config.pdfProcessingDisableFallbacks
 
     // Step 1: Try OCR first (if enabled)
@@ -387,10 +318,7 @@ export class PdfProcessor {
         const doclingEnabled = process.env.DOCLING_ENABLED === "true"
 
         if (doclingEnabled) {
-          const doclingPreflight = calculateDoclingTimeoutMs(
-            buffer.length,
-            pageCount,
-          )
+          const doclingPreflight = calculateDoclingTimeoutMs(buffer.length)
           Logger.info(`Using Docling for OCR processing of ${fileName}`)
           const doclingResult = await this.processWithDocling(
             buffer,
@@ -435,41 +363,8 @@ export class PdfProcessor {
       Logger.info(`OCR disabled for ${fileName}, skipping OCR processing`)
     }
 
-    // Step 2: Determine if we should try Gemini based on page count
-    const shouldTryGemini =
-      pageCount !== null && pageCount < PDF_GEMINI_PAGE_THRESHOLD
-
-    if (shouldTryGemini) {
-      try {
-        Logger.info(
-          `Attempting Gemini processing for ${fileName} (${pageCount} pages)`,
-        )
-        const result = await this.processWithGemini(buffer, vespaDocId)
-        Logger.info(`Gemini processing successful for ${fileName}`)
-        return result
-      } catch (error) {
-        if (disableFallbacks) {
-          Logger.error(
-            `Gemini PDF processing failed for ${fileName}; PDF processing fallbacks are disabled. error: ${JSON.stringify(error)}`,
-          )
-          throw error
-        }
-        Logger.warn(
-          `Gemini PDF processing failed for ${fileName}, falling back to PDF.js. error: ${JSON.stringify(error)}`,
-        )
-      }
-    } else if (pageCount !== null) {
-      Logger.debug(
-        {
-          fileName,
-          pageCount,
-          threshold: PDF_GEMINI_PAGE_THRESHOLD,
-        },
-        "Skipping Gemini fallback due to page count threshold",
-      )
-    }
-
-    // Step 3: Final fallback to PDF.js
+    // Final fallback to PDF.js. Gemini fallback previously required a page
+    // count preflight, which is intentionally skipped for this ingestion path.
     try {
       Logger.info(`Attempting PDF.js processing for ${fileName}`)
       const result = await this.processWithPdfJs(
@@ -489,24 +384,13 @@ export class PdfProcessor {
   }
 
   /**
-   * Get the page count of a PDF without processing it
-   */
-  static async getPageCount(buffer: Buffer): Promise<number | null> {
-    return this.getPdfPageCount(buffer)
-  }
-
-  static getMaxPdfPageCount(): number {
-    return MAX_PDF_PAGE_COUNT
-  }
-
-  /**
    * Configuration for PDF processing
    */
   static getConfig() {
     return {
-      geminiPageThreshold: PDF_GEMINI_PAGE_THRESHOLD,
-      supportedMethods: ["ocr", "docling", "gemini", "pdfjs"] as const,
-      defaultFallbackOrder: ["ocr", "gemini", "pdfjs"] as const,
+      doclingTimeoutStrategy: "size-only" as const,
+      supportedMethods: ["ocr", "docling", "pdfjs"] as const,
+      defaultFallbackOrder: ["ocr", "pdfjs"] as const,
       disableFallbacks: config.pdfProcessingDisableFallbacks,
     }
   }
