@@ -13,6 +13,7 @@ let paddleStatusEndpoint =
   process.env.STATUS_ENDPOINT || "http://localhost:8000/instance_status"
 let doclingServiceUrl =
   process.env.DOCLING_SERVICE_URL || "http://localhost:8000"
+let priorityDoclingServiceUrl = process.env.PRIORITY_DOCLING_SERVICE_URL || ""
 const doclingEnabled = process.env.DOCLING_ENABLED === "true"
 const pdfProcessingDisableFallbacks =
   process.env.PDF_PROCESSING_DISABLE_FALLBACKS === "true"
@@ -379,6 +380,7 @@ export default {
   keycloakLogoutRedirectUrl,
   paddleStatusEndpoint,
   doclingServiceUrl,
+  priorityDoclingServiceUrl,
   doclingEnabled,
   pdfProcessingDisableFallbacks,
   ocrProviders,

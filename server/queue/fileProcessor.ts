@@ -325,6 +325,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       IMAGE_CONTEXT_CONFIG.enabled, // extractImages
       IMAGE_CONTEXT_CONFIG.enabled, // describeImages
       useOCR, // useOCR option
+      true,
     )
 
     // Extract title for markdown files

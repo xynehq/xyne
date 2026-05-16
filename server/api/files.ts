@@ -326,6 +326,7 @@ export const handleAttachmentUpload = async (c: Context) => {
             IMAGE_CONTEXT_CONFIG.enabled,
             IMAGE_CONTEXT_CONFIG.enabled,
             false,
+            true,
           )
 
           if(processingResults.length > 0 && 'totalSheets' in processingResults[0]) {
