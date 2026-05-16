@@ -46,6 +46,54 @@ interface FileUploadToDataSourceResult extends DataSourceUploadResult {
   filename: string
 }
 
+/**
+ * Flatten a docling-emitted chunk_meta into the shape `file.sd` accepts.
+ * Mirrors `queue/fileProcessor.ts:mapChunkMeta`. `includeHeadings` for text
+ * chunks; image chunks omit headings.
+ */
+function flattenChunkMeta(meta: any, includeHeadings: boolean) {
+  const result: Record<string, unknown> = {
+    chunk_index: meta?.chunk_index,
+    page_numbers: meta?.page_numbers || [],
+    block_labels: meta?.block_labels || [],
+    width: meta?.width ?? 0,
+    height: meta?.height ?? 0,
+    bbox_l: null,
+    bbox_t: null,
+    bbox_r: null,
+    bbox_b: null,
+    bboxes_json: null,
+  }
+
+  const bbox = meta?.bbox
+  if (
+    bbox &&
+    typeof bbox.l === "number" &&
+    typeof bbox.t === "number" &&
+    typeof bbox.r === "number" &&
+    typeof bbox.b === "number"
+  ) {
+    result.bbox_l = bbox.l
+    result.bbox_t = bbox.t
+    result.bbox_r = bbox.r
+    result.bbox_b = bbox.b
+  }
+
+  if (Array.isArray(meta?.bboxes) && meta.bboxes.length > 0) {
+    try {
+      result.bboxes_json = JSON.stringify(meta.bboxes)
+    } catch {
+      result.bboxes_json = null
+    }
+  }
+
+  if (includeHeadings) {
+    result.headings = meta?.headings || []
+  }
+
+  return result
+}
+
 export const handleFileUpload = async (c: Context) => {
   let email = ""
   try {
@@ -369,8 +417,12 @@ export const handleAttachmentUpload = async (c: Context) => {
               chunks_pos: chunks_pos,
               image_chunks: image_chunks,
               image_chunks_pos: image_chunks_pos,
-              chunks_map: processingResult.chunks_map,
-              image_chunks_map: processingResult.image_chunks_map,
+              chunks_map: (processingResult.chunks_map || []).map((m: any) =>
+                flattenChunkMeta(m, true),
+              ),
+              image_chunks_map: (processingResult.image_chunks_map || []).map(
+                (m: any) => flattenChunkMeta(m, false),
+              ),
               permissions: [email],
               mimeType: getBaseMimeType(file.type || "text/plain"),
               metadata: JSON.stringify({
