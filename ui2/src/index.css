@@ -1,0 +1,289 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* ─── Light theme ───────────────────────────────────────────────────── */
+  :root {
+    --background: 30 12% 99%;
+    --foreground: 230 14% 12%;
+
+    --surface: 0 0% 100%;
+    --surface-elevated: 30 14% 98%;
+    --surface-muted: 30 10% 95%;
+
+    --border: 230 12% 90%;
+    --input: 230 12% 90%;
+    --ring: 230 12% 60%;
+
+    --primary: 230 16% 14%;
+    --primary-foreground: 30 14% 98%;
+
+    --secondary: 30 10% 94%;
+    --secondary-foreground: 230 14% 12%;
+
+    --muted: 30 10% 94%;
+    --muted-foreground: 230 6% 42%;
+
+    --accent: 36 60% 92%;
+    --accent-foreground: 28 50% 18%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+
+    --sidebar: 30 14% 96%;
+    --sidebar-foreground: 230 14% 12%;
+    --sidebar-border: 30 10% 89%;
+
+    --assistant-bg: 30 14% 98%;
+    --user-bg: 30 10% 94%;
+
+    --radius: 0.75rem;
+
+    color-scheme: light;
+  }
+
+  /* ─── Dark theme ────────────────────────────────────────────────────── */
+  .dark {
+    --background: 224 18% 6%;
+    --foreground: 30 8% 95%;
+
+    --surface: 224 16% 8%;
+    --surface-elevated: 224 16% 10%;
+    --surface-muted: 224 12% 12%;
+
+    --border: 224 8% 18%;
+    --input: 224 8% 18%;
+    --ring: 224 10% 38%;
+
+    --primary: 30 8% 95%;
+    --primary-foreground: 224 18% 6%;
+
+    --secondary: 224 12% 14%;
+    --secondary-foreground: 30 8% 95%;
+
+    --muted: 224 12% 14%;
+    --muted-foreground: 224 8% 62%;
+
+    --accent: 30 30% 18%;
+    --accent-foreground: 36 60% 88%;
+
+    --destructive: 0 64% 46%;
+    --destructive-foreground: 0 0% 98%;
+
+    --sidebar: 224 22% 5%;
+    --sidebar-foreground: 30 8% 95%;
+    --sidebar-border: 224 8% 14%;
+
+    --assistant-bg: 224 14% 9%;
+    --user-bg: 224 10% 13%;
+
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  html {
+    /* Smooth swap between light/dark */
+    transition:
+      background-color 240ms ease,
+      color 240ms ease;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings:
+      "ss01" 1,
+      "cv11" 1,
+      "rlig" 1,
+      "calt" 1;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Selection mirrors the accent token */
+  ::selection {
+    background-color: hsl(var(--accent));
+    color: hsl(var(--accent-foreground));
+  }
+
+  /* Thin, theme-aware scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border: 3px solid transparent;
+    background-clip: padding-box;
+    border-radius: 9999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--ring));
+    background-clip: padding-box;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* Focus rings — a single restrained style across the app */
+  :where(button, a, input, textarea, [role="radio"]):focus-visible {
+    outline: 2px solid hsl(var(--ring) / 0.55);
+    outline-offset: 2px;
+    border-radius: calc(var(--radius) - 4px);
+  }
+}
+
+@layer components {
+  /* Assistant markdown — keeps spacing tight and respects the design tokens. */
+  .prose-chat > * + * {
+    margin-top: 0.75rem;
+  }
+  .prose-chat p {
+    line-height: 1.7;
+  }
+  .prose-chat ul,
+  .prose-chat ol {
+    padding-left: 1.4rem;
+  }
+  .prose-chat ul {
+    list-style: disc;
+  }
+  .prose-chat ol {
+    list-style: decimal;
+  }
+  .prose-chat li {
+    margin-top: 0.25rem;
+  }
+  .prose-chat li > p {
+    margin: 0;
+  }
+  .prose-chat li > ul,
+  .prose-chat li > ol {
+    margin-top: 0.25rem;
+  }
+  .prose-chat h1,
+  .prose-chat h2,
+  .prose-chat h3,
+  .prose-chat h4 {
+    font-weight: 600;
+    line-height: 1.3;
+    color: hsl(var(--foreground));
+  }
+  .prose-chat h1 {
+    font-size: 1.35rem;
+  }
+  .prose-chat h2 {
+    font-size: 1.2rem;
+  }
+  .prose-chat h3 {
+    font-size: 1.05rem;
+  }
+  .prose-chat h4 {
+    font-size: 0.98rem;
+  }
+  .prose-chat strong {
+    font-weight: 600;
+    color: hsl(var(--foreground));
+  }
+  .prose-chat em {
+    font-style: italic;
+  }
+  .prose-chat a {
+    color: hsl(var(--foreground));
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-color: hsl(var(--border));
+  }
+  .prose-chat a:hover {
+    text-decoration-color: hsl(var(--foreground));
+  }
+  .prose-chat code {
+    font-family:
+      ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+      "Liberation Mono", monospace;
+    font-size: 0.88em;
+    background: hsl(var(--surface-muted));
+    border: 1px solid hsl(var(--border));
+    border-radius: 6px;
+    padding: 0.1rem 0.35rem;
+  }
+  .prose-chat pre {
+    background: hsl(var(--surface-muted));
+    border: 1px solid hsl(var(--border));
+    border-radius: 12px;
+    padding: 0.9rem 1rem;
+    overflow-x: auto;
+    line-height: 1.55;
+  }
+  .prose-chat pre code {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    font-size: 0.9em;
+  }
+  .prose-chat blockquote {
+    border-left: 2px solid hsl(var(--border));
+    padding-left: 0.85rem;
+    color: hsl(var(--muted-foreground));
+  }
+  .prose-chat table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95em;
+  }
+  .prose-chat th,
+  .prose-chat td {
+    border: 1px solid hsl(var(--border));
+    padding: 0.4rem 0.6rem;
+    text-align: left;
+  }
+  .prose-chat th {
+    background: hsl(var(--surface-muted));
+    font-weight: 600;
+  }
+  .prose-chat hr {
+    border: 0;
+    border-top: 1px solid hsl(var(--border));
+    margin: 1.25rem 0;
+  }
+
+  /* A single hairline used to separate compositional regions */
+  .hairline {
+    background: linear-gradient(
+      to right,
+      transparent,
+      hsl(var(--border)),
+      transparent
+    );
+    height: 1px;
+  }
+
+  /* Reusable card-like surface used by chips and message bubbles */
+  .surface-card {
+    @apply rounded-2xl border border-border bg-surface-elevated;
+  }
+
+  /* Soft halo behind the empty state — whitish-red wash echoing the xyne mark */
+  .halo {
+    background: radial-gradient(
+      60% 60% at 50% 30%,
+      hsl(4 88% 96% / 0.55),
+      transparent 70%
+    );
+  }
+  .dark .halo {
+    background: radial-gradient(
+      60% 60% at 50% 30%,
+      hsl(4 70% 60% / 0.09),
+      transparent 70%
+    );
+  }
+}

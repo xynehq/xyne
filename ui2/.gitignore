@@ -1,0 +1,8 @@
+node_modules
+dist
+.vite
+*.local
+.DS_Store
+
+# TanStack Router generated route tree
+src/routeTree.gen.ts

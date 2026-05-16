@@ -8,6 +8,7 @@
     "@commitlint/cli": "^19.8.1",
     "@commitlint/config-conventional": "^19.8.1",
     "@digitalroute/cz-conventional-changelog-for-jira": "^8.0.1",
+    "@eslint/js": "^10.0.1",
     "@faker-js/faker": "^9.3.0",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/commit-analyzer": "^13.0.1",
@@ -20,10 +21,14 @@
     "commitizen": "^4.3.1",
     "cz-conventional-changelog": "^3.3.0",
     "drizzle-kit": "0.31.4",
+    "eslint": "^10.4.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.6.0",
     "husky": "^9.1.7",
     "madge": "^8.0.0",
     "p-queue": "^8.0.1",
-    "semantic-release": "^24.2.7"
+    "semantic-release": "^24.2.7",
+    "typescript-eslint": "^8.59.3"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
@@ -36,6 +41,8 @@
     "check-deps": "madge --circular --extensions ts,tsx ./",
     "dev": "bun run check-deps && bun run --watch server.ts",
     "dev:unsafe": "bun run --watch server.ts",
+    "dev:v2": "bun run --watch backendv2/server.ts",
+    "lint:v2": "eslint --config backendv2/eslint.config.js backendv2",
     "dev:sync": "bun run check-deps && bun run --watch sync-server.ts",
     "dev:sync-unsafe": "bun run --watch sync-server.ts",
     "build": "bun run check-deps && bunx --bun vite build",

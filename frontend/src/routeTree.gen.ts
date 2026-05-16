@@ -261,6 +261,7 @@ const AuthenticatedAdminIntegrationsDatabaseRoute =
   } as any)
 
 export interface FileRoutesByFullPath {
+  '/': typeof AuthenticatedIndexRoute
   '/auth': typeof AuthRoute
   '/call': typeof CallRoute
   '/agent': typeof AuthenticatedAgentRoute
@@ -272,7 +273,6 @@ export interface FileRoutesByFullPath {
   '/tuning': typeof AuthenticatedTuningRoute
   '/workflow': typeof AuthenticatedWorkflowRoute
   '/oauth/success': typeof OauthSuccessRoute
-  '/': typeof AuthenticatedIndexRoute
   '/admin/chat-overview': typeof AuthenticatedAdminChatOverviewRoute
   '/admin/userManagement': typeof AuthenticatedAdminUserManagementRoute
   '/buzz/channels': typeof AuthenticatedBuzzChannelsRoute
@@ -289,7 +289,7 @@ export interface FileRoutesByFullPath {
   '/integrations/slack': typeof AuthenticatedIntegrationsSlackRoute
   '/integrations/zoho-desk': typeof AuthenticatedIntegrationsZohoDeskRoute
   '/buzz/': typeof AuthenticatedBuzzIndexRoute
-  '/integrations': typeof AuthenticatedIntegrationsIndexRoute
+  '/integrations/': typeof AuthenticatedIntegrationsIndexRoute
   '/admin/integrations/database': typeof AuthenticatedAdminIntegrationsDatabaseRoute
   '/admin/integrations/google': typeof AuthenticatedAdminIntegrationsGoogleRoute
   '/admin/integrations/mcp': typeof AuthenticatedAdminIntegrationsMcpRoute
@@ -297,7 +297,7 @@ export interface FileRoutesByFullPath {
   '/admin/integrations/slack': typeof AuthenticatedAdminIntegrationsSlackRoute
   '/admin/integrations/zoho-desk': typeof AuthenticatedAdminIntegrationsZohoDeskRoute
   '/trace/$chatId/$msgId': typeof AuthenticatedTraceChatIdMsgIdRoute
-  '/admin/integrations': typeof AuthenticatedAdminIntegrationsIndexRoute
+  '/admin/integrations/': typeof AuthenticatedAdminIntegrationsIndexRoute
 }
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
@@ -381,6 +381,7 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
+    | '/'
     | '/auth'
     | '/call'
     | '/agent'
@@ -392,7 +393,6 @@ export interface FileRouteTypes {
     | '/tuning'
     | '/workflow'
     | '/oauth/success'
-    | '/'
     | '/admin/chat-overview'
     | '/admin/userManagement'
     | '/buzz/channels'
@@ -409,7 +409,7 @@ export interface FileRouteTypes {
     | '/integrations/slack'
     | '/integrations/zoho-desk'
     | '/buzz/'
-    | '/integrations'
+    | '/integrations/'
     | '/admin/integrations/database'
     | '/admin/integrations/google'
     | '/admin/integrations/mcp'
@@ -417,7 +417,7 @@ export interface FileRouteTypes {
     | '/admin/integrations/slack'
     | '/admin/integrations/zoho-desk'
     | '/trace/$chatId/$msgId'
-    | '/admin/integrations'
+    | '/admin/integrations/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/auth'
@@ -524,7 +524,7 @@ declare module '@tanstack/react-router' {
     '/_authenticated': {
       id: '/_authenticated'
       path: ''
-      fullPath: ''
+      fullPath: '/'
       preLoaderRoute: typeof AuthenticatedRouteImport
       parentRoute: typeof rootRouteImport
     }
@@ -601,7 +601,7 @@ declare module '@tanstack/react-router' {
     '/_authenticated/integrations/': {
       id: '/_authenticated/integrations/'
       path: '/integrations'
-      fullPath: '/integrations'
+      fullPath: '/integrations/'
       preLoaderRoute: typeof AuthenticatedIntegrationsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
@@ -720,7 +720,7 @@ declare module '@tanstack/react-router' {
     '/_authenticated/admin/integrations/': {
       id: '/_authenticated/admin/integrations/'
       path: '/admin/integrations'
-      fullPath: '/admin/integrations'
+      fullPath: '/admin/integrations/'
       preLoaderRoute: typeof AuthenticatedAdminIntegrationsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }

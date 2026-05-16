@@ -119,6 +119,10 @@ export default defineConfig(({ mode }) => {
           target: env.VITE_API_BASE_URL || "http://127.0.0.1:3000",
           changeOrigin: true,
         },
+        "/v2": {
+          target: env.VITE_BACKENDV2_BASE_URL || "http://127.0.0.1:3010",
+          changeOrigin: true,
+        },
         "/ws": {
           target: env.VITE_WS_BASE_URL || "ws://127.0.0.1:3000",
           ws: true,
