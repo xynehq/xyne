@@ -1,10 +1,11 @@
+import { spawn } from "child_process"
 import { promises as fsPromises } from "fs"
 import * as path from "path"
-import { getLogger } from "@/logger"
-import { Subsystem, type ChunkMetadata } from "@/types"
-import type { ProcessingResult } from "@/services/fileProcessor"
-import config from "@/config"
 import { chunkTextByParagraph } from "@/chunks"
+import config from "@/config"
+import { getLogger } from "@/logger"
+import type { ProcessingResult } from "@/services/fileProcessor"
+import { type ChunkMetadata, Subsystem } from "@/types"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "chunkByDocling",
@@ -21,6 +22,18 @@ const STATUS_FETCH_TIMEOUT_MS = 10_000
 
 type DoclingCallOptions = {
   timeoutMs?: number
+}
+
+type DoclingHttpResponse = {
+  status: number
+  ok: boolean
+  bodyText: string
+}
+
+type CurlResult = {
+  stdout: string
+  stderr: string
+  exitCode: number | null
 }
 
 function parsePositiveInteger(
@@ -52,6 +65,165 @@ function getEffectiveDoclingTimeoutMs(timeoutMs?: number): number {
   return Number.isFinite(timeoutMs) && (timeoutMs || 0) > 0
     ? (timeoutMs as number)
     : DOCLING_TIMEOUT_MS
+}
+
+function escapeMultipartHeaderValue(value: string): string {
+  return value.replace(/[\r\n";]/g, "_")
+}
+
+function runCurl(args: string[], timeoutMs: number): Promise<CurlResult> {
+  return new Promise((resolve, reject) => {
+    const stdoutChunks: Buffer[] = []
+    const stderrChunks: Buffer[] = []
+    const child = spawn("curl", args, {
+      stdio: ["ignore", "pipe", "pipe"],
+    })
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL")
+      reject(new Error(`curl timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+
+    child.stdout.on("data", (chunk: Buffer | string) => {
+      stdoutChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+    })
+    child.stderr.on("data", (chunk: Buffer | string) => {
+      stderrChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+    })
+    child.on("error", (error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
+    child.on("close", (exitCode) => {
+      clearTimeout(timer)
+      resolve({
+        stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+        stderr: Buffer.concat(stderrChunks).toString("utf8"),
+        exitCode,
+      })
+    })
+  })
+}
+
+async function postDoclingMultipart(
+  apiUrl: string,
+  buffer: Buffer,
+  fileName: string,
+  docId: string,
+  timeoutMs: number,
+  signal: AbortSignal,
+): Promise<DoclingHttpResponse> {
+  const requestStart = Date.now()
+  const tempFilePath = path.join(
+    "/tmp",
+    `xyne-docling-${docId.replace(/[^a-zA-Z0-9_-]/g, "_")}-${Date.now()}.pdf`,
+  )
+  const curlStatusMarker = "\nXYNE_CURL_STATUS:"
+
+  await fsPromises.writeFile(tempFilePath, buffer)
+
+  try {
+    if (signal.aborted) {
+      const error = new Error(`Docling request timed out after ${timeoutMs}ms`)
+      error.name = "AbortError"
+      throw error
+    }
+
+    const curlResult = await runCurl(
+      [
+        "-sS",
+        "--fail-with-body",
+        "--max-time",
+        String(Math.ceil(timeoutMs / 1000)),
+        "-H",
+        "Connection: close",
+        "-F",
+        `file=@${tempFilePath};type=application/pdf;filename=${escapeMultipartHeaderValue(fileName)}`,
+        "-F",
+        `doc_id=${docId}`,
+        "-w",
+        `${curlStatusMarker}%{http_code}:%{content_type}:%{size_download}`,
+        apiUrl,
+      ],
+      timeoutMs,
+    )
+
+    if (signal.aborted) {
+      const error = new Error(`Docling request timed out after ${timeoutMs}ms`)
+      error.name = "AbortError"
+      throw error
+    }
+
+    const markerIndex = curlResult.stdout.lastIndexOf(curlStatusMarker)
+    const bodyText =
+      markerIndex >= 0
+        ? curlResult.stdout.slice(0, markerIndex)
+        : curlResult.stdout
+    const statusParts =
+      markerIndex >= 0
+        ? curlResult.stdout
+            .slice(markerIndex + curlStatusMarker.length)
+            .trim()
+            .split(":")
+        : []
+    const status = Number.parseInt(statusParts[0] || "0", 10)
+    const contentType = statusParts[1] || null
+    const sizeDownload = statusParts[2] || null
+    const ok =
+      curlResult.exitCode === 0 &&
+      Number.isFinite(status) &&
+      status >= 200 &&
+      status < 300
+
+    Logger.info(
+      {
+        fileName,
+        docId,
+        status,
+        ok,
+        contentLength: sizeDownload,
+        contentType,
+        elapsedMs: Date.now() - requestStart,
+        curlExitCode: curlResult.exitCode,
+      },
+      "Docling HTTP response headers received",
+    )
+    Logger.info(
+      {
+        fileName,
+        docId,
+        contentLength: sizeDownload,
+        elapsedMs: Date.now() - requestStart,
+      },
+      "Docling response body read starting",
+    )
+    Logger.info(
+      {
+        fileName,
+        docId,
+        bodyLength: bodyText.length,
+        bodyReadDurationMs: 0,
+        elapsedMs: Date.now() - requestStart,
+      },
+      "Docling response body read complete",
+    )
+
+    if (!ok && curlResult.stderr) {
+      Logger.warn(
+        {
+          fileName,
+          docId,
+          status,
+          curlExitCode: curlResult.exitCode,
+          stderr: curlResult.stderr.slice(0, 500),
+        },
+        "Docling curl request completed with non-zero status",
+      )
+    }
+
+    return { status, ok, bodyText }
+  } finally {
+    await fsPromises.unlink(tempFilePath).catch(() => undefined)
+  }
 }
 
 // Docling API response types
@@ -259,19 +431,12 @@ async function callDoclingService(
   const initialTimeoutMs = getEffectiveDoclingTimeoutMs(options?.timeoutMs)
   let currentTimeoutMs = initialTimeoutMs
 
-  const formData = new FormData()
-  // Create blob from buffer bytes - use type assertion to bypass strict typing
-  const blob = new Blob([buffer as unknown as BlobPart], {
-    type: "application/pdf",
-  })
-  formData.append("file", blob, fileName)
-  formData.append("doc_id", docId)
-
   let lastError: Error | null = null
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), currentTimeoutMs)
+    const requestStart = Date.now()
 
     try {
       Logger.info(
@@ -285,22 +450,54 @@ async function callDoclingService(
         `Calling docling service (attempt ${attempt}/${MAX_RETRIES}) timeoutMs=${currentTimeoutMs} fileSize=${buffer.length} docId=${docId}`,
       )
 
-      const response = await fetch(apiUrl, {
-        method: "POST",
-        body: formData,
-        signal: controller.signal,
-      })
-
-      clearTimeout(timer)
+      const response = await postDoclingMultipart(
+        apiUrl,
+        buffer,
+        fileName,
+        docId,
+        currentTimeoutMs,
+        controller.signal,
+      )
 
       if (!response.ok) {
-        const errorText = await response.text().catch(() => "")
+        clearTimeout(timer)
+        Logger.warn(
+          {
+            fileName,
+            docId,
+            status: response.status,
+            bodyLength: response.bodyText.length,
+            elapsedMs: Date.now() - requestStart,
+          },
+          "Docling non-OK response body received",
+        )
         throw new Error(
-          `Docling service returned ${response.status}: ${errorText.slice(0, 200)}`,
+          `Docling service returned ${response.status}: ${response.bodyText.slice(0, 200)}`,
         )
       }
 
-      const result = (await response.json()) as DoclingResponse
+      clearTimeout(timer)
+
+      const parseStart = Date.now()
+      Logger.info(
+        {
+          fileName,
+          docId,
+          bodyLength: response.bodyText.length,
+        },
+        "Docling JSON parse starting",
+      )
+      const result = JSON.parse(response.bodyText) as DoclingResponse
+      Logger.info(
+        {
+          fileName,
+          docId,
+          bodyLength: response.bodyText.length,
+          parseDurationMs: Date.now() - parseStart,
+          elapsedMs: Date.now() - requestStart,
+        },
+        "Docling JSON parse complete",
+      )
 
       Logger.info("Docling service response received", {
         fileName,

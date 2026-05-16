@@ -1,11 +1,11 @@
-import { readFile } from "node:fs/promises"
-import { IMAGE_CONTEXT_CONFIG } from "@/config"
+import { spawn } from "node:child_process"
+import { readFile, unlink, writeFile } from "node:fs/promises"
+import config, { IMAGE_CONTEXT_CONFIG, NAMESPACE } from "@/config"
 import { db } from "@/db/client"
 import { updateParentStatus } from "@/db/knowledgeBase"
 import { collectionItems, collections } from "@/db/schema"
 import { getBaseMimeType } from "@/integrations/dataSource/config"
 import { getLogger } from "@/logger"
-import { insert } from "@/search/vespa"
 import {
   FileProcessorService,
   type SheetProcessingResult,
@@ -17,6 +17,158 @@ import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
 import { and, eq, isNull } from "drizzle-orm"
 
 const Logger = getLogger(Subsystem.Queue)
+const VESPA_INSERT_TIMEOUT_MS = 120_000
+
+type CurlResult = {
+  stdout: string
+  stderr: string
+  exitCode: number | null
+}
+
+function runCurl(args: string[], timeoutMs: number): Promise<CurlResult> {
+  return new Promise((resolve, reject) => {
+    const stdoutChunks: Buffer[] = []
+    const stderrChunks: Buffer[] = []
+    const child = spawn("curl", args, {
+      stdio: ["ignore", "pipe", "pipe"],
+    })
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL")
+      reject(new Error(`curl timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+
+    child.stdout.on("data", (chunk: Buffer | string) => {
+      stdoutChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+    })
+    child.stderr.on("data", (chunk: Buffer | string) => {
+      stderrChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+    })
+    child.on("error", (error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
+    child.on("close", (exitCode) => {
+      clearTimeout(timer)
+      resolve({
+        stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+        stderr: Buffer.concat(stderrChunks).toString("utf8"),
+        exitCode,
+      })
+    })
+  })
+}
+
+async function insertKbItemDocument(
+  document: Record<string, unknown>,
+  schema: string,
+): Promise<void> {
+  const docId = String(document.docId)
+  const url = new URL(
+    `${config.vespaEndpoint.feedEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${encodeURIComponent(docId)}`,
+  )
+  const requestStart = Date.now()
+  const tempFilePath = `/tmp/xyne-vespa-${docId.replace(/[^a-zA-Z0-9_-]/g, "_")}-${Date.now()}.json`
+  const curlStatusMarker = "\nXYNE_CURL_STATUS:"
+
+  Logger.info(
+    {
+      docId,
+      schema,
+      chunks: Array.isArray(document.chunks) ? document.chunks.length : 0,
+      imageChunks: Array.isArray(document.image_chunks)
+        ? document.image_chunks.length
+        : 0,
+      tocChunks: Array.isArray(document.toc_chunks)
+        ? document.toc_chunks.length
+        : 0,
+    },
+    "File processing stage: direct Vespa insert serialization starting",
+  )
+  const serializeStart = Date.now()
+  const body = JSON.stringify({ fields: document })
+  const bodyBytes = Buffer.byteLength(body)
+  Logger.info(
+    {
+      docId,
+      schema,
+      bodyBytes,
+      durationMs: Date.now() - serializeStart,
+    },
+    "File processing stage: direct Vespa insert serialization complete",
+  )
+
+  Logger.info(
+    {
+      docId,
+      schema,
+      url: url.toString(),
+      bodyBytes,
+      timeoutMs: VESPA_INSERT_TIMEOUT_MS,
+    },
+    "File processing stage: direct Vespa insert request starting",
+  )
+
+  await writeFile(tempFilePath, body)
+  try {
+    const curlResult = await runCurl(
+      [
+        "-sS",
+        "--fail-with-body",
+        "--max-time",
+        String(Math.ceil(VESPA_INSERT_TIMEOUT_MS / 1000)),
+        "-H",
+        "Content-Type: application/json",
+        "-H",
+        "Connection: close",
+        "--data-binary",
+        `@${tempFilePath}`,
+        "-w",
+        `${curlStatusMarker}%{http_code}:%{content_type}:%{size_download}`,
+        url.toString(),
+      ],
+      VESPA_INSERT_TIMEOUT_MS,
+    )
+
+    const markerIndex = curlResult.stdout.lastIndexOf(curlStatusMarker)
+    const responseBody =
+      markerIndex >= 0
+        ? curlResult.stdout.slice(0, markerIndex)
+        : curlResult.stdout
+    const statusParts =
+      markerIndex >= 0
+        ? curlResult.stdout
+            .slice(markerIndex + curlStatusMarker.length)
+            .trim()
+            .split(":")
+        : []
+    const status = Number.parseInt(statusParts[0] || "0", 10)
+    const ok =
+      curlResult.exitCode === 0 &&
+      Number.isFinite(status) &&
+      status >= 200 &&
+      status < 300
+
+    if (!ok) {
+      throw new Error(
+        `Vespa insert failed for ${docId}: status=${status} exit=${curlResult.exitCode} stderr=${curlResult.stderr.slice(0, 500)} body=${responseBody.slice(0, 500)}`,
+      )
+    }
+
+    Logger.info(
+      {
+        docId,
+        schema,
+        status,
+        responseBytes: responseBody.length,
+        elapsedMs: Date.now() - requestStart,
+        curlExitCode: curlResult.exitCode,
+      },
+      "File processing stage: direct Vespa insert response complete",
+    )
+  } finally {
+    await unlink(tempFilePath).catch(() => undefined)
+  }
+}
 
 export function mergeCollectionItemMetadata(
   existingMetadata: unknown,
@@ -426,7 +578,31 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
     } else {
       newVespaDocId = file.vespaDocId
     }
+    Logger.info(
+      {
+        fileId,
+        fileName: file.fileName,
+        resultCount: processingResults.length,
+      },
+      "File processing stage: preparing Vespa documents",
+    )
     for (const [resultIndex, processingResult] of processingResults.entries()) {
+      const prepareStart = Date.now()
+      currentStage = `vespa-prepare-${resultIndex + 1}`
+      Logger.info(
+        {
+          fileId,
+          fileName: file.fileName,
+          resultIndex,
+          resultCount: processingResults.length,
+          chunks: processingResult.chunks.length,
+          imageChunks: processingResult.image_chunks.length,
+          tocChunks: processingResult.toc_chunks?.length || 0,
+          chunkMaps: processingResult.chunks_map?.length || 0,
+          imageChunkMaps: processingResult.image_chunks_map?.length || 0,
+        },
+        "File processing stage: preparing Vespa document",
+      )
       // Create Vespa document with proper fileName (matching original logic)
       const targetPath = file.path
 
@@ -456,6 +632,60 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         docId = `${file.vespaDocId}_${resultIndex}`
       }
 
+      const mapStart = Date.now()
+      const chunksMap = processingResult.chunks_map?.map((meta) =>
+        mapChunkMeta(meta, true),
+      )
+      const imageChunksMap = processingResult.image_chunks_map?.map((meta) =>
+        mapChunkMeta(meta, false),
+      )
+      Logger.info(
+        {
+          fileId,
+          fileName: file.fileName,
+          resultIndex,
+          durationMs: Date.now() - mapStart,
+          chunkMaps: chunksMap?.length || 0,
+          imageChunkMaps: imageChunksMap?.length || 0,
+        },
+        "File processing stage: mapped Vespa chunk metadata",
+      )
+
+      const metadataStart = Date.now()
+      const vespaMetadata = JSON.stringify(
+        mergeCollectionItemMetadata(file.metadata, {
+          originalFileName: file.originalName || file.fileName,
+          uploadedBy: file.uploadedByEmail || "system",
+          chunksCount:
+            processingResult.chunks.length +
+            processingResult.image_chunks.length,
+          imageChunksCount: processingResult.image_chunks.length,
+          tocChunksCount: (processingResult.toc_chunks || []).length,
+          processingMethod: getBaseMimeType(file.mimeType || "text/plain"),
+          ...(processingResult.processingMethod && {
+            pdfProcessingMethod: processingResult.processingMethod,
+          }),
+          ...(pageTitle && { pageTitle }),
+          lastModified: Date.now(),
+          ...("sheetName" in processingResult && {
+            sheetName: (processingResult as SheetProcessingResult).sheetName,
+            sheetIndex: (processingResult as SheetProcessingResult).sheetIndex,
+            totalSheets: (processingResult as SheetProcessingResult)
+              .totalSheets,
+          }),
+        }),
+      )
+      Logger.info(
+        {
+          fileId,
+          fileName: file.fileName,
+          resultIndex,
+          durationMs: Date.now() - metadataStart,
+          metadataBytes: Buffer.byteLength(vespaMetadata),
+        },
+        "File processing stage: built Vespa metadata",
+      )
+
       const vespaDoc = {
         docId: docId,
         clId: file.collectionId,
@@ -470,38 +700,11 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         image_chunks: processingResult.image_chunks,
         image_chunks_pos: processingResult.image_chunks_pos,
         toc_chunks: processingResult.toc_chunks || [],
-        chunks_map: processingResult.chunks_map?.map((meta) =>
-          mapChunkMeta(meta, true),
-        ),
-        image_chunks_map: processingResult.image_chunks_map?.map((meta) =>
-          mapChunkMeta(meta, false),
-        ),
+        chunks_map: chunksMap,
+        image_chunks_map: imageChunksMap,
         pageTitle: pageTitle,
         documentOutline: processingResult.documentOutline,
-        metadata: JSON.stringify(
-          mergeCollectionItemMetadata(file.metadata, {
-            originalFileName: file.originalName || file.fileName,
-            uploadedBy: file.uploadedByEmail || "system",
-            chunksCount:
-              processingResult.chunks.length +
-              processingResult.image_chunks.length,
-            imageChunksCount: processingResult.image_chunks.length,
-            tocChunksCount: (processingResult.toc_chunks || []).length,
-            processingMethod: getBaseMimeType(file.mimeType || "text/plain"),
-            ...(processingResult.processingMethod && {
-              pdfProcessingMethod: processingResult.processingMethod,
-            }),
-            ...(pageTitle && { pageTitle }),
-            lastModified: Date.now(),
-            ...("sheetName" in processingResult && {
-              sheetName: (processingResult as SheetProcessingResult).sheetName,
-              sheetIndex: (processingResult as SheetProcessingResult)
-                .sheetIndex,
-              totalSheets: (processingResult as SheetProcessingResult)
-                .totalSheets,
-            }),
-          }),
-        ),
+        metadata: vespaMetadata,
         createdBy: file.uploadedByEmail || "system",
         duration: 0,
         mimeType: getBaseMimeType(file.mimeType || "text/plain"),
@@ -510,6 +713,16 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         updatedAt: Date.now(),
         clFd: file.parentId,
       }
+      Logger.info(
+        {
+          fileId,
+          fileName: file.fileName,
+          resultIndex,
+          docId,
+          durationMs: Date.now() - prepareStart,
+        },
+        "File processing stage: prepared Vespa document",
+      )
 
       // Insert into Vespa
       currentStage = `vespa-insert-${resultIndex + 1}`
@@ -527,7 +740,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         },
         "File processing stage: inserting Vespa document",
       )
-      await insert(vespaDoc, KbItemsSchema)
+      await insertKbItemDocument(vespaDoc, KbItemsSchema)
       Logger.info(
         {
           fileId,
@@ -693,7 +906,7 @@ async function processCollectionJob(
     }
 
     // Insert into Vespa
-    await insert(vespaDoc, KbItemsSchema)
+    await insertKbItemDocument(vespaDoc, KbItemsSchema)
 
     // Keep collection in PROCESSING status
     // It will be updated to COMPLETED only when child files/folders complete
@@ -806,7 +1019,7 @@ async function processFolderJob(
     }
 
     // Insert into Vespa
-    await insert(vespaDoc, KbItemsSchema)
+    await insertKbItemDocument(vespaDoc, KbItemsSchema)
     const endTime = Date.now()
     Logger.info(
       `Successfully processed folder Vespa insertion: ${folderId} in ${endTime - startTime}ms (waiting for children to complete)`,
