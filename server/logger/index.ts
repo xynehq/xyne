@@ -8,7 +8,6 @@ import {
   appResponse,
   requestResponseLatency,
 } from "@/metrics/app/app-metrics"
-import { configureJAF } from "@juspay-xyne-jaf/jaf"
 import config from "@/config"
 import { object } from "zod"
 
@@ -29,14 +28,6 @@ const resolveLogLevel = (value: string | undefined): string => {
   return "debug"
 }
 const defaultLogLevel = resolveLogLevel(process.env.LOG_LEVEL)
-const enableVerboseJAFLogging =
-  process.env.JAF_VERBOSE_LOGGING !== undefined
-    ? process.env.JAF_VERBOSE_LOGGING === "true"
-    : true
-
-configureJAF({
-  verbose: enableVerboseJAFLogging,
-})
 
 const humanize = (times: string[]) => {
   const [delimiter, separator] = [",", "."]

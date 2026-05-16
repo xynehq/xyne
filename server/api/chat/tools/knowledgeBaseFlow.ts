@@ -23,22 +23,14 @@ import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { getErrorMessage } from "@/utils"
 import { Apps } from "@xyne/vespa-ts/types"
-import type { Tool } from "@juspay-xyne-jaf/jaf"
-import { ToolErrorCodes, ToolResponse } from "@juspay-xyne-jaf/jaf"
+import { ToolErrorCodes, ToolResponse } from "./tool-result"
 import { and, eq, inArray, isNull } from "drizzle-orm"
-import { type ZodType, z } from "zod"
+import { z } from "zod"
 import { executeVespaSearch } from "./global"
-import type { Ctx } from "./types"
+import type { AgentRunContext as Ctx } from "../agent-schemas"
 import { parseAgentAppIntegrations } from "./utils"
 
 const Logger = getLogger(Subsystem.Chat)
-
-// Narrows JAF tool parameter typing from a Zod schema.
-type ToolSchemaParameters<T> = Tool<T, Ctx>["schema"]["parameters"]
-// Bridges a Zod schema into the tool parameter type expected by JAF.
-const toToolSchemaParameters = <T>(
-  schema: ZodType<T>,
-): ToolSchemaParameters<T> => schema as unknown as ToolSchemaParameters<T>
 
 const KNOWLEDGE_BASE_TARGET_DESCRIPTION =
   "A discriminated knowledge-base target object for browse/search. Pass a JSON object, not a quoted JSON string. Set `type` to one of `collection`, `folder`, `file`, or `path`, then provide only the matching ID/path fields for that variant."
@@ -1627,26 +1619,6 @@ export async function executeSearchKnowledgeBase(
     )
   }
 }
-export const lsKnowledgeBaseTool: Tool<LsKnowledgeBaseToolParams, Ctx> = {
-  schema: {
-    name: "ls",
-    description: LS_KNOWLEDGE_BASE_TOOL_DESCRIPTION,
-    parameters: toToolSchemaParameters(LsKnowledgeBaseInputSchema),
-  },
-  execute: executeLsKnowledgeBase,
-}
-export const searchKnowledgeBaseTool: Tool<SearchKnowledgeBaseToolParams, Ctx> =
-  {
-    schema: {
-      name: "searchKnowledgeBase",
-      description: SEARCH_KNOWLEDGE_BASE_TOOL_DESCRIPTION,
-      parameters: toToolSchemaParameters<SearchKnowledgeBaseToolParams>(
-        SearchKnowledgeBaseInputSchema,
-      ),
-    },
-    execute: executeSearchKnowledgeBase,
-  }
-
 export const __knowledgeBaseFlowInternals = {
   buildCollectionLsProjection,
   buildCollectionTree,

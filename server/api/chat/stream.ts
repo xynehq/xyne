@@ -1,17 +1,15 @@
 import type { SSEStreamingApi } from "hono/streaming"
-import type { RunState, RunConfig } from "@juspay-xyne-jaf/jaf"
 
-// Interface for active stream with JAF state preservation for HITL
 export interface ActiveStreamState {
   stream: SSEStreamingApi
-  // HITL: Store interrupted JAF state for resumption
-  jafInterruptedState?: RunState<any>
-  jafConfig?: RunConfig<any>
   waitingForClarification?: boolean
-  // HITL: Callback to resume JAF when clarification is provided
   clarificationCallback?: (
     clarificationId: string,
-    selectedOptionId: { selectedOptionId: string; selectedOption: string; customInput?: string },
+    selectedOptionId: {
+      selectedOptionId: string
+      selectedOption: string
+      customInput?: string
+    },
   ) => void
   stopController?: AbortController
 }
