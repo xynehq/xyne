@@ -50,10 +50,33 @@ interface FileUploadToDataSourceResult extends DataSourceUploadResult {
  * Flatten a docling-emitted chunk_meta into the shape `file.sd` accepts.
  * Mirrors `queue/fileProcessor.ts:mapChunkMeta`. `includeHeadings` for text
  * chunks; image chunks omit headings.
+ *
+ * `file.sd`'s `chunk_meta` was extended to mirror `kb_items.sd` (bbox_l/t/r/b,
+ * bboxes_json, width, height, headings). vespa-ts's `Inserts` type still
+ * declares only the narrow trio; `RichChunkMeta` is a structural superset, so
+ * the assignment to `chunks_map` typechecks via TS structural subtyping
+ * without needing a cast.
  */
-function flattenChunkMeta(meta: any, includeHeadings: boolean) {
-  const result: Record<string, unknown> = {
-    chunk_index: meta?.chunk_index,
+interface RichChunkMeta {
+  chunk_index: number
+  page_numbers: number[]
+  block_labels: string[]
+  width: number
+  height: number
+  bbox_l: number | null
+  bbox_t: number | null
+  bbox_r: number | null
+  bbox_b: number | null
+  bboxes_json: string | null
+  headings?: string[]
+}
+
+function flattenChunkMeta(
+  meta: any,
+  includeHeadings: boolean,
+): RichChunkMeta {
+  const result: RichChunkMeta = {
+    chunk_index: meta?.chunk_index ?? 0,
     page_numbers: meta?.page_numbers || [],
     block_labels: meta?.block_labels || [],
     width: meta?.width ?? 0,
