@@ -42,6 +42,11 @@ export type DoclingPageChunkResult = {
   totalPages: number
 }
 
+export type LoadedPdfDocument = {
+  document: PDFDocument
+  pageCount: number
+}
+
 function getConfiguredDoclingBaseTimeoutMs(): number {
   const raw = process.env.DOCLING_TIMEOUT_MS
   if (!raw) {
@@ -199,17 +204,22 @@ export class PdfProcessor {
     }
   }
 
-  private static async getPdfPageCount(buffer: Buffer): Promise<number | null> {
+  static async loadDocument(buffer: Buffer): Promise<LoadedPdfDocument | null> {
     try {
       const document = await PDFDocument.load(buffer)
-      return document.getPageCount()
+      return {
+        document,
+        pageCount: document.getPageCount(),
+      }
     } catch (error) {
-      Logger.warn(
-        error,
-        "Failed to determine PDF page count, skipping Gemini eligibility check",
-      )
+      Logger.warn(error, "Failed to load PDF document")
       return null
     }
+  }
+
+  private static async getPdfPageCount(buffer: Buffer): Promise<number | null> {
+    const loadedDocument = await this.loadDocument(buffer)
+    return loadedDocument?.pageCount ?? null
   }
 
   static shouldStreamWithDocling(pageCount: number | null): boolean {
@@ -315,7 +325,7 @@ export class PdfProcessor {
   }
 
   static async *processWithDoclingPageChunks(
-    buffer: Buffer,
+    source: Buffer | LoadedPdfDocument,
     fileName: string,
     vespaDocId: string,
     pageChunkSize: number = config.doclingPageChunkSize,
@@ -325,13 +335,21 @@ export class PdfProcessor {
       throw new Error("Docling page chunk size must be greater than zero")
     }
 
-    const sourceDocument = await PDFDocument.load(buffer)
+    const loadedDocument = Buffer.isBuffer(source)
+      ? await this.loadDocument(source)
+      : source
+
+    if (!loadedDocument) {
+      throw new Error("Failed to load PDF for Docling page chunk processing")
+    }
+
+    const sourceDocument = loadedDocument.document
     const totalPages =
       typeof knownTotalPages === "number" &&
       Number.isFinite(knownTotalPages) &&
       knownTotalPages > 0
         ? knownTotalPages
-        : sourceDocument.getPageCount()
+        : loadedDocument.pageCount
 
     if (totalPages > config.maxPdfPageCount) {
       throw new PdfPageCountExceededError(totalPages, config.maxPdfPageCount)

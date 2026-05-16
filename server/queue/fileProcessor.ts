@@ -6,6 +6,7 @@ import { collectionItems, collections } from "@/db/schema"
 import { getBaseMimeType } from "@/integrations/dataSource/config"
 import {
   PDF_PROCESSING_METHOD,
+  type LoadedPdfDocument,
   type ProcessingResult as PdfProcessingResult,
   PdfProcessor,
 } from "@/lib/pdfProcessor"
@@ -348,7 +349,7 @@ async function processPdfWithStreamingDocling(
     collectionName: string
     metadata: unknown
   },
-  fileBuffer: Buffer,
+  pdfSource: Buffer | LoadedPdfDocument,
   pageTitle: string,
   totalPages: number,
 ) {
@@ -403,7 +404,7 @@ async function processPdfWithStreamingDocling(
   await insert(vespaDoc, KbItemsSchema)
 
   for await (const part of PdfProcessor.processWithDoclingPageChunks(
-    fileBuffer,
+    pdfSource,
     file.fileName,
     file.vespaDocId,
     config.doclingPageChunkSize,
@@ -524,7 +525,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       throw new Error(`No vespaDocId for file: ${fileId}`)
     }
 
-    const fileBuffer = await readFile(file.storagePath)
+    let fileBuffer: Buffer | null = await readFile(file.storagePath)
     const baseMimeType = getBaseMimeType(file.mimeType || "text/plain")
 
     // Extract title for markdown files
@@ -553,8 +554,13 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
     const useOCR = jobData.useOCR !== false
     let fallbackUseOCR = useOCR
     if (baseMimeType === "application/pdf" && useOCR && config.doclingEnabled) {
-      const pageCount = await PdfProcessor.getPageCount(fileBuffer)
-      if (PdfProcessor.shouldStreamWithDocling(pageCount)) {
+      const loadedPdfDocument = await PdfProcessor.loadDocument(fileBuffer)
+      const pageCount = loadedPdfDocument?.pageCount ?? null
+
+      if (
+        loadedPdfDocument &&
+        PdfProcessor.shouldStreamWithDocling(pageCount)
+      ) {
         try {
           Logger.info(
             {
@@ -566,13 +572,14 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
             "Using streaming Docling PDF ingestion",
           )
 
+          fileBuffer = null
           const streamResult = await processPdfWithStreamingDocling(
             {
               ...file,
               storagePath: file.storagePath,
               vespaDocId: file.vespaDocId,
             },
-            fileBuffer,
+            loadedPdfDocument,
             pageTitle,
             pageCount as number,
           )
@@ -620,8 +627,13 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
             `Streaming Docling PDF processing failed for ${file.fileName}, falling back without OCR`,
           )
           fallbackUseOCR = false
+          fileBuffer = await readFile(file.storagePath)
         }
       }
+    }
+
+    if (!fileBuffer) {
+      fileBuffer = await readFile(file.storagePath)
     }
 
     const processingResults = await FileProcessorService.processFile(
