@@ -193,9 +193,25 @@ export class PdfProcessor {
   }
 
   private static async getPdfPageCount(buffer: Buffer): Promise<number | null> {
+    const start = Date.now()
+    Logger.info(
+      {
+        fileSizeBytes: buffer.length,
+      },
+      "PDF processing stage: reading PDF page count",
+    )
     try {
       const document = await PDFDocument.load(buffer)
-      return document.getPageCount()
+      const pageCount = document.getPageCount()
+      Logger.info(
+        {
+          pageCount,
+          fileSizeBytes: buffer.length,
+          durationMs: Date.now() - start,
+        },
+        "PDF processing stage: PDF page count read",
+      )
+      return pageCount
     } catch (error) {
       Logger.warn(
         error,
@@ -284,6 +300,16 @@ export class PdfProcessor {
       vespaDocId,
       { timeoutMs: preflight.timeoutMs },
     )
+    Logger.info(
+      {
+        fileName,
+        vespaDocId,
+        chunks: doclingResult.chunks.length,
+        imageChunks: doclingResult.image_chunks.length,
+        tocChunks: doclingResult.toc_chunks?.length || 0,
+      },
+      "PDF processing stage: docling response transformed",
+    )
     return this.finalizeProcessingResult(
       {
         chunks: doclingResult.chunks,
@@ -324,7 +350,29 @@ export class PdfProcessor {
     describeImages: boolean = false,
     useOCR: boolean = true,
   ): Promise<ProcessingResult> {
+    const start = Date.now()
+    Logger.info(
+      {
+        fileName,
+        vespaDocId,
+        fileSizeBytes: buffer.length,
+        extractImages,
+        describeImages,
+        useOCR,
+      },
+      "PDF processing stage: fallback processor started",
+    )
     const pageCount = await this.getPdfPageCount(buffer)
+    Logger.info(
+      {
+        fileName,
+        vespaDocId,
+        pageCount,
+        maxPdfPageCount: MAX_PDF_PAGE_COUNT,
+        durationMs: Date.now() - start,
+      },
+      "PDF processing stage: page count check complete",
+    )
     if (pageCount !== null && pageCount > MAX_PDF_PAGE_COUNT) {
       throw new PdfPageCountExceededError(pageCount, MAX_PDF_PAGE_COUNT)
     }

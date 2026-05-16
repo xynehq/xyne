@@ -1,20 +1,20 @@
+import { readFile } from "node:fs/promises"
+import { IMAGE_CONTEXT_CONFIG } from "@/config"
+import { db } from "@/db/client"
+import { updateParentStatus } from "@/db/knowledgeBase"
+import { collectionItems, collections } from "@/db/schema"
+import { getBaseMimeType } from "@/integrations/dataSource/config"
 import { getLogger } from "@/logger"
-import { Subsystem, ProcessingJobType, type ChunkMetadata } from "@/types"
-import { getErrorMessage } from "@/utils"
+import { insert } from "@/search/vespa"
 import {
   FileProcessorService,
   type SheetProcessingResult,
 } from "@/services/fileProcessor"
-import { insert } from "@/search/vespa"
-import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
-import { getBaseMimeType } from "@/integrations/dataSource/config"
-import { db } from "@/db/client"
-import { collectionItems, collections } from "@/db/schema"
-import { eq, and, isNull } from "drizzle-orm"
-import { readFile } from "node:fs/promises"
 import { UploadStatus } from "@/shared/types"
-import { updateParentStatus } from "@/db/knowledgeBase"
-import { IMAGE_CONTEXT_CONFIG } from "@/config"
+import { type ChunkMetadata, ProcessingJobType, Subsystem } from "@/types"
+import { getErrorMessage } from "@/utils"
+import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
+import { and, eq, isNull } from "drizzle-orm"
 
 const Logger = getLogger(Subsystem.Queue)
 
@@ -241,6 +241,7 @@ const mapChunkMeta = (
 
 async function processFileJob(jobData: FileProcessingJob, startTime: number) {
   const { fileId } = jobData
+  let currentStage = "load-file-metadata"
 
   // Get file details for processing with collection info (outside try block for error handling access)
   const fileDetails = await db
@@ -283,6 +284,18 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
 
   try {
     Logger.info(`Processing file job: ${fileId}`)
+    Logger.info(
+      {
+        fileId,
+        fileName: file.fileName,
+        mimeType: file.mimeType,
+        fileSize: file.fileSize,
+        uploadStatus: file.uploadStatus,
+        storagePath: file.storagePath,
+        useOCR: jobData.useOCR !== false,
+      },
+      "File processing stage: loaded metadata",
+    )
 
     // Skip if already processed
     if (file.uploadStatus === UploadStatus.COMPLETED) {
@@ -299,6 +312,14 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         updatedAt: new Date(),
       })
       .where(eq(collectionItems.id, fileId))
+    currentStage = "marked-processing"
+    Logger.info(
+      {
+        fileId,
+        fileName: file.fileName,
+      },
+      "File processing stage: marked processing",
+    )
 
     Logger.info(`Processing file: ${file.fileName} at ${file.storagePath}`)
 
@@ -311,11 +332,43 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       throw new Error(`No vespaDocId for file: ${fileId}`)
     }
 
+    currentStage = "read-file"
+    const readStart = Date.now()
+    Logger.info(
+      {
+        fileId,
+        fileName: file.fileName,
+        storagePath: file.storagePath,
+      },
+      "File processing stage: reading file from disk",
+    )
     const fileBuffer = await readFile(file.storagePath)
+    Logger.info(
+      {
+        fileId,
+        fileName: file.fileName,
+        bytesRead: fileBuffer.length,
+        durationMs: Date.now() - readStart,
+      },
+      "File processing stage: file read complete",
+    )
 
     // Process file to extract content
     // Get useOCR from job data (default to true for backward compatibility)
     const useOCR = jobData.useOCR !== false
+    currentStage = "extract-content"
+    const extractionStart = Date.now()
+    Logger.info(
+      {
+        fileId,
+        fileName: file.fileName,
+        mimeType: file.mimeType,
+        fileSize: file.fileSize,
+        bufferSize: fileBuffer.length,
+        useOCR,
+      },
+      "File processing stage: extracting content",
+    )
     const processingResults = await FileProcessorService.processFile(
       fileBuffer,
       file.mimeType || "application/octet-stream",
@@ -325,6 +378,23 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       IMAGE_CONTEXT_CONFIG.enabled, // extractImages
       IMAGE_CONTEXT_CONFIG.enabled, // describeImages
       useOCR, // useOCR option
+    )
+    Logger.info(
+      {
+        fileId,
+        fileName: file.fileName,
+        resultCount: processingResults.length,
+        totalTextChunks: processingResults.reduce(
+          (sum, result) => sum + result.chunks.length,
+          0,
+        ),
+        totalImageChunks: processingResults.reduce(
+          (sum, result) => sum + result.image_chunks.length,
+          0,
+        ),
+        durationMs: Date.now() - extractionStart,
+      },
+      "File processing stage: content extraction complete",
     )
 
     // Extract title for markdown files
@@ -442,7 +512,32 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       }
 
       // Insert into Vespa
+      currentStage = `vespa-insert-${resultIndex + 1}`
+      const vespaInsertStart = Date.now()
+      Logger.info(
+        {
+          fileId,
+          fileName: file.fileName,
+          resultIndex,
+          resultCount: processingResults.length,
+          docId,
+          chunks: processingResult.chunks.length,
+          imageChunks: processingResult.image_chunks.length,
+          tocChunks: processingResult.toc_chunks?.length || 0,
+        },
+        "File processing stage: inserting Vespa document",
+      )
       await insert(vespaDoc, KbItemsSchema)
+      Logger.info(
+        {
+          fileId,
+          fileName: file.fileName,
+          resultIndex,
+          docId,
+          durationMs: Date.now() - vespaInsertStart,
+        },
+        "File processing stage: Vespa insert complete",
+      )
 
       totalChunksCount +=
         processingResult.chunks.length + processingResult.image_chunks.length
@@ -464,6 +559,15 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       }),
     })
 
+    currentStage = "mark-completed"
+    Logger.info(
+      {
+        fileId,
+        fileName: file.fileName,
+        chunksCount,
+      },
+      "File processing stage: marking completed",
+    )
     await db
       .update(collectionItems)
       .set({
@@ -475,6 +579,13 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         updatedAt: new Date(),
       })
       .where(eq(collectionItems.id, fileId))
+    Logger.info(
+      {
+        fileId,
+        fileName: file.fileName,
+      },
+      "File processing stage: marked completed",
+    )
 
     // Trigger parent status update after file completion
     if (file.parentId) {
@@ -489,7 +600,10 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
     )
   } catch (error) {
     const errorMessage = getErrorMessage(error)
-    Logger.error(error, `Failed to process file: ${fileId} - ${errorMessage}`)
+    Logger.error(
+      error,
+      `Failed to process file: ${fileId} at stage ${currentStage} - ${errorMessage}`,
+    )
 
     // Use common retry handling function
     await handleRetryFailure(

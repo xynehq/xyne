@@ -1,19 +1,19 @@
-import { getErrorMessage } from "@/utils"
 import { chunkDocument } from "@/chunks"
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
-import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
-import { type ChunkMetadata } from "@/types"
-import { PdfProcessor, type PdfProcessingMethod } from "@/lib/pdfProcessor"
-import { chunkSheetWithHeaders } from "@/sheetChunk"
-import * as XLSX from "xlsx"
 import {
   getBaseMimeType,
-  isTextFile,
-  isSheetFile,
   isDocxFile,
   isPptxFile,
+  isSheetFile,
+  isTextFile,
 } from "@/integrations/dataSource/config"
-import { getLogger, Subsystem } from "@/logger"
+import { type PdfProcessingMethod, PdfProcessor } from "@/lib/pdfProcessor"
+import { Subsystem, getLogger } from "@/logger"
+import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
+import { chunkSheetWithHeaders } from "@/sheetChunk"
+import { type ChunkMetadata } from "@/types"
+import { getErrorMessage } from "@/utils"
+import * as XLSX from "xlsx"
 
 const Logger = getLogger(Subsystem.Ingest).child({
   module: "fileProcessor",
@@ -63,9 +63,33 @@ export class FileProcessorService {
     let image_chunks_pos: number[] = []
 
     try {
+      Logger.info(
+        {
+          fileName,
+          mimeType,
+          baseMimeType,
+          bufferSize: buffer.length,
+          storagePath,
+          extractImages,
+          describeImages,
+          useOCR,
+        },
+        "FileProcessorService stage: dispatching file processor",
+      )
+
       if (baseMimeType === "application/pdf") {
         // Use the modular PDF processor with fallback logic
         // It returns a complete result, no need to finalize again
+        const pdfStart = Date.now()
+        Logger.info(
+          {
+            fileName,
+            vespaDocId,
+            bufferSize: buffer.length,
+            useOCR,
+          },
+          "FileProcessorService stage: starting PDF processor",
+        )
         const pdfResult = await PdfProcessor.processWithFallback(
           buffer,
           fileName,
@@ -73,6 +97,17 @@ export class FileProcessorService {
           extractImages,
           describeImages,
           useOCR,
+        )
+        Logger.info(
+          {
+            fileName,
+            vespaDocId,
+            method: pdfResult.processingMethod,
+            chunks: pdfResult.chunks.length,
+            imageChunks: pdfResult.image_chunks.length,
+            durationMs: Date.now() - pdfStart,
+          },
+          "FileProcessorService stage: PDF processor complete",
         )
         // Wrap in array to match return type
         return [pdfResult]
@@ -103,11 +138,28 @@ export class FileProcessorService {
       } else if (isSheetFile(baseMimeType)) {
         // Process spreadsheet
         let workbook: XLSX.WorkBook
+        const sheetStart = Date.now()
+        Logger.info(
+          {
+            fileName,
+            storagePath,
+            bufferSize: buffer.length,
+          },
+          "FileProcessorService stage: loading spreadsheet workbook",
+        )
         if (!storagePath) {
           workbook = XLSX.read(buffer, { type: "buffer" })
         } else {
           workbook = XLSX.readFile(storagePath)
         }
+        Logger.info(
+          {
+            fileName,
+            sheetCount: workbook.SheetNames?.length || 0,
+            durationMs: Date.now() - sheetStart,
+          },
+          "FileProcessorService stage: spreadsheet workbook loaded",
+        )
 
         if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
           throw new Error("No worksheets found in spreadsheet")
@@ -120,10 +172,30 @@ export class FileProcessorService {
           if (!worksheet) continue
 
           // Use the same header-preserving chunking function as dataSource integration
+          const chunkStart = Date.now()
+          Logger.info(
+            {
+              fileName,
+              sheetName,
+              sheetIndex,
+            },
+            "FileProcessorService stage: chunking spreadsheet sheet",
+          )
           const sheetChunks = chunkSheetWithHeaders(worksheet)
 
           const filteredChunks = sheetChunks.filter(
             (chunk) => chunk.trim().length > 0,
+          )
+          Logger.info(
+            {
+              fileName,
+              sheetName,
+              sheetIndex,
+              rawChunks: sheetChunks.length,
+              filteredChunks: filteredChunks.length,
+              durationMs: Date.now() - chunkStart,
+            },
+            "FileProcessorService stage: spreadsheet sheet chunked",
           )
 
           // Skip sheets with no valid content
