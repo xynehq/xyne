@@ -27,6 +27,14 @@ const maxPdfPageCount = parsePositiveInteger(
   process.env.MAX_PDF_PAGE_COUNT,
   10000,
 )
+const doclingPageChunkSize = parsePositiveInteger(
+  process.env.DOCLING_PAGE_CHUNK_SIZE,
+  25,
+)
+const doclingStreamingMinPages = parsePositiveInteger(
+  process.env.DOCLING_STREAMING_MIN_PAGES,
+  doclingPageChunkSize + 1,
+)
 let syncServerHost = process.env.SYNC_SERVER_HOST || "localhost"
 
 export const parseOCRProviders = (providers?: string): string[] => {
@@ -393,6 +401,8 @@ export default {
   doclingEnabled,
   pdfProcessingDisableFallbacks,
   maxPdfPageCount,
+  doclingPageChunkSize,
+  doclingStreamingMinPages,
   ocrProviders,
   appleBundleId,
   // update user query session time

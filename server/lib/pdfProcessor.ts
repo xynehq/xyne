@@ -34,6 +34,14 @@ type DoclingPreflight = {
   usedFallbackTimeout: boolean
 }
 
+export type DoclingPageChunkResult = {
+  result: ProcessingResult
+  partIndex: number
+  startPage: number
+  endPage: number
+  totalPages: number
+}
+
 function getConfiguredDoclingBaseTimeoutMs(): number {
   const raw = process.env.DOCLING_TIMEOUT_MS
   if (!raw) {
@@ -204,6 +212,15 @@ export class PdfProcessor {
     }
   }
 
+  static shouldStreamWithDocling(pageCount: number | null): boolean {
+    return (
+      config.doclingEnabled &&
+      Number.isFinite(pageCount) &&
+      (pageCount as number) >= config.doclingStreamingMinPages &&
+      config.doclingPageChunkSize > 0
+    )
+  }
+
   /**
    * Helper method to process PDF with Gemini and transform the result
    */
@@ -295,6 +312,92 @@ export class PdfProcessor {
       },
       PDF_PROCESSING_METHOD.DOCLING,
     )
+  }
+
+  static async *processWithDoclingPageChunks(
+    buffer: Buffer,
+    fileName: string,
+    vespaDocId: string,
+    pageChunkSize: number = config.doclingPageChunkSize,
+    knownTotalPages?: number | null,
+  ): AsyncGenerator<DoclingPageChunkResult> {
+    if (!Number.isFinite(pageChunkSize) || pageChunkSize <= 0) {
+      throw new Error("Docling page chunk size must be greater than zero")
+    }
+
+    const sourceDocument = await PDFDocument.load(buffer)
+    const totalPages =
+      typeof knownTotalPages === "number" &&
+      Number.isFinite(knownTotalPages) &&
+      knownTotalPages > 0
+        ? knownTotalPages
+        : sourceDocument.getPageCount()
+
+    if (totalPages > config.maxPdfPageCount) {
+      throw new PdfPageCountExceededError(totalPages, config.maxPdfPageCount)
+    }
+
+    let partIndex = 0
+    for (
+      let startPage = 0;
+      startPage < totalPages;
+      startPage += pageChunkSize
+    ) {
+      const endPage = Math.min(startPage + pageChunkSize, totalPages)
+      const pageIndexes = Array.from(
+        { length: endPage - startPage },
+        (_, index) => startPage + index,
+      )
+
+      const partDocument = await PDFDocument.create()
+      const copiedPages = await partDocument.copyPages(
+        sourceDocument,
+        pageIndexes,
+      )
+      for (const page of copiedPages) {
+        partDocument.addPage(page)
+      }
+
+      const partBytes = await partDocument.save()
+      const partBuffer = Buffer.from(partBytes)
+      const partDocId = `${vespaDocId}__docling_part_${partIndex}`
+      const partFileName = `${fileName}.pages-${startPage + 1}-${endPage}.pdf`
+      const preflight = calculateDoclingTimeoutMs(
+        partBuffer.length,
+        endPage - startPage,
+      )
+
+      Logger.info(
+        {
+          fileName,
+          vespaDocId,
+          partDocId,
+          partIndex,
+          startPage: startPage + 1,
+          endPage,
+          totalPages,
+          partSizeBytes: partBuffer.length,
+        },
+        "Processing Docling PDF page chunk",
+      )
+
+      const result = await this.processWithDocling(
+        partBuffer,
+        partFileName,
+        partDocId,
+        preflight,
+      )
+
+      yield {
+        result,
+        partIndex,
+        startPage,
+        endPage,
+        totalPages,
+      }
+
+      partIndex += 1
+    }
   }
 
   /**

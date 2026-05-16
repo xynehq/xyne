@@ -1,20 +1,25 @@
+import { readFile } from "node:fs/promises"
+import config, { IMAGE_CONTEXT_CONFIG } from "@/config"
+import { db } from "@/db/client"
+import { updateParentStatus } from "@/db/knowledgeBase"
+import { collectionItems, collections } from "@/db/schema"
+import { getBaseMimeType } from "@/integrations/dataSource/config"
+import {
+  PDF_PROCESSING_METHOD,
+  type ProcessingResult as PdfProcessingResult,
+  PdfProcessor,
+} from "@/lib/pdfProcessor"
 import { getLogger } from "@/logger"
-import { Subsystem, ProcessingJobType, type ChunkMetadata } from "@/types"
-import { getErrorMessage } from "@/utils"
+import { insert, updateDocumentWithOperations } from "@/search/vespa"
 import {
   FileProcessorService,
   type SheetProcessingResult,
 } from "@/services/fileProcessor"
-import { insert } from "@/search/vespa"
-import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
-import { getBaseMimeType } from "@/integrations/dataSource/config"
-import { db } from "@/db/client"
-import { collectionItems, collections } from "@/db/schema"
-import { eq, and, isNull } from "drizzle-orm"
-import { readFile } from "node:fs/promises"
 import { UploadStatus } from "@/shared/types"
-import { updateParentStatus } from "@/db/knowledgeBase"
-import { IMAGE_CONTEXT_CONFIG } from "@/config"
+import { type ChunkMetadata, ProcessingJobType, Subsystem } from "@/types"
+import { getErrorMessage } from "@/utils"
+import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
+import { and, eq, isNull } from "drizzle-orm"
 
 const Logger = getLogger(Subsystem.Queue)
 
@@ -239,6 +244,214 @@ const mapChunkMeta = (
   return result
 }
 
+function buildVespaFileName(file: {
+  path: string
+  fileName: string
+  collectionName: string
+}): string {
+  const targetPath = file.path
+  const reconstructedFilePath =
+    targetPath === "/" ? file.fileName : targetPath.substring(1) + file.fileName
+
+  return targetPath === "/"
+    ? file.collectionName + targetPath + reconstructedFilePath
+    : file.collectionName + targetPath + file.fileName
+}
+
+function offsetChunkMetadata(
+  meta: ChunkMetadata,
+  chunkIndex: number,
+  pageOffset: number,
+): ChunkMetadata {
+  return {
+    ...meta,
+    chunk_index: chunkIndex,
+    page_numbers: (meta.page_numbers || []).map((page) => page + pageOffset),
+    bboxes: meta.bboxes?.map((bbox) =>
+      typeof bbox.page_no === "number"
+        ? { ...bbox, page_no: bbox.page_no + pageOffset }
+        : bbox,
+    ),
+  }
+}
+
+async function appendDoclingPartToKbItem(
+  docId: string,
+  result: PdfProcessingResult,
+  metadata: Record<string, unknown>,
+  textChunkOffset: number,
+  imageChunkOffset: number,
+  pageOffset: number,
+) {
+  const chunkPositions = result.chunks.map(
+    (_, index) => textChunkOffset + index,
+  )
+  const imageChunkPositions = result.image_chunks.map(
+    (_, index) => imageChunkOffset + index,
+  )
+
+  const fields: Parameters<typeof updateDocumentWithOperations>[2] = {
+    metadata: { assign: JSON.stringify(metadata) },
+    updatedAt: { assign: Date.now() },
+  }
+
+  if (result.chunks.length > 0) {
+    fields.chunks = { add: result.chunks }
+    fields.chunks_pos = { add: chunkPositions }
+    fields.chunks_map = {
+      add: result.chunks_map.map((meta, index) =>
+        mapChunkMeta(
+          offsetChunkMetadata(meta, chunkPositions[index] ?? index, pageOffset),
+          true,
+        ),
+      ),
+    }
+  }
+
+  if (result.image_chunks.length > 0) {
+    fields.image_chunks = { add: result.image_chunks }
+    fields.image_chunks_pos = { add: imageChunkPositions }
+    fields.image_chunks_map = {
+      add: result.image_chunks_map.map((meta, index) =>
+        mapChunkMeta(
+          offsetChunkMetadata(
+            meta,
+            imageChunkPositions[index] ?? index,
+            pageOffset,
+          ),
+          false,
+        ),
+      ),
+    }
+  }
+
+  if (result.toc_chunks.length > 0) {
+    fields.toc_chunks = { add: result.toc_chunks }
+  }
+
+  await updateDocumentWithOperations(KbItemsSchema, docId, fields)
+}
+
+async function processPdfWithStreamingDocling(
+  file: {
+    id: string
+    storagePath: string
+    vespaDocId: string
+    fileName: string
+    path: string
+    parentId: string | null
+    mimeType: string | null
+    fileSize: number | null
+    originalName: string | null
+    collectionId: string
+    uploadedByEmail: string | null
+    collectionName: string
+    metadata: unknown
+  },
+  fileBuffer: Buffer,
+  pageTitle: string,
+  totalPages: number,
+) {
+  const baseMimeType = getBaseMimeType(file.mimeType || "text/plain")
+  const vespaFileName = buildVespaFileName(file)
+  let chunksCount = 0
+  let imageChunksCount = 0
+  let tocChunksCount = 0
+  let partCount = 0
+
+  const initialMetadata = mergeCollectionItemMetadata(file.metadata, {
+    originalFileName: file.originalName || file.fileName,
+    uploadedBy: file.uploadedByEmail || "system",
+    chunksCount,
+    imageChunksCount,
+    tocChunksCount,
+    processingMethod: baseMimeType,
+    pdfProcessingMethod: PDF_PROCESSING_METHOD.DOCLING,
+    doclingStreaming: true,
+    doclingPageChunkSize: config.doclingPageChunkSize,
+    ...(pageTitle && { pageTitle }),
+    lastModified: Date.now(),
+  })
+
+  const vespaDoc = {
+    docId: file.vespaDocId,
+    clId: file.collectionId,
+    itemId: file.id,
+    fileName: vespaFileName,
+    app: Apps.KnowledgeBase as const,
+    entity: KnowledgeBaseEntity.File,
+    description: "",
+    storagePath: file.storagePath,
+    chunks: [],
+    chunks_pos: [],
+    image_chunks: [],
+    image_chunks_pos: [],
+    toc_chunks: [],
+    chunks_map: [],
+    image_chunks_map: [],
+    pageTitle,
+    metadata: JSON.stringify(initialMetadata),
+    createdBy: file.uploadedByEmail || "system",
+    duration: 0,
+    mimeType: baseMimeType,
+    fileSize: file.fileSize || 0,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    clFd: file.parentId,
+  }
+
+  await insert(vespaDoc, KbItemsSchema)
+
+  for await (const part of PdfProcessor.processWithDoclingPageChunks(
+    fileBuffer,
+    file.fileName,
+    file.vespaDocId,
+    config.doclingPageChunkSize,
+    totalPages,
+  )) {
+    const nextTextChunksCount = chunksCount + part.result.chunks.length
+    const nextImageChunksCount =
+      imageChunksCount + part.result.image_chunks.length
+    const partMetadata = mergeCollectionItemMetadata(file.metadata, {
+      originalFileName: file.originalName || file.fileName,
+      uploadedBy: file.uploadedByEmail || "system",
+      chunksCount: nextTextChunksCount + nextImageChunksCount,
+      imageChunksCount: nextImageChunksCount,
+      tocChunksCount: tocChunksCount + part.result.toc_chunks.length,
+      processingMethod: baseMimeType,
+      pdfProcessingMethod: PDF_PROCESSING_METHOD.DOCLING,
+      doclingStreaming: true,
+      doclingPageChunkSize: config.doclingPageChunkSize,
+      doclingPartsProcessed: part.partIndex + 1,
+      doclingTotalPages: part.totalPages,
+      doclingLastPageProcessed: part.endPage,
+      ...(pageTitle && { pageTitle }),
+      lastModified: Date.now(),
+    })
+
+    await appendDoclingPartToKbItem(
+      file.vespaDocId,
+      part.result,
+      partMetadata,
+      chunksCount,
+      imageChunksCount,
+      part.startPage,
+    )
+
+    chunksCount += part.result.chunks.length
+    imageChunksCount += part.result.image_chunks.length
+    tocChunksCount += part.result.toc_chunks.length
+    partCount = part.partIndex + 1
+  }
+
+  return {
+    chunksCount: chunksCount + imageChunksCount,
+    imageChunksCount,
+    tocChunksCount,
+    partCount,
+  }
+}
+
 async function processFileJob(jobData: FileProcessingJob, startTime: number) {
   const { fileId } = jobData
 
@@ -312,24 +525,11 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
     }
 
     const fileBuffer = await readFile(file.storagePath)
-
-    // Process file to extract content
-    // Get useOCR from job data (default to true for backward compatibility)
-    const useOCR = jobData.useOCR !== false
-    const processingResults = await FileProcessorService.processFile(
-      fileBuffer,
-      file.mimeType || "application/octet-stream",
-      file.fileName,
-      file.vespaDocId || "",
-      file.storagePath,
-      IMAGE_CONTEXT_CONFIG.enabled, // extractImages
-      IMAGE_CONTEXT_CONFIG.enabled, // describeImages
-      useOCR, // useOCR option
-    )
+    const baseMimeType = getBaseMimeType(file.mimeType || "text/plain")
 
     // Extract title for markdown files
     let pageTitle: string = ""
-    if (getBaseMimeType(file.mimeType || "") === "text/markdown") {
+    if (baseMimeType === "text/markdown") {
       try {
         const fileContent = fileBuffer.toString("utf-8")
         pageTitle = extractMarkdownTitle(fileContent)
@@ -347,6 +547,93 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         )
       }
     }
+
+    // Process file to extract content
+    // Get useOCR from job data (default to true for backward compatibility)
+    const useOCR = jobData.useOCR !== false
+    let fallbackUseOCR = useOCR
+    if (baseMimeType === "application/pdf" && useOCR && config.doclingEnabled) {
+      const pageCount = await PdfProcessor.getPageCount(fileBuffer)
+      if (PdfProcessor.shouldStreamWithDocling(pageCount)) {
+        try {
+          Logger.info(
+            {
+              fileId,
+              fileName: file.fileName,
+              pageCount,
+              pageChunkSize: config.doclingPageChunkSize,
+            },
+            "Using streaming Docling PDF ingestion",
+          )
+
+          const streamResult = await processPdfWithStreamingDocling(
+            {
+              ...file,
+              storagePath: file.storagePath,
+              vespaDocId: file.vespaDocId,
+            },
+            fileBuffer,
+            pageTitle,
+            pageCount as number,
+          )
+
+          const dbMetadata = mergeCollectionItemMetadata(file.metadata, {
+            chunksCount: streamResult.chunksCount,
+            imageChunksCount: streamResult.imageChunksCount,
+            tocChunksCount: streamResult.tocChunksCount,
+            pdfProcessingMethod: PDF_PROCESSING_METHOD.DOCLING,
+            doclingStreaming: true,
+            doclingPageChunkSize: config.doclingPageChunkSize,
+            doclingPartsProcessed: streamResult.partCount,
+          })
+
+          await db
+            .update(collectionItems)
+            .set({
+              vespaDocId: file.vespaDocId,
+              uploadStatus: UploadStatus.COMPLETED,
+              statusMessage: `Successfully processed: ${streamResult.chunksCount} chunks extracted from ${file.fileName}`,
+              metadata: dbMetadata,
+              processedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(eq(collectionItems.id, fileId))
+
+          if (file.parentId) {
+            await updateParentStatus(db, file.parentId, false)
+          } else {
+            await updateParentStatus(db, file.collectionId, true)
+          }
+
+          const endTime = Date.now()
+          Logger.info(
+            `Successfully processed file with streaming Docling: ${fileId} in ${endTime - startTime}ms`,
+          )
+          return
+        } catch (error) {
+          if (config.pdfProcessingDisableFallbacks) {
+            throw error
+          }
+
+          Logger.warn(
+            error,
+            `Streaming Docling PDF processing failed for ${file.fileName}, falling back without OCR`,
+          )
+          fallbackUseOCR = false
+        }
+      }
+    }
+
+    const processingResults = await FileProcessorService.processFile(
+      fileBuffer,
+      file.mimeType || "application/octet-stream",
+      file.fileName,
+      file.vespaDocId || "",
+      file.storagePath,
+      IMAGE_CONTEXT_CONFIG.enabled, // extractImages
+      IMAGE_CONTEXT_CONFIG.enabled, // describeImages
+      fallbackUseOCR, // useOCR option
+    )
 
     // Handle multiple processing results (e.g., for spreadsheets with multiple sheets)
     let totalChunksCount = 0

@@ -511,12 +511,18 @@ function transformChunks(doclingChunks: DoclingChunk[]): {
     // Normalize to 0-based to match PDF.js/OCR convention
     const pageNumbers = (chunk.page_numbers || []).map((p) => p - 1)
 
+    const bboxes = chunk.bboxes?.map((bbox) =>
+      typeof bbox.page_no === "number"
+        ? { ...bbox, page_no: bbox.page_no - 1 }
+        : bbox,
+    )
+
     chunks_map.push({
       chunk_index: index,
       page_numbers: pageNumbers,
       block_labels: blockLabels,
       bbox: chunk.bbox,
-      bboxes: chunk.bboxes,
+      bboxes,
       headings: chunk.headings,
     })
   }
