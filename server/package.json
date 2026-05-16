@@ -81,7 +81,6 @@
     "@types/jszip": "^3.4.1",
     "@types/node": "^24.3.0",
     "@xyne/vespa-ts": "1.9.0",
-    "@juspay-xyne-jaf/jaf": "^0.1.45",
     "ai": "^5.0.51",
     "arctic": "^3.3.0",
     "async-mutex": "^0.5.0",

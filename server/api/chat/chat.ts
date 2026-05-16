@@ -167,7 +167,6 @@ import {
 } from "./types"
 import { activeStreams } from "./stream"
 import { AgentMessageApi } from "@/api/chat/agents"
-import { MessageAgents } from "@/api/chat/message-agents"
 import {
   extractFileIdsFromMessage,
   isMessageWithContext,
@@ -5149,7 +5148,7 @@ function buildTopicConversationThread(
  * MessageApi - Main chat endpoint with intelligent routing
  *
  * Routes chat requests to specialized handlers based on configuration:
- * - MessageAgents: JAF-based agentic mode without web search
+ * - AgenticRAG (pi-mono): Agentic mode without web search
  * - AgentMessageApi: For agent conversations
  * - Default RAG flow: For standard chat with search capabilities
  *
@@ -5274,12 +5273,7 @@ export const MessageApi = async (c: Context) => {
       isAgentic && !enableWebSearch && !deepResearchEnabled
 
     if (shouldUseMessageAgents) {
-      Logger.info(
-        `Routing to ${config.enableJaf ? "MessageAgents (JAF)" : "AgenticRAG (pi-mono)"} (pi-mono agentic flow)`,
-      )
-      if (config.enableJaf) {
-        return MessageAgents(c)
-      }
+      Logger.info("Routing to AgenticRAG (pi-mono agentic flow)")
       return AgenticRAG(c)
     }
     let attachmentMetadata = parseAttachmentMetadata(c)

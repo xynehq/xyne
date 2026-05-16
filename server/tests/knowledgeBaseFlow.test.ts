@@ -94,7 +94,6 @@ const {
 const { buildAgentPromptAddendum } = await import(
   "@/api/chat/agentPromptCreation"
 )
-const { getToolSchema } = await import("@/api/chat/tool-schemas")
 const { mergeCollectionItemMetadata } = await import("@/queue/fileProcessor")
 
 const createCollection = (overrides: Partial<Collection>): Collection => ({
@@ -1398,44 +1397,6 @@ describe("searchKnowledgeBase", () => {
 })
 
 describe("ls contract metadata", () => {
-  test("uses a dedicated ls output schema and rejects unresolved path target types", async () => {
-    const schema = getToolSchema("ls")
-    expect(schema?.outputSchema).not.toBeUndefined()
-
-    const validOutput = await executeLsKnowledgeBase(
-      withLsDefaults({
-        target: {
-          type: "path",
-          collectionId: collectionAlpha.id,
-          path: "/Projects/API",
-        },
-      }),
-      createContext([`cl-${collectionAlpha.id}`]),
-      createRepo(),
-    )
-
-    expect(validOutput.status).toBe("success")
-    expect(
-      schema?.outputSchema.safeParse((validOutput as any).data).success,
-    ).toBe(true)
-    expect(
-      schema?.outputSchema.safeParse({
-        ...(validOutput as any).data,
-        target: {
-          ...(validOutput as any).data.target,
-          type: "path",
-        },
-      }).success,
-    ).toBe(false)
-
-    expect(
-      schema?.outputSchema.safeParse(schema?.examples?.[0]?.output).success,
-    ).toBe(true)
-    expect(
-      schema?.outputSchema.safeParse(schema?.examples?.[1]?.output).success,
-    ).toBe(true)
-  })
-
   test("describes ls as root discovery when target is omitted", () => {
     expect(LS_KNOWLEDGE_BASE_TOOL_DESCRIPTION).toContain(
       "current knowledge-base scope",

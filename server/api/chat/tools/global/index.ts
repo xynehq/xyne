@@ -1,6 +1,3 @@
-import { z, type ZodType } from "zod"
-import type { Tool } from "@juspay-xyne-jaf/jaf"
-import { ToolErrorCodes, ToolResponse } from "@juspay-xyne-jaf/jaf"
 import {
   Apps,
   SearchModes,
@@ -11,212 +8,19 @@ import {
   type VespaSchema,
   type VespaSearchResponse,
 } from "@xyne/vespa-ts"
-import { getErrorMessage } from "@/utils"
 import { searchVespaAgent, searchVespa } from "@/search/vespa"
 import {
   formatSearchToolResponse,
   formatSearchToolResponseAsRawDocuments,
-  parseAgentAppIntegrations,
 } from "../utils"
-import {
-  expandEmailThreadsInResults,
-  getChannelIdsFromAgentPrompt,
-} from "@/api/chat/utils"
-import type { Ctx, WithExcludedIds } from "../types"
-import { baseToolParams, createQuerySchema } from "../schemas"
-import { generateFallback } from "@/ai/provider"
+import { expandEmailThreadsInResults } from "@/api/chat/utils"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import type { MinimalAgentFragment } from "../../types"
-import config from "@/config"
 import type { ToolRawDocument } from "@/api/chat/agent-schemas"
-import {
-  buildKnowledgeBaseCollectionSelections,
-  KnowledgeBaseScope,
-  type KnowledgeBaseSelection,
-} from "@/api/chat/knowledgeBaseSelections"
+import { type KnowledgeBaseSelection } from "@/api/chat/knowledgeBaseSelections"
 
 const Logger = getLogger(Subsystem.Chat)
-
-const searchGlobalToolSchema = z.object({
-  query: createQuerySchema(undefined, true),
-  ...baseToolParams,
-})
-
-const fallbackToolSchema = z.object({
-  originalQuery: z
-    .string()
-    .describe("The original user query")
-    .min(1, "Original query is required"),
-  agentScratchpad: z
-    .string()
-    .describe("The agent reasoning history")
-    .min(1, "Agent scratchpad is required"),
-  toolLog: z
-    .string()
-    .describe("The tool execution log")
-    .min(1, "Tool log is required"),
-  gatheredFragments: z
-    .string()
-    .describe("The gathered context fragments")
-    .min(1, "Gathered fragments is required"),
-})
-
-export type SearchGlobalToolParams = z.infer<typeof searchGlobalToolSchema>
-export type FallbackToolParams = z.infer<typeof fallbackToolSchema>
-
-type ToolSchemaParameters<T> = Tool<T, Ctx>["schema"]["parameters"]
-const toToolSchemaParameters = <T>(
-  schema: ZodType<T>,
-): ToolSchemaParameters<T> => schema as unknown as ToolSchemaParameters<T>
-
-export const searchGlobalTool: Tool<SearchGlobalToolParams, Ctx> = {
-  schema: {
-    name: "searchGlobal",
-    description:
-      "Search across all connected applications and data sources when the likely source is unclear. Prefer a more specific tool when the query already points clearly to Gmail, Drive, Slack, Calendar, Contacts, or a known knowledge-base location.",
-    parameters: toToolSchemaParameters(searchGlobalToolSchema),
-  },
-  async execute(params: WithExcludedIds<SearchGlobalToolParams>, context: Ctx) {
-    const email = context.user.email
-    const agentPrompt = context.agentPrompt
-
-    try {
-      if (!email) {
-        const errorMsg = "Email is required for global search."
-        return ToolResponse.error(
-          ToolErrorCodes.MISSING_REQUIRED_FIELD,
-          errorMsg,
-          {
-            toolName: "searchGlobal",
-          },
-        )
-      }
-
-      const queryToUse = params.query || ""
-
-      const {
-        agentAppEnums,
-        agentSpecificCollectionIds,
-        agentSpecificCollectionFolderIds,
-        agentSpecificCollectionFileIds,
-        selectedItems,
-      } = parseAgentAppIntegrations(agentPrompt)
-
-      const kbScope = agentPrompt
-        ? KnowledgeBaseScope.AgentScoped
-        : KnowledgeBaseScope.UserOwned
-
-      const kbSelections = await buildKnowledgeBaseCollectionSelections({
-        scope: kbScope,
-        email,
-        selectedItems,
-      })
-
-      Logger.info(
-        {
-          email,
-          scope: kbScope,
-          selectionCount: kbSelections.length,
-          selectedItemKeys: Object.keys(
-            selectedItems as Record<string, unknown>,
-          ).length,
-        },
-        "[Agents][searchGlobalTool] Using KnowledgeBaseScope for global search",
-      )
-
-      const channelIds = agentPrompt
-        ? await getChannelIdsFromAgentPrompt(agentPrompt)
-        : []
-
-      const offset = params.offset || 0
-      const limit = params.limit
-        ? Math.min(params.limit, config.maxUserRequestCount) + (offset ?? 0)
-        : undefined
-
-      const { fragments, rawDocuments } = await executeVespaSearch({
-        email,
-        query: queryToUse,
-        limit,
-        offset: params.offset || 0,
-        excludedIds: params.excludedIds,
-        agentAppEnums,
-        channelIds,
-        collectionIds: agentSpecificCollectionIds,
-        collectionFolderIds: agentSpecificCollectionFolderIds,
-        collectionFileIds: agentSpecificCollectionFileIds,
-        selectedItems: selectedItems,
-        collectionSelections: kbSelections,
-        userId: context.user.numericId,
-        workspaceId: context.user.workspaceNumericId,
-      })
-
-      return ToolResponse.success({ fragments, rawDocuments })
-    } catch (error) {
-      const errMsg = getErrorMessage(error)
-      return ToolResponse.error(
-        ToolErrorCodes.EXECUTION_FAILED,
-        `Search error: ${errMsg}`,
-        { toolName: "searchGlobal" },
-      )
-    }
-  },
-}
-
-export const fallbackTool: Tool<FallbackToolParams, Ctx> = {
-  schema: {
-    name: "fall_back",
-    description:
-      "Generate detailed reasoning about why the search failed when initial iterations are exhausted but synthesis is still not complete.",
-    parameters: toToolSchemaParameters(fallbackToolSchema),
-  },
-  async execute(params: FallbackToolParams, context: Ctx) {
-    const userCtx = context.userContext
-    try {
-      // Generate detailed reasoning about why the search failed
-      const fallbackResponse = await generateFallback(
-        userCtx || "",
-        params.originalQuery,
-        params.agentScratchpad,
-        params.toolLog,
-        params.gatheredFragments,
-        {
-          modelId: config.defaultFastModel,
-          stream: false,
-          json: true,
-        },
-      )
-
-      if (
-        !fallbackResponse.reasoning ||
-        fallbackResponse.reasoning.trim() === ""
-      ) {
-        return ToolResponse.error(
-          ToolErrorCodes.EXECUTION_FAILED,
-          "No reasoning could be generated for the search failure.",
-          { toolName: "fall_back" },
-        )
-      }
-
-      // Return only the reasoning, not alternative queries
-      Logger.info(
-        `Fallback tool generated detailed reasoning about search failure`,
-      )
-
-      return ToolResponse.success({
-        reasoning: fallbackResponse.reasoning,
-      })
-    } catch (error) {
-      const errMsg = getErrorMessage(error)
-      Logger.error(error, `Fallback tool error: ${errMsg}`)
-      return ToolResponse.error(
-        ToolErrorCodes.EXECUTION_FAILED,
-        `Fallback analysis failed: ${errMsg}`,
-        { toolName: "fall_back" },
-      )
-    }
-  },
-}
 
 interface UnifiedSearchOptions {
   email: string
@@ -250,7 +54,12 @@ interface UnifiedSearchOptions {
   workspaceId?: number | null
 }
 
-export async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{ fragments: MinimalAgentFragment[]; rawDocuments: ToolRawDocument[] }> {
+export async function executeVespaSearch(
+  options: UnifiedSearchOptions,
+): Promise<{
+  fragments: MinimalAgentFragment[]
+  rawDocuments: ToolRawDocument[]
+}> {
   const {
     email,
     query,
@@ -362,11 +171,14 @@ export async function executeVespaSearch(options: UnifiedSearchOptions): Promise
     )
   }
 
-  const rawDocuments = await formatSearchToolResponseAsRawDocuments(searchResults, { email })
+  const rawDocuments = await formatSearchToolResponseAsRawDocuments(
+    searchResults,
+    { email },
+  )
 
   const fragments = await formatSearchToolResponse(searchResults, {
     query,
-    app: Array.isArray(app) ? app.join(", ") : app ?? undefined,
+    app: Array.isArray(app) ? app.join(", ") : (app ?? undefined),
     timeRange:
       fromTimestamp && toTimestamp
         ? { startTime: fromTimestamp, endTime: toTimestamp }
@@ -398,8 +210,7 @@ function buildCollectionSelectionsFromIds(
   if (collectionIds?.length) selection.collectionIds = collectionIds
   if (collectionFolderIds?.length)
     selection.collectionFolderIds = collectionFolderIds
-  if (collectionFileIds?.length)
-    selection.collectionFileIds = collectionFileIds
+  if (collectionFileIds?.length) selection.collectionFileIds = collectionFileIds
 
   return [selection]
 }
