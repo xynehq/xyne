@@ -1,50 +1,50 @@
+import config from "@/config"
+import { db } from "@/db/client"
+import { getAppSyncJobs } from "@/db/syncJob"
 import {
   handleGoogleOAuthIngestion,
   handleGoogleServiceAccountIngestion,
   syncGoogleWorkspace,
 } from "@/integrations/google"
-import { handleToolSync } from "./toolSync"
-import { handleAttachmentCleanup } from "./attachmentCleanup"
-import { Subsystem, type SaaSJob } from "@/types" // ConnectorType removed
-import { ConnectorType, SlackEntity } from "@/shared/types" // ConnectorType added
-import PgBoss from "pg-boss"
-import config from "@/config"
-import { Apps, AuthType } from "@/shared/types"
 import {
   handleGoogleOAuthChanges,
   handleGoogleServiceAccountChanges,
 } from "@/integrations/google/sync"
 import { checkDownloadsFolder } from "@/integrations/google/utils"
-import { getLogger } from "@/logger"
-import { getErrorMessage } from "@/utils"
+import {
+  handleMicrosoftOAuthChanges,
+  handleMicrosoftServiceAccountChanges,
+} from "@/integrations/microsoft/sync"
 import { handleSlackIngestion } from "@/integrations/slack"
 import { handleSlackChanges } from "@/integrations/slack/sync"
+import { getLogger } from "@/logger"
 import {
   syncJobDuration,
   syncJobError,
   syncJobSuccess,
 } from "@/metrics/sync/sync-metrics"
+import { ConnectorType, SlackEntity } from "@/shared/types" // ConnectorType added
+import { Apps, AuthType } from "@/shared/types"
+import { type SaaSJob, Subsystem } from "@/types" // ConnectorType removed
+import { getErrorMessage } from "@/utils"
 import { Auth } from "googleapis"
-import {
-  handleMicrosoftOAuthChanges,
-  handleMicrosoftServiceAccountChanges,
-} from "@/integrations/microsoft/sync"
-import { getAppSyncJobs } from "@/db/syncJob"
-import { db } from "@/db/client"
+import PgBoss from "pg-boss"
+import { handleAttachmentCleanup } from "./attachmentCleanup"
+import { handleToolSync } from "./toolSync"
 
-import { handleZohoDeskSync } from "@/integrations/zoho/sync"
 import {
-  processTicketJob,
-  processAttachmentJob,
-  type TicketJob,
   type AttachmentJob,
+  type TicketJob,
+  processAttachmentJob,
+  processTicketJob,
 } from "@/integrations/zoho/queue"
-import { startSummaryWorker } from "@/workers/summary-worker"
-import { startEpisodicMemoryWorker } from "@/workers/episodic-memory-worker"
+import { handleZohoDeskSync } from "@/integrations/zoho/sync"
 import { startChatMemoryWorker } from "@/workers/chat-memory-worker"
-import { SUMMARY_QUEUE_NAME } from "./summary-generation"
-import { EPISODIC_MEMORY_QUEUE_NAME } from "./episodic-memory-extraction"
+import { startEpisodicMemoryWorker } from "@/workers/episodic-memory-worker"
+import { startSummaryWorker } from "@/workers/summary-worker"
 import { CHAT_MEMORY_INDEXING_QUEUE_NAME } from "./chat-memory-indexing"
+import { EPISODIC_MEMORY_QUEUE_NAME } from "./episodic-memory-extraction"
+import { SUMMARY_QUEUE_NAME } from "./summary-generation"
 const Logger = getLogger(Subsystem.Queue)
 const JobExpiryHours = config.JobExpiryHours
 const SYNC_JOB_AUTH_TYPE_CLEANUP = "cleanup"
@@ -82,6 +82,27 @@ const Every15Minutes = `*/15 * * * *`
 const Every20Minutes = `*/20 * * * *`
 const EveryDay = `0 2 * * *` // Run at 2 AM daily
 
+const IntegrationSyncScheduledQueues = [
+  SyncOAuthSaaSQueue,
+  SyncServiceAccountSaaSQueue,
+  SyncServiceAccountSchedulerQueue,
+  SyncGoogleWorkspace,
+  SyncSlackQueue,
+  SyncSlackSchedulerQueue,
+  SyncZohoDeskQueue,
+]
+
+const unscheduleIntegrationSyncQueues = async () => {
+  await Promise.all(
+    IntegrationSyncScheduledQueues.map((queueName) =>
+      boss.unschedule(queueName),
+    ),
+  )
+  Logger.info(
+    "Integration sync workers disabled; unscheduled integration sync queues",
+  )
+}
+
 export const init = async () => {
   Logger.info("Queue init")
   await boss.start()
@@ -108,6 +129,16 @@ export const init = async () => {
 
 // when the Service account is connected
 export const setupServiceAccountCronjobs = async () => {
+  if (config.disableIntegrationSyncWorkers) {
+    Logger.info(
+      "Integration sync workers disabled; skipping service account and Google Workspace schedules",
+    )
+    await boss.unschedule(SyncServiceAccountSaaSQueue)
+    await boss.unschedule(SyncServiceAccountSchedulerQueue)
+    await boss.unschedule(SyncGoogleWorkspace)
+    return
+  }
+
   if (!config.useLegacyServiceAccountSync) {
     Logger.info("Using per-user service account sync mode")
 
@@ -148,6 +179,9 @@ export const setupServiceAccountCronjobs = async () => {
 
 const initWorkers = async () => {
   Logger.info("initWorkers")
+  const shouldStartIntegrationSyncWorkers =
+    !config.disableIntegrationSyncWorkers
+
   await boss.work(SaaSQueue, async ([job]) => {
     const start = new Date()
     Logger.info(`boss.work SaaSQueue Job ${job.id} started at ${start}`)
@@ -174,55 +208,61 @@ const initWorkers = async () => {
     }
   })
 
-  // do not retry
-  await boss.schedule(
-    SyncOAuthSaaSQueue,
-    Every10Minutes,
-    {},
-    { retryLimit: 0, expireInHours: JobExpiryHours },
-  )
+  if (shouldStartIntegrationSyncWorkers) {
+    // do not retry
+    await boss.schedule(
+      SyncOAuthSaaSQueue,
+      Every10Minutes,
+      {},
+      { retryLimit: 0, expireInHours: JobExpiryHours },
+    )
+  } else {
+    await unscheduleIntegrationSyncQueues()
+  }
+
   await boss.schedule(
     CheckDownloadsFolderQueue,
     EveryWeek,
     {},
     { retryLimit: 0, expireInHours: JobExpiryHours },
   )
-  // Slack sync scheduling - conditional based on per-user mode
+  if (shouldStartIntegrationSyncWorkers) {
+    // Slack sync scheduling - conditional based on per-user mode
+    if (!config.useLegacySlackSync) {
+      Logger.info("Using per-user Slack sync mode")
 
-  if (!config.useLegacySlackSync) {
-    Logger.info("Using per-user Slack sync mode")
+      // Unschedule the legacy batch sync if it exists
+      await boss.unschedule(SyncSlackQueue)
+      Logger.info("Unscheduled legacy batch Slack sync")
 
-    // Unschedule the legacy batch sync if it exists
-    await boss.unschedule(SyncSlackQueue)
-    Logger.info("Unscheduled legacy batch Slack sync")
+      await boss.schedule(
+        SyncSlackSchedulerQueue,
+        Every20Minutes,
+        {},
+        { retryLimit: 0, expireInHours: JobExpiryHours },
+      )
+    } else {
+      Logger.info("Using batch Slack sync mode (legacy)")
+
+      // Unschedule the per-user scheduler if it exists
+      await boss.unschedule(SyncSlackSchedulerQueue)
+      Logger.info("Unscheduled per-user Slack scheduler")
+
+      await boss.schedule(
+        SyncSlackQueue,
+        Every15Minutes,
+        {},
+        { retryLimit: 0, expireInHours: JobExpiryHours },
+      )
+    }
 
     await boss.schedule(
-      SyncSlackSchedulerQueue,
-      Every20Minutes,
-      {},
-      { retryLimit: 0, expireInHours: JobExpiryHours },
-    )
-  } else {
-    Logger.info("Using batch Slack sync mode (legacy)")
-
-    // Unschedule the per-user scheduler if it exists
-    await boss.unschedule(SyncSlackSchedulerQueue)
-    Logger.info("Unscheduled per-user Slack scheduler")
-
-    await boss.schedule(
-      SyncSlackQueue,
-      Every15Minutes,
+      SyncZohoDeskQueue,
+      EveryDay,
       {},
       { retryLimit: 0, expireInHours: JobExpiryHours },
     )
   }
-
-  await boss.schedule(
-    SyncZohoDeskQueue,
-    EveryDay,
-    {},
-    { retryLimit: 0, expireInHours: JobExpiryHours },
-  )
 
   await boss.schedule(
     SyncToolsQueue,
@@ -238,7 +278,9 @@ const initWorkers = async () => {
     { retryLimit: 0, expireInHours: JobExpiryHours },
   )
 
-  await setupServiceAccountCronjobs()
+  if (shouldStartIntegrationSyncWorkers) {
+    await setupServiceAccountCronjobs()
+  }
 
   await boss.work(SyncToolsQueue, async ([job]) => {
     const startTime = Date.now()
@@ -276,177 +318,376 @@ const initWorkers = async () => {
     }
   })
 
-  await boss.work(SyncOAuthSaaSQueue, async ([job]) => {
-    const startTime = Date.now()
-    try {
-      await handleGoogleOAuthChanges(boss, job)
-      await handleMicrosoftOAuthChanges(boss, job)
-      const endTime = Date.now()
-      syncJobSuccess.inc(
-        {
-          sync_job_name: SyncOAuthSaaSQueue,
-          sync_job_auth_type: AuthType.OAuth,
-        },
-        1,
-      )
-      syncJobDuration.observe(
-        {
-          sync_job_name: SyncOAuthSaaSQueue,
-          sync_job_auth_type: AuthType.OAuth,
-        },
-        endTime - startTime,
-      )
-    } catch (error) {
-      const errorMessage = getErrorMessage(error)
-      Logger.error(
-        error,
-        `Unhandled Error while syncing OAuth SaaS ${errorMessage} ${(error as Error).stack}`,
-      )
-      syncJobError.inc(
-        {
-          sync_job_name: SyncOAuthSaaSQueue,
-          sync_job_auth_type: AuthType.OAuth,
-          sync_job_error_type: `${errorMessage}`,
-        },
-        1,
-      )
-    }
-  })
-
-  // Any Service account related SaaS jobs
-  await boss.work(SyncServiceAccountSaaSQueue, async ([job]) => {
-    // call all the service account handlers in parallel
-    const startTime = Date.now()
-    try {
-      await handleGoogleServiceAccountChanges(boss, job)
-      await handleMicrosoftServiceAccountChanges()
-      const endTime = Date.now()
-      syncJobSuccess.inc(
-        {
-          sync_job_name: SyncServiceAccountSaaSQueue,
-          sync_job_auth_type: AuthType.ServiceAccount,
-        },
-        1,
-      )
-      syncJobDuration.observe(
-        {
-          sync_job_name: SyncServiceAccountSaaSQueue,
-          sync_job_auth_type: AuthType.ServiceAccount,
-        },
-        endTime - startTime,
-      )
-    } catch (error) {
-      const errorMessage = getErrorMessage(error)
-      Logger.error(
-        error,
-        `Unhandled Error while syncing Service Account Changes: Error :\n ${errorMessage} ${(error as Error).stack}`,
-      )
-      syncJobError.inc(
-        {
-          sync_job_name: SyncServiceAccountSaaSQueue,
-          sync_job_auth_type: AuthType.ServiceAccount,
-          sync_job_error_type: `${errorMessage}`,
-        },
-        1,
-      )
-    }
-  })
-
-  // NEW: Scheduler worker - runs every 20 minutes and queues individual user jobs
-  await boss.work(SyncServiceAccountSchedulerQueue, async ([job]) => {
-    const startTime = Date.now()
-    try {
-      Logger.info("Service Account Scheduler: Starting to queue per-user jobs")
-
-      // Get all service account sync jobs for Google Drive, Gmail, and Calendar
-      const [googleDriveSyncJobs, gmailSyncJobs, calendarSyncJobs] =
-        await Promise.all([
-          getAppSyncJobs(db, Apps.GoogleDrive, AuthType.ServiceAccount),
-          getAppSyncJobs(db, Apps.Gmail, AuthType.ServiceAccount),
-          getAppSyncJobs(db, Apps.GoogleCalendar, AuthType.ServiceAccount),
-        ])
-
-      // Combine all sync jobs and get unique users
-      const allSyncJobs = [
-        ...googleDriveSyncJobs,
-        ...gmailSyncJobs,
-        ...calendarSyncJobs,
-      ]
-      const uniqueUsers = new Set(allSyncJobs.map((job) => job.email))
-
-      Logger.info(
-        `Service Account Scheduler: Found ${uniqueUsers.size} unique users to queue`,
-      )
-
-      // Queue individual jobs for each user
-      let queuedCount = 0
-      let failedCount = 0
-      for (const userEmail of uniqueUsers) {
-        try {
-          await boss.send(
-            SyncServiceAccountPerUserQueue,
-            {
-              email: userEmail,
-              syncOnlyCurrentUser: true,
-            },
-            {
-              retryLimit: 0,
-              expireInHours: JobExpiryHours,
-              singletonKey: userEmail,
-            },
-          )
-          queuedCount++
-        } catch (error) {
-          failedCount++
-          Logger.error(
-            error,
-            `Service Account Scheduler: Failed to queue sync job for user ${userEmail}: ${getErrorMessage(error)}`,
-          )
-          // Continue to next user instead of failing the entire scheduler
-        }
+  if (shouldStartIntegrationSyncWorkers) {
+    await boss.work(SyncOAuthSaaSQueue, async ([job]) => {
+      const startTime = Date.now()
+      try {
+        await handleGoogleOAuthChanges(boss, job)
+        await handleMicrosoftOAuthChanges(boss, job)
+        const endTime = Date.now()
+        syncJobSuccess.inc(
+          {
+            sync_job_name: SyncOAuthSaaSQueue,
+            sync_job_auth_type: AuthType.OAuth,
+          },
+          1,
+        )
+        syncJobDuration.observe(
+          {
+            sync_job_name: SyncOAuthSaaSQueue,
+            sync_job_auth_type: AuthType.OAuth,
+          },
+          endTime - startTime,
+        )
+      } catch (error) {
+        const errorMessage = getErrorMessage(error)
+        Logger.error(
+          error,
+          `Unhandled Error while syncing OAuth SaaS ${errorMessage} ${(error as Error).stack}`,
+        )
+        syncJobError.inc(
+          {
+            sync_job_name: SyncOAuthSaaSQueue,
+            sync_job_auth_type: AuthType.OAuth,
+            sync_job_error_type: `${errorMessage}`,
+          },
+          1,
+        )
       }
+    })
 
-      Logger.info(
-        `Service Account Scheduler: Successfully queued ${queuedCount} user sync jobs, ${failedCount} failed`,
-      )
+    // Any Service account related SaaS jobs
+    await boss.work(SyncServiceAccountSaaSQueue, async ([job]) => {
+      // call all the service account handlers in parallel
+      const startTime = Date.now()
+      try {
+        await handleGoogleServiceAccountChanges(boss, job)
+        await handleMicrosoftServiceAccountChanges()
+        const endTime = Date.now()
+        syncJobSuccess.inc(
+          {
+            sync_job_name: SyncServiceAccountSaaSQueue,
+            sync_job_auth_type: AuthType.ServiceAccount,
+          },
+          1,
+        )
+        syncJobDuration.observe(
+          {
+            sync_job_name: SyncServiceAccountSaaSQueue,
+            sync_job_auth_type: AuthType.ServiceAccount,
+          },
+          endTime - startTime,
+        )
+      } catch (error) {
+        const errorMessage = getErrorMessage(error)
+        Logger.error(
+          error,
+          `Unhandled Error while syncing Service Account Changes: Error :\n ${errorMessage} ${(error as Error).stack}`,
+        )
+        syncJobError.inc(
+          {
+            sync_job_name: SyncServiceAccountSaaSQueue,
+            sync_job_auth_type: AuthType.ServiceAccount,
+            sync_job_error_type: `${errorMessage}`,
+          },
+          1,
+        )
+      }
+    })
 
-      const endTime = Date.now()
-      syncJobSuccess.inc(
-        {
-          sync_job_name: SyncServiceAccountSchedulerQueue,
-          sync_job_auth_type: "scheduler",
-        },
-        1,
-      )
-      syncJobDuration.observe(
-        {
-          sync_job_name: SyncServiceAccountSchedulerQueue,
-          sync_job_auth_type: "scheduler",
-        },
-        endTime - startTime,
-      )
-    } catch (error) {
-      const errorMessage = getErrorMessage(error)
-      Logger.error(
-        error,
-        `Service Account Scheduler: Error queuing user jobs: ${errorMessage} ${(error as Error).stack}`,
-      )
-      syncJobError.inc(
-        {
-          sync_job_name: SyncServiceAccountSchedulerQueue,
-          sync_job_auth_type: "scheduler",
-          sync_job_error_type: `${errorMessage}`,
-        },
-        1,
-      )
-    }
+    // NEW: Scheduler worker - runs every 20 minutes and queues individual user jobs
+    await boss.work(SyncServiceAccountSchedulerQueue, async ([job]) => {
+      const startTime = Date.now()
+      try {
+        Logger.info(
+          "Service Account Scheduler: Starting to queue per-user jobs",
+        )
+
+        // Get all service account sync jobs for Google Drive, Gmail, and Calendar
+        const [googleDriveSyncJobs, gmailSyncJobs, calendarSyncJobs] =
+          await Promise.all([
+            getAppSyncJobs(db, Apps.GoogleDrive, AuthType.ServiceAccount),
+            getAppSyncJobs(db, Apps.Gmail, AuthType.ServiceAccount),
+            getAppSyncJobs(db, Apps.GoogleCalendar, AuthType.ServiceAccount),
+          ])
+
+        // Combine all sync jobs and get unique users
+        const allSyncJobs = [
+          ...googleDriveSyncJobs,
+          ...gmailSyncJobs,
+          ...calendarSyncJobs,
+        ]
+        const uniqueUsers = new Set(allSyncJobs.map((job) => job.email))
+
+        Logger.info(
+          `Service Account Scheduler: Found ${uniqueUsers.size} unique users to queue`,
+        )
+
+        // Queue individual jobs for each user
+        let queuedCount = 0
+        let failedCount = 0
+        for (const userEmail of uniqueUsers) {
+          try {
+            await boss.send(
+              SyncServiceAccountPerUserQueue,
+              {
+                email: userEmail,
+                syncOnlyCurrentUser: true,
+              },
+              {
+                retryLimit: 0,
+                expireInHours: JobExpiryHours,
+                singletonKey: userEmail,
+              },
+            )
+            queuedCount++
+          } catch (error) {
+            failedCount++
+            Logger.error(
+              error,
+              `Service Account Scheduler: Failed to queue sync job for user ${userEmail}: ${getErrorMessage(error)}`,
+            )
+            // Continue to next user instead of failing the entire scheduler
+          }
+        }
+
+        Logger.info(
+          `Service Account Scheduler: Successfully queued ${queuedCount} user sync jobs, ${failedCount} failed`,
+        )
+
+        const endTime = Date.now()
+        syncJobSuccess.inc(
+          {
+            sync_job_name: SyncServiceAccountSchedulerQueue,
+            sync_job_auth_type: "scheduler",
+          },
+          1,
+        )
+        syncJobDuration.observe(
+          {
+            sync_job_name: SyncServiceAccountSchedulerQueue,
+            sync_job_auth_type: "scheduler",
+          },
+          endTime - startTime,
+        )
+      } catch (error) {
+        const errorMessage = getErrorMessage(error)
+        Logger.error(
+          error,
+          `Service Account Scheduler: Error queuing user jobs: ${errorMessage} ${(error as Error).stack}`,
+        )
+        syncJobError.inc(
+          {
+            sync_job_name: SyncServiceAccountSchedulerQueue,
+            sync_job_auth_type: "scheduler",
+            sync_job_error_type: `${errorMessage}`,
+          },
+          1,
+        )
+      }
+    })
+
+    // NEW: Per-User Service Account sync worker (processes 2 jobs concurrently via batchSize)
+    await boss.work(
+      SyncServiceAccountPerUserQueue,
+      { batchSize: 2 },
+      async (jobs) => {
+        // Process all jobs in parallel using Promise.all
+        await Promise.all(
+          jobs.map(async (job) => {
+            const startTime = Date.now()
+            const jobData = job.data as any
+
+            // Validate job data
+            if (!jobData || typeof jobData !== "object" || !jobData.email) {
+              Logger.error("Invalid job data for Service Account sync", {
+                jobData,
+              })
+              syncJobError.inc(
+                {
+                  sync_job_name: SyncServiceAccountPerUserQueue,
+                  sync_job_auth_type: AuthType.ServiceAccount,
+                  sync_job_error_type: "invalid_job_data",
+                },
+                1,
+              )
+              return
+            }
+
+            const userEmail = jobData.email
+
+            try {
+              Logger.info(
+                `Per-User Worker: Starting sync for user ${userEmail}`,
+              )
+
+              await handleGoogleServiceAccountChanges(boss, job)
+
+              Logger.info(
+                `Per-User Worker: Completed sync for user ${userEmail}`,
+              )
+
+              const endTime = Date.now()
+              syncJobSuccess.inc(
+                {
+                  sync_job_name: SyncServiceAccountPerUserQueue,
+                  sync_job_auth_type: AuthType.ServiceAccount,
+                },
+                1,
+              )
+              syncJobDuration.observe(
+                {
+                  sync_job_name: SyncServiceAccountPerUserQueue,
+                  sync_job_auth_type: AuthType.ServiceAccount,
+                },
+                endTime - startTime,
+              )
+            } catch (error) {
+              const errorMessage = getErrorMessage(error)
+              Logger.error(
+                error,
+                `Per-User Worker: Error syncing user ${userEmail}: ${errorMessage} ${(error as Error).stack}`,
+              )
+              syncJobError.inc(
+                {
+                  sync_job_name: SyncServiceAccountPerUserQueue,
+                  sync_job_auth_type: AuthType.ServiceAccount,
+                  sync_job_error_type: `${errorMessage}`,
+                },
+                1,
+              )
+            }
+          }),
+        )
+      },
+    )
+
+    await boss.work(SyncGoogleWorkspace, async ([job]) => {
+      const startTime = Date.now()
+      try {
+        await syncGoogleWorkspace(boss, job)
+        const endTime = Date.now()
+        syncJobSuccess.inc(
+          {
+            sync_job_name: SyncGoogleWorkspace,
+            sync_job_auth_type: AuthType.ServiceAccount,
+          },
+          1,
+        )
+        syncJobDuration.observe(
+          {
+            sync_job_name: SyncGoogleWorkspace,
+            sync_job_auth_type: AuthType.ServiceAccount,
+          },
+          endTime - startTime,
+        )
+      } catch (error) {
+        const errorMessage = getErrorMessage(error)
+        Logger.error(
+          error,
+          `Unhandled Error while syncing Google Workspace ${errorMessage} ${(error as Error).stack}`,
+        )
+        syncJobError.inc(
+          {
+            sync_job_name: SyncGoogleWorkspace,
+            sync_job_auth_type: AuthType.ServiceAccount,
+            sync_job_error_type: `${errorMessage}`,
+          },
+          1,
+        )
+      }
+    })
+  }
+
+  await boss.work(CheckDownloadsFolderQueue, async ([job]) => {
+    await checkDownloadsFolder(boss, job)
   })
 
-  // NEW: Per-User Service Account sync worker (processes 2 jobs concurrently via batchSize)
-  await boss.work(
-    SyncServiceAccountPerUserQueue,
-    { batchSize: 2 },
-    async (jobs) => {
+  if (shouldStartIntegrationSyncWorkers) {
+    // NEW: Slack Scheduler worker - runs every 20 minutes and queues individual user jobs
+    await boss.work(SyncSlackSchedulerQueue, async ([job]) => {
+      const startTime = Date.now()
+      try {
+        Logger.info("Slack Scheduler: Starting to queue per-user jobs")
+
+        // Get all Slack sync jobs
+        const slackSyncJobs = await getAppSyncJobs(
+          db,
+          Apps.Slack,
+          AuthType.OAuth,
+        )
+        const uniqueUsers = new Set(slackSyncJobs.map((job) => job.email))
+
+        Logger.info(
+          `Slack Scheduler: Found ${uniqueUsers.size} unique users to queue`,
+        )
+
+        // Queue individual jobs for each user
+        let queuedCount = 0
+        let failedCount = 0
+        for (const userEmail of uniqueUsers) {
+          try {
+            await boss.send(
+              SyncSlackPerUserQueue,
+              {
+                email: userEmail,
+                syncOnlyCurrentUser: true,
+              },
+              {
+                retryLimit: 0,
+                expireInHours: JobExpiryHours,
+                singletonKey: userEmail,
+              },
+            )
+            queuedCount++
+          } catch (error) {
+            failedCount++
+            Logger.error(
+              error,
+              `Slack Scheduler: Failed to queue sync job for user ${userEmail}: ${getErrorMessage(error)}`,
+            )
+            // Continue to next user instead of failing the entire scheduler
+          }
+        }
+
+        Logger.info(
+          `Slack Scheduler: Successfully queued ${queuedCount} user sync jobs, ${failedCount} failed`,
+        )
+
+        const endTime = Date.now()
+        syncJobSuccess.inc(
+          {
+            sync_job_name: SyncSlackSchedulerQueue,
+            sync_job_auth_type: "scheduler",
+          },
+          1,
+        )
+        syncJobDuration.observe(
+          {
+            sync_job_name: SyncSlackSchedulerQueue,
+            sync_job_auth_type: "scheduler",
+          },
+          endTime - startTime,
+        )
+      } catch (error) {
+        const errorMessage = getErrorMessage(error)
+        Logger.error(
+          error,
+          `Slack Scheduler: Error queuing user jobs: ${errorMessage} ${(error as Error).stack}`,
+        )
+        syncJobError.inc(
+          {
+            sync_job_name: SyncSlackSchedulerQueue,
+            sync_job_auth_type: "scheduler",
+            sync_job_error_type: `${errorMessage}`,
+          },
+          1,
+        )
+      }
+    })
+
+    // NEW: Per-User Slack sync worker (processes 2 jobs concurrently via batchSize)
+    await boss.work(SyncSlackPerUserQueue, { batchSize: 2 }, async (jobs) => {
       // Process all jobs in parallel using Promise.all
       await Promise.all(
         jobs.map(async (job) => {
@@ -455,13 +696,11 @@ const initWorkers = async () => {
 
           // Validate job data
           if (!jobData || typeof jobData !== "object" || !jobData.email) {
-            Logger.error("Invalid job data for Service Account sync", {
-              jobData,
-            })
+            Logger.error("Invalid job data for Slack sync", { jobData })
             syncJobError.inc(
               {
-                sync_job_name: SyncServiceAccountPerUserQueue,
-                sync_job_auth_type: AuthType.ServiceAccount,
+                sync_job_name: SyncSlackPerUserQueue,
+                sync_job_auth_type: SlackEntity.User,
                 sync_job_error_type: "invalid_job_data",
               },
               1,
@@ -472,24 +711,24 @@ const initWorkers = async () => {
           const userEmail = jobData.email
 
           try {
-            Logger.info(`Per-User Worker: Starting sync for user ${userEmail}`)
+            Logger.info(`Slack Worker: Starting sync for user ${userEmail}`)
 
-            await handleGoogleServiceAccountChanges(boss, job)
+            await handleSlackChanges(boss, job)
 
-            Logger.info(`Per-User Worker: Completed sync for user ${userEmail}`)
+            Logger.info(`Slack Worker: Completed sync for user ${userEmail}`)
 
             const endTime = Date.now()
             syncJobSuccess.inc(
               {
-                sync_job_name: SyncServiceAccountPerUserQueue,
-                sync_job_auth_type: AuthType.ServiceAccount,
+                sync_job_name: SyncSlackPerUserQueue,
+                sync_job_auth_type: SlackEntity.User,
               },
               1,
             )
             syncJobDuration.observe(
               {
-                sync_job_name: SyncServiceAccountPerUserQueue,
-                sync_job_auth_type: AuthType.ServiceAccount,
+                sync_job_name: SyncSlackPerUserQueue,
+                sync_job_auth_type: SlackEntity.User,
               },
               endTime - startTime,
             )
@@ -497,12 +736,12 @@ const initWorkers = async () => {
             const errorMessage = getErrorMessage(error)
             Logger.error(
               error,
-              `Per-User Worker: Error syncing user ${userEmail}: ${errorMessage} ${(error as Error).stack}`,
+              `Slack Worker: Error syncing user ${userEmail}: ${errorMessage} ${(error as Error).stack}`,
             )
             syncJobError.inc(
               {
-                sync_job_name: SyncServiceAccountPerUserQueue,
-                sync_job_auth_type: AuthType.ServiceAccount,
+                sync_job_name: SyncSlackPerUserQueue,
+                sync_job_auth_type: SlackEntity.User,
                 sync_job_error_type: `${errorMessage}`,
               },
               1,
@@ -510,353 +749,170 @@ const initWorkers = async () => {
           }
         }),
       )
-    },
-  )
+    })
 
-  await boss.work(SyncGoogleWorkspace, async ([job]) => {
-    const startTime = Date.now()
-    try {
-      await syncGoogleWorkspace(boss, job)
-      const endTime = Date.now()
-      syncJobSuccess.inc(
-        {
-          sync_job_name: SyncGoogleWorkspace,
-          sync_job_auth_type: AuthType.ServiceAccount,
-        },
-        1,
-      )
-      syncJobDuration.observe(
-        {
-          sync_job_name: SyncGoogleWorkspace,
-          sync_job_auth_type: AuthType.ServiceAccount,
-        },
-        endTime - startTime,
-      )
-    } catch (error) {
-      const errorMessage = getErrorMessage(error)
-      Logger.error(
-        error,
-        `Unhandled Error while syncing Google Workspace ${errorMessage} ${(error as Error).stack}`,
-      )
-      syncJobError.inc(
-        {
-          sync_job_name: SyncGoogleWorkspace,
-          sync_job_auth_type: AuthType.ServiceAccount,
-          sync_job_error_type: `${errorMessage}`,
-        },
-        1,
-      )
-    }
-  })
-
-  await boss.work(CheckDownloadsFolderQueue, async ([job]) => {
-    await checkDownloadsFolder(boss, job)
-  })
-
-  // NEW: Slack Scheduler worker - runs every 20 minutes and queues individual user jobs
-  await boss.work(SyncSlackSchedulerQueue, async ([job]) => {
-    const startTime = Date.now()
-    try {
-      Logger.info("Slack Scheduler: Starting to queue per-user jobs")
-
-      // Get all Slack sync jobs
-      const slackSyncJobs = await getAppSyncJobs(db, Apps.Slack, AuthType.OAuth)
-      const uniqueUsers = new Set(slackSyncJobs.map((job) => job.email))
-
-      Logger.info(
-        `Slack Scheduler: Found ${uniqueUsers.size} unique users to queue`,
-      )
-
-      // Queue individual jobs for each user
-      let queuedCount = 0
-      let failedCount = 0
-      for (const userEmail of uniqueUsers) {
-        try {
-          await boss.send(
-            SyncSlackPerUserQueue,
-            {
-              email: userEmail,
-              syncOnlyCurrentUser: true,
-            },
-            {
-              retryLimit: 0,
-              expireInHours: JobExpiryHours,
-              singletonKey: userEmail,
-            },
-          )
-          queuedCount++
-        } catch (error) {
-          failedCount++
-          Logger.error(
-            error,
-            `Slack Scheduler: Failed to queue sync job for user ${userEmail}: ${getErrorMessage(error)}`,
-          )
-          // Continue to next user instead of failing the entire scheduler
-        }
+    await boss.work(SyncSlackQueue, async ([job]) => {
+      const startTime = Date.now()
+      try {
+        await handleSlackChanges(boss, job)
+        const endTime = Date.now()
+        syncJobSuccess.inc(
+          {
+            sync_job_name: SyncSlackQueue,
+            sync_job_auth_type: SlackEntity.User,
+          },
+          1,
+        )
+        syncJobDuration.observe(
+          {
+            sync_job_name: SyncSlackQueue,
+            sync_job_auth_type: SlackEntity.User,
+          },
+          endTime - startTime,
+        )
+      } catch (error) {
+        const errorMessage = getErrorMessage(error)
+        Logger.error(
+          error,
+          `Unhandled Error while syncing Slack ${errorMessage} ${(error as Error).stack}`,
+        )
+        syncJobError.inc(
+          {
+            sync_job_name: SyncSlackQueue,
+            sync_job_auth_type: SlackEntity.User,
+            sync_job_error_type: `${errorMessage}`,
+          },
+          1,
+        )
       }
+    })
 
-      Logger.info(
-        `Slack Scheduler: Successfully queued ${queuedCount} user sync jobs, ${failedCount} failed`,
-      )
+    await boss.work(SyncZohoDeskQueue, async ([job]) => {
+      const startTime = Date.now()
+      try {
+        await handleZohoDeskSync(job as PgBoss.Job<{ connectorId: number }>)
+        const endTime = Date.now()
+        syncJobSuccess.inc(
+          {
+            sync_job_name: SyncZohoDeskQueue,
+            sync_job_auth_type: AuthType.OAuth,
+          },
+          1,
+        )
+        syncJobDuration.observe(
+          {
+            sync_job_name: SyncZohoDeskQueue,
+            sync_job_auth_type: AuthType.OAuth,
+          },
+          endTime - startTime,
+        )
+      } catch (error) {
+        const errorMessage = getErrorMessage(error)
+        Logger.error(
+          error,
+          `Unhandled Error while syncing Zoho Desk ${errorMessage} ${(error as Error).stack}`,
+        )
+        syncJobError.inc(
+          {
+            sync_job_name: SyncZohoDeskQueue,
+            sync_job_auth_type: AuthType.OAuth,
+            sync_job_error_type: `${errorMessage}`,
+          },
+          1,
+        )
+      }
+    })
 
-      const endTime = Date.now()
-      syncJobSuccess.inc(
-        {
-          sync_job_name: SyncSlackSchedulerQueue,
-          sync_job_auth_type: "scheduler",
-        },
-        1,
-      )
-      syncJobDuration.observe(
-        {
-          sync_job_name: SyncSlackSchedulerQueue,
-          sync_job_auth_type: "scheduler",
-        },
-        endTime - startTime,
-      )
-    } catch (error) {
-      const errorMessage = getErrorMessage(error)
-      Logger.error(
-        error,
-        `Slack Scheduler: Error queuing user jobs: ${errorMessage} ${(error as Error).stack}`,
-      )
-      syncJobError.inc(
-        {
-          sync_job_name: SyncSlackSchedulerQueue,
-          sync_job_auth_type: "scheduler",
-          sync_job_error_type: `${errorMessage}`,
-        },
-        1,
-      )
-    }
-  })
-
-  // NEW: Per-User Slack sync worker (processes 2 jobs concurrently via batchSize)
-  await boss.work(SyncSlackPerUserQueue, { batchSize: 2 }, async (jobs) => {
-    // Process all jobs in parallel using Promise.all
-    await Promise.all(
-      jobs.map(async (job) => {
-        const startTime = Date.now()
-        const jobData = job.data as any
-
-        // Validate job data
-        if (!jobData || typeof jobData !== "object" || !jobData.email) {
-          Logger.error("Invalid job data for Slack sync", { jobData })
-          syncJobError.inc(
-            {
-              sync_job_name: SyncSlackPerUserQueue,
-              sync_job_auth_type: SlackEntity.User,
-              sync_job_error_type: "invalid_job_data",
-            },
-            1,
-          )
-          return
-        }
-
-        const userEmail = jobData.email
-
-        try {
-          Logger.info(`Slack Worker: Starting sync for user ${userEmail}`)
-
-          await handleSlackChanges(boss, job)
-
-          Logger.info(`Slack Worker: Completed sync for user ${userEmail}`)
-
-          const endTime = Date.now()
-          syncJobSuccess.inc(
-            {
-              sync_job_name: SyncSlackPerUserQueue,
-              sync_job_auth_type: SlackEntity.User,
-            },
-            1,
-          )
-          syncJobDuration.observe(
-            {
-              sync_job_name: SyncSlackPerUserQueue,
-              sync_job_auth_type: SlackEntity.User,
-            },
-            endTime - startTime,
-          )
-        } catch (error) {
-          const errorMessage = getErrorMessage(error)
-          Logger.error(
-            error,
-            `Slack Worker: Error syncing user ${userEmail}: ${errorMessage} ${(error as Error).stack}`,
-          )
-          syncJobError.inc(
-            {
-              sync_job_name: SyncSlackPerUserQueue,
-              sync_job_auth_type: SlackEntity.User,
-              sync_job_error_type: `${errorMessage}`,
-            },
-            1,
-          )
-        }
-      }),
+    // Zoho Desk Ticket Processing Worker - processes individual tickets
+    await boss.work(
+      ProcessZohoDeskTicketQueue,
+      { batchSize: 3 },
+      async (jobs) => {
+        await Promise.all(
+          jobs.map(async (job) => {
+            const startTime = Date.now()
+            try {
+              await processTicketJob(job as PgBoss.Job<TicketJob>)
+              const endTime = Date.now()
+              syncJobSuccess.inc(
+                {
+                  sync_job_name: ProcessZohoDeskTicketQueue,
+                  sync_job_auth_type: AuthType.OAuth,
+                },
+                1,
+              )
+              syncJobDuration.observe(
+                {
+                  sync_job_name: ProcessZohoDeskTicketQueue,
+                  sync_job_auth_type: AuthType.OAuth,
+                },
+                endTime - startTime,
+              )
+            } catch (error) {
+              const errorMessage = getErrorMessage(error)
+              Logger.error(
+                error,
+                `Error processing Zoho Desk ticket ${errorMessage} ${(error as Error).stack}`,
+              )
+              syncJobError.inc(
+                {
+                  sync_job_name: ProcessZohoDeskTicketQueue,
+                  sync_job_auth_type: AuthType.OAuth,
+                  sync_job_error_type: `${errorMessage}`,
+                },
+                1,
+              )
+            }
+          }),
+        )
+      },
     )
-  })
 
-  await boss.work(SyncSlackQueue, async ([job]) => {
-    const startTime = Date.now()
-    try {
-      await handleSlackChanges(boss, job)
-      const endTime = Date.now()
-      syncJobSuccess.inc(
-        {
-          sync_job_name: SyncSlackQueue,
-          sync_job_auth_type: SlackEntity.User,
-        },
-        1,
-      )
-      syncJobDuration.observe(
-        {
-          sync_job_name: SyncSlackQueue,
-          sync_job_auth_type: SlackEntity.User,
-        },
-        endTime - startTime,
-      )
-    } catch (error) {
-      const errorMessage = getErrorMessage(error)
-      Logger.error(
-        error,
-        `Unhandled Error while syncing Slack ${errorMessage} ${(error as Error).stack}`,
-      )
-      syncJobError.inc(
-        {
-          sync_job_name: SyncSlackQueue,
-          sync_job_auth_type: SlackEntity.User,
-          sync_job_error_type: `${errorMessage}`,
-        },
-        1,
-      )
-    }
-  })
-
-  await boss.work(SyncZohoDeskQueue, async ([job]) => {
-    const startTime = Date.now()
-    try {
-      await handleZohoDeskSync(job as PgBoss.Job<{ connectorId: number }>)
-      const endTime = Date.now()
-      syncJobSuccess.inc(
-        {
-          sync_job_name: SyncZohoDeskQueue,
-          sync_job_auth_type: AuthType.OAuth,
-        },
-        1,
-      )
-      syncJobDuration.observe(
-        {
-          sync_job_name: SyncZohoDeskQueue,
-          sync_job_auth_type: AuthType.OAuth,
-        },
-        endTime - startTime,
-      )
-    } catch (error) {
-      const errorMessage = getErrorMessage(error)
-      Logger.error(
-        error,
-        `Unhandled Error while syncing Zoho Desk ${errorMessage} ${(error as Error).stack}`,
-      )
-      syncJobError.inc(
-        {
-          sync_job_name: SyncZohoDeskQueue,
-          sync_job_auth_type: AuthType.OAuth,
-          sync_job_error_type: `${errorMessage}`,
-        },
-        1,
-      )
-    }
-  })
-
-  // Zoho Desk Ticket Processing Worker - processes individual tickets
-  await boss.work(
-    ProcessZohoDeskTicketQueue,
-    { batchSize: 3 },
-    async (jobs) => {
-      await Promise.all(
-        jobs.map(async (job) => {
-          const startTime = Date.now()
-          try {
-            await processTicketJob(job as PgBoss.Job<TicketJob>)
-            const endTime = Date.now()
-            syncJobSuccess.inc(
-              {
-                sync_job_name: ProcessZohoDeskTicketQueue,
-                sync_job_auth_type: AuthType.OAuth,
-              },
-              1,
-            )
-            syncJobDuration.observe(
-              {
-                sync_job_name: ProcessZohoDeskTicketQueue,
-                sync_job_auth_type: AuthType.OAuth,
-              },
-              endTime - startTime,
-            )
-          } catch (error) {
-            const errorMessage = getErrorMessage(error)
-            Logger.error(
-              error,
-              `Error processing Zoho Desk ticket ${errorMessage} ${(error as Error).stack}`,
-            )
-            syncJobError.inc(
-              {
-                sync_job_name: ProcessZohoDeskTicketQueue,
-                sync_job_auth_type: AuthType.OAuth,
-                sync_job_error_type: `${errorMessage}`,
-              },
-              1,
-            )
-          }
-        }),
-      )
-    },
-  )
-
-  //Zoho Desk Attachment Processing Worker - processes OCR for attachments
-  await boss.work(
-    ProcessZohoDeskAttachmentQueue,
-    { batchSize: 5 },
-    async (jobs) => {
-      await Promise.all(
-        jobs.map(async (job) => {
-          const startTime = Date.now()
-          try {
-            await processAttachmentJob(job as PgBoss.Job<AttachmentJob>)
-            const endTime = Date.now()
-            syncJobSuccess.inc(
-              {
-                sync_job_name: ProcessZohoDeskAttachmentQueue,
-                sync_job_auth_type: AuthType.OAuth,
-              },
-              1,
-            )
-            syncJobDuration.observe(
-              {
-                sync_job_name: ProcessZohoDeskAttachmentQueue,
-                sync_job_auth_type: AuthType.OAuth,
-              },
-              endTime - startTime,
-            )
-          } catch (error) {
-            const errorMessage = getErrorMessage(error)
-            Logger.error(
-              error,
-              `Error processing Zoho Desk attachment ${errorMessage} ${(error as Error).stack}`,
-            )
-            syncJobError.inc(
-              {
-                sync_job_name: ProcessZohoDeskAttachmentQueue,
-                sync_job_auth_type: AuthType.OAuth,
-                sync_job_error_type: `${errorMessage}`,
-              },
-              1,
-            )
-          }
-        }),
-      )
-    },
-  )
+    //Zoho Desk Attachment Processing Worker - processes OCR for attachments
+    await boss.work(
+      ProcessZohoDeskAttachmentQueue,
+      { batchSize: 5 },
+      async (jobs) => {
+        await Promise.all(
+          jobs.map(async (job) => {
+            const startTime = Date.now()
+            try {
+              await processAttachmentJob(job as PgBoss.Job<AttachmentJob>)
+              const endTime = Date.now()
+              syncJobSuccess.inc(
+                {
+                  sync_job_name: ProcessZohoDeskAttachmentQueue,
+                  sync_job_auth_type: AuthType.OAuth,
+                },
+                1,
+              )
+              syncJobDuration.observe(
+                {
+                  sync_job_name: ProcessZohoDeskAttachmentQueue,
+                  sync_job_auth_type: AuthType.OAuth,
+                },
+                endTime - startTime,
+              )
+            } catch (error) {
+              const errorMessage = getErrorMessage(error)
+              Logger.error(
+                error,
+                `Error processing Zoho Desk attachment ${errorMessage} ${(error as Error).stack}`,
+              )
+              syncJobError.inc(
+                {
+                  sync_job_name: ProcessZohoDeskAttachmentQueue,
+                  sync_job_auth_type: AuthType.OAuth,
+                  sync_job_error_type: `${errorMessage}`,
+                },
+                1,
+              )
+            }
+          }),
+        )
+      },
+    )
+  }
 
   await boss.work(CleanupAttachmentsQueue, async () => {
     const startTime = Date.now()

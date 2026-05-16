@@ -142,6 +142,8 @@ let ragOffFeature = true
 let useLegacyServiceAccountSync =
   process.env.USE_LEGACY_SERVICE_ACCOUNT_SYNC === "true"
 let useLegacySlackSync = process.env.USE_LEGACY_SLACK_SYNC === "true"
+const disableIntegrationSyncWorkers =
+  process.env.DISABLE_INTEGRATION_SYNC_WORKERS === "true"
 let delegationAgentic = "true"
 let CurrentAuthType: AuthType =
   (process.env.AUTH_TYPE as AuthType) || AuthType.OAuth
@@ -436,6 +438,7 @@ export default {
   pdfFileProcessingTeamSize,
   useLegacyServiceAccountSync,
   useLegacySlackSync,
+  disableIntegrationSyncWorkers,
   // LangFuse configuration
   langfusePublicKey,
   langfuseSecretKey,
