@@ -104,6 +104,8 @@ export function ThinkingChip({
     it.kind === "tool" ? true : it.text.length > 0,
   )
   const hasContent = renderable.length > 0
+  
+  const liveLabel = aggregated ? streamingNow : pending
 
   return (
     <div className="my-1 text-[12.5px]">
@@ -111,7 +113,7 @@ export function ThinkingChip({
         type="button"
         onClick={(): void => setOpen((v): boolean => !v)}
         aria-expanded={open}
-        aria-label={pending ? "Thinking" : "Show thoughts"}
+        aria-label={liveLabel ? "Thinking" : "Show thoughts"}
         className="-ml-1 inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-muted-foreground transition-colors hover:bg-secondary/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
       >
         <ChevronRight
@@ -122,7 +124,7 @@ export function ThinkingChip({
           aria-hidden
           strokeWidth={2}
         />
-        {pending ? (
+        {liveLabel ? (
           <BrailleLoader />
         ) : (
           <Sparkles
@@ -133,10 +135,10 @@ export function ThinkingChip({
         )}
         <span
           className={
-            "select-none font-medium " + (pending ? "animate-breathe" : "")
+            "select-none font-medium " + (liveLabel ? "animate-breathe" : "")
           }
         >
-          {pending ? "Thinking…" : "Thoughts"}
+          {liveLabel ? "Thinking…" : "Thoughts"}
         </span>
       </button>
 

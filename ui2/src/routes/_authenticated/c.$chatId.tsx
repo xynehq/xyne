@@ -27,6 +27,7 @@ function ChatThreadRoute(): JSX.Element {
   const { selected: selectedModel } = useModels()
   const { selected: selectedAgent } = useAgents()
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const contentRef = useRef<HTMLDivElement | null>(null)
   const tailRef = useRef<HTMLDivElement | null>(null)
   // True while the user is glued to the bottom of the scroll view. As soon as
   // they scroll up, we stop auto-following stream deltas so the view doesn't
@@ -46,14 +47,21 @@ function ChatThreadRoute(): JSX.Element {
     }
   }, [chatId])
 
-  useEffect((): void => {
-    if (!stickToBottomRef.current) return
-    const el = scrollRef.current
-    if (!el) return
-    // Direct assignment instead of scrollIntoView({behavior:"smooth"}) so
-    // rapid deltas don't queue overlapping smooth animations.
-    el.scrollTop = el.scrollHeight
-  }, [conv.messages.length, conv.streamingText, conv.streamingThinking])
+  useEffect((): (() => void) | void => {
+    const scroll = scrollRef.current
+    const content = contentRef.current
+    if (!scroll || !content) return
+    const snap = (): void => {
+      if (!stickToBottomRef.current) return
+      scroll.scrollTop = scroll.scrollHeight
+    }
+    snap()
+    const ro = new ResizeObserver(snap)
+    ro.observe(content)
+    return (): void => {
+      ro.disconnect()
+    }
+  }, [chatId])
 
   const onScroll = (): void => {
     const el = scrollRef.current
@@ -142,7 +150,10 @@ function ChatThreadRoute(): JSX.Element {
           onScroll={onScroll}
           className="flex-1 overflow-y-auto"
         >
-          <div className="mx-auto w-full max-w-3xl px-2 pb-8 pt-4 sm:px-6">
+          <div
+            ref={contentRef}
+            className="mx-auto w-full max-w-3xl px-2 pb-8 pt-4 sm:px-6"
+          >
             {rendered.map((m) => (
               <MessageBubble
                 key={m.id}
