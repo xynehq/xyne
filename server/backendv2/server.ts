@@ -245,7 +245,8 @@ const SPA_DIST = process.env["UI2_DIST_DIR"] ?? "./ui2-dist"
 // resolution — and we can return useful content-types without an extra dep.
 const mime = (p: string): string => {
   if (p.endsWith(".html")) return "text/html; charset=utf-8"
-  if (p.endsWith(".js")) return "application/javascript; charset=utf-8"
+  if (p.endsWith(".js") || p.endsWith(".mjs"))
+    return "application/javascript; charset=utf-8"
   if (p.endsWith(".css")) return "text/css; charset=utf-8"
   if (p.endsWith(".svg")) return "image/svg+xml"
   if (p.endsWith(".png")) return "image/png"
@@ -280,6 +281,11 @@ app.get("/assets/*", async (c) => {
 })
 app.get("/favicon.ico", (c) => serveSpaFile(c, `${SPA_DIST}/favicon.ico`))
 app.get("/favicon.svg", (c) => serveSpaFile(c, `${SPA_DIST}/favicon.svg`))
+// pdf.js worker — shipped via ui2/public/ so it lands at the dist root with
+// a stable name (no content hash). The PDF viewer points workerSrc here.
+app.get("/pdf.worker.mjs", (c) =>
+  serveSpaFile(c, `${SPA_DIST}/pdf.worker.mjs`),
+)
 // TanStack file-based router uses client-side routing — any unknown GET that
 // isn't an API/auth path falls through to index.html so the SPA can take over.
 app.get("*", (c) => serveSpaFile(c, `${SPA_DIST}/index.html`))

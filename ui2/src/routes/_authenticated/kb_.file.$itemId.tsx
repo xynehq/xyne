@@ -24,9 +24,12 @@ import {
 } from "lucide-react"
 
 import { fileContentUrl, getBreadcrumb } from "@/lib/kb"
-import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url"
 
-pdfjs.GlobalWorkerOptions.workerSrc = workerSrc
+// Worker is shipped as a static asset from ui2/public/ → served at the
+// origin root. Using an absolute path avoids the `?url` bundler dance and
+// avoids the route-relative `/kb/file/pdf.worker.mjs` resolution that
+// pdf.js falls back to when GlobalWorkerOptions.workerSrc is unset.
+pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.mjs"
 
 type ViewerSearch = { cl?: string }
 
