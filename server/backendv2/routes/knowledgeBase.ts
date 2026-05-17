@@ -83,18 +83,50 @@ const loadActor = async (c: Context<{ Variables: Vars }>): Promise<Actor> => {
   }
 }
 
-const loadOwnedCollection = async (
+/** Capability bundle returned by `loadCollection`. The flag is the single
+ *  authority on whether a viewer can mutate; both endpoints that shape it
+ *  into the response and endpoints that gate writes consume the same value. */
+type CollectionAccess = { collection: Collection; canWrite: boolean }
+
+/** Enforce read access and compute the viewer's capability in one pass.
+ *  Throws 404 if the collection doesn't exist, 403 if the viewer has no
+ *  access. Read rule mirrors v1's `canViewCollection`
+ *  (`server/api/knowledgeBase.ts:262`): owner OR not private OR explicitly
+ *  granted via `permissions[]`. Write rule is owner-only — surfaced as the
+ *  `canWrite` flag instead of a second helper so the rule lives in one place.
+ *  Mutating endpoints call `assertCanWrite(access)` immediately after to
+ *  reject non-owners with a 403. */
+const loadCollection = async (
   clId: string,
   actor: Actor,
-): Promise<Collection> => {
+): Promise<CollectionAccess> => {
   const collection = await getCollectionById(db, clId)
   if (!collection) {
     throw new HTTPException(404, { message: "Collection not found" })
   }
-  if (collection.ownerId !== actor.id) {
+  const isOwner = collection.ownerId === actor.id
+  if (isOwner) {
+    return { collection, canWrite: true }
+  }
+  if (collection.isPrivate === false) {
+    return { collection, canWrite: false }
+  }
+  const permitted = Array.isArray(collection.permissions)
+    ? (collection.permissions as unknown[]).includes(actor.id)
+    : false
+  if (!permitted) {
     throw new HTTPException(403, { message: "Forbidden" })
   }
-  return collection
+  return { collection, canWrite: false }
+}
+
+/** Mutation gate. Call directly after `loadCollection` on any endpoint that
+ *  changes the collection (upload, create folder, delete, rename). Throws
+ *  403 with the same "Owner only" message v1 uses for symmetry. */
+const assertCanWrite = (access: CollectionAccess): void => {
+  if (!access.canWrite) {
+    throw new HTTPException(403, { message: "Owner only" })
+  }
 }
 
 // MIME detection: magic bytes -> extension map -> browser type -> octet-stream.
@@ -182,6 +214,10 @@ router.get("/collections", async (c) => {
       isPrivate: r.isPrivate,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
+      // True only for the owner. The UI uses this to hide owner-only
+      // affordances (upload, new folder, delete) on shared/public
+      // collections — non-owners only get read.
+      canWrite: r.ownerId === actor.id,
     })),
   })
 })
@@ -242,7 +278,7 @@ router.post("/collections", async (c) => {
 router.delete("/collections/:clId", async (c) => {
   const actor = await loadActor(c)
   const clId = c.req.param("clId")
-  await loadOwnedCollection(clId, actor)
+  assertCanWrite(await loadCollection(clId, actor))
   await db.transaction(async (tx: TxnOrClient) => {
     await softDeleteCollection(tx, clId)
   })
@@ -255,11 +291,16 @@ router.delete("/collections/:clId", async (c) => {
 router.get("/collections/:clId/items", async (c) => {
   const actor = await loadActor(c)
   const clId = c.req.param("clId")
-  await loadOwnedCollection(clId, actor)
+  const { canWrite } = await loadCollection(clId, actor)
   const parentRaw = c.req.query("parentId")
   const parentId = parentRaw && parentRaw !== "" ? parentRaw : null
   const items = await getCollectionItemsByParent(db, clId, parentId)
-  return c.json({ items: items.map(toEntry) })
+  return c.json({
+    items: items.map(toEntry),
+    // Echo write capability so a UI that deep-links into a collection
+    // (without hitting /collections first) can hide owner-only buttons.
+    canWrite,
+  })
 })
 
 // GET /v2/kb/collections/:clId/items/:itemId/breadcrumb
@@ -268,7 +309,7 @@ router.get("/collections/:clId/items/:itemId/breadcrumb", async (c) => {
   const actor = await loadActor(c)
   const clId = c.req.param("clId")
   const itemId = c.req.param("itemId")
-  await loadOwnedCollection(clId, actor)
+  await loadCollection(clId, actor)
 
   const chain: { id: string; name: string }[] = []
   let cur: CollectionItem | null = await getCollectionItemById(db, itemId)
@@ -286,7 +327,7 @@ router.get("/collections/:clId/items/:itemId/breadcrumb", async (c) => {
 router.post("/collections/:clId/folders", async (c) => {
   const actor = await loadActor(c)
   const clId = c.req.param("clId")
-  await loadOwnedCollection(clId, actor)
+  assertCanWrite(await loadCollection(clId, actor))
 
   const body = (await c.req.json().catch(() => ({}))) as {
     name?: string
@@ -322,7 +363,7 @@ router.delete("/collections/:clId/items/:itemId", async (c) => {
   const actor = await loadActor(c)
   const clId = c.req.param("clId")
   const itemId = c.req.param("itemId")
-  await loadOwnedCollection(clId, actor)
+  assertCanWrite(await loadCollection(clId, actor))
 
   const item = await getCollectionItemById(db, itemId)
   if (!item || item.collectionId !== clId) {
@@ -400,7 +441,9 @@ router.delete("/collections/:clId/items/:itemId", async (c) => {
 router.post("/collections/:clId/upload", async (c) => {
   const actor = await loadActor(c)
   const clId = c.req.param("clId")
-  const collection = await loadOwnedCollection(clId, actor)
+  const access = await loadCollection(clId, actor)
+  assertCanWrite(access)
+  const collection = access.collection
 
   let formData: FormData
   try {
@@ -538,7 +581,7 @@ router.get("/collections/:clId/files/:itemId/content", async (c) => {
   const actor = await loadActor(c)
   const clId = c.req.param("clId")
   const itemId = c.req.param("itemId")
-  await loadOwnedCollection(clId, actor)
+  await loadCollection(clId, actor)
 
   const item = await getCollectionItemById(db, itemId)
   if (!item || item.collectionId !== clId || item.type !== "file") {

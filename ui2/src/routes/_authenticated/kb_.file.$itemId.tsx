@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { useVirtualizer } from "@tanstack/react-virtual"
+import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual"
 import { Document, Page, pdfjs } from "react-pdf"
 import "react-pdf/dist/Page/AnnotationLayer.css"
 import "react-pdf/dist/Page/TextLayer.css"
@@ -266,10 +266,10 @@ function PdfViewerRoute(): JSX.Element {
           <Document
             file={fileUrl}
             options={docOptions}
-            onLoadSuccess={({ numPages: n }): void => {
+            onLoadSuccess={({ numPages: n }: { numPages: number }): void => {
               setNumPages(n)
             }}
-            onLoadError={(err): void => {
+            onLoadError={(err: Error): void => {
               setLoadError(err.message)
             }}
             loading={
@@ -290,7 +290,7 @@ function PdfViewerRoute(): JSX.Element {
                 className="relative mx-auto"
                 style={{ height: `${String(totalSize)}px` }}
               >
-                {items.map((v) => (
+                {items.map((v: VirtualItem) => (
                   <div
                     key={v.key}
                     data-index={v.index}
