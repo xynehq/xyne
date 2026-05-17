@@ -8,7 +8,7 @@
 import { Hono, type Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { stream } from "hono/streaming"
-import { mkdir, unlink, writeFile, readFile, stat } from "node:fs/promises"
+import { mkdir, unlink, writeFile, stat } from "node:fs/promises"
 import { createReadStream as createFileReadStream } from "node:fs"
 import { dirname, extname } from "node:path"
 import * as crypto from "crypto"
@@ -572,8 +572,24 @@ router.get("/collections/:clId/files/:itemId/content", async (c) => {
     if (!m) {
       throw new HTTPException(416, { message: "Invalid range" })
     }
-    const start = m[1] ? parseInt(m[1], 10) : 0
-    const end = m[2] ? parseInt(m[2], 10) : fileSize - 1
+    const startStr = m[1] ?? ""
+    const endStr = m[2] ?? ""
+    let start: number
+    let end: number
+    if (startStr === "" && endStr !== "") {
+      const suffix = parseInt(endStr, 10)
+      if (Number.isNaN(suffix) || suffix <= 0) {
+        return new Response("Range Not Satisfiable", {
+          status: 416,
+          headers: { "Content-Range": `bytes */${String(fileSize)}` },
+        })
+      }
+      start = Math.max(0, fileSize - suffix)
+      end = fileSize - 1
+    } else {
+      start = startStr ? parseInt(startStr, 10) : 0
+      end = endStr ? parseInt(endStr, 10) : fileSize - 1
+    }
     if (
       Number.isNaN(start) ||
       Number.isNaN(end) ||
@@ -612,10 +628,28 @@ router.get("/collections/:clId/files/:itemId/content", async (c) => {
     })
   }
 
-  // No range — small files can just read+return.
-  const bytes = await readFile(file.storagePath)
-  return new Response(new Uint8Array(bytes), {
-    headers: { ...baseHeaders, "Content-Length": String(fileSize) },
+  const sp = file.storagePath
+  return stream(c, async (w) => {
+    c.header("Content-Length", String(fileSize))
+    for (const [k, v] of Object.entries(baseHeaders)) {
+      c.header(k, v)
+    }
+    c.status(200)
+    const rs = createFileReadStream(sp, { highWaterMark: 64 * 1024 })
+    await new Promise<void>((resolve, reject) => {
+      rs.on("data", async (chunk) => {
+        try {
+          await w.write(chunk as Buffer)
+        } catch (e) {
+          rs.destroy()
+          reject(e)
+        }
+      })
+      rs.on("end", () => {
+        resolve()
+      })
+      rs.on("error", reject)
+    })
   })
 })
 
