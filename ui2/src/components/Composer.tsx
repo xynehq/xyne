@@ -38,6 +38,12 @@ type Props = {
   /** Called when the user clicks the stop button while `pending` is true.
    *  Should request a server-side interrupt of the in-flight assistant run. */
   onStop?: () => void
+  /** Hide the agent picker pill. The agent-edit "Try it" panel uses this:
+   *  the agent is already implied by the page context, surfacing another
+   *  picker is confusing. */
+  hideAgentSelector?: boolean
+  /** Hide the model picker pill — same rationale as `hideAgentSelector`. */
+  hideModelSelector?: boolean
 }
 
 const newChatId = (): string => {
@@ -55,6 +61,8 @@ export function Composer({
   pending = false,
   onStop,
   hideDisclaimer,
+  hideAgentSelector = false,
+  hideModelSelector = false,
 }: Props): JSX.Element {
   const [value, setValue] = useState("")
   const navigate = useNavigate()
@@ -159,9 +167,9 @@ export function Composer({
           </button>
 
           <div className="ml-auto flex items-center gap-1.5">
-            <AgentSelector />
+            {!hideAgentSelector && <AgentSelector />}
             <ThinkingSelector />
-            <ModelSelector />
+            {!hideModelSelector && <ModelSelector />}
 
             {pending ? (
               <button

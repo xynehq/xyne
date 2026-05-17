@@ -1,5 +1,6 @@
 import { Link, useLocation } from "@tanstack/react-router"
 import {
+  Bot,
   FolderTree,
   MessageSquarePlus,
   Monitor,
@@ -136,6 +137,7 @@ function CollapsedShell({
 }: CollapsedProps): JSX.Element {
   const { pathname } = useLocation()
   const onKb = pathname.startsWith("/kb")
+  const onAgents = pathname.startsWith("/agents")
   return (
     <div className="flex h-full w-14 flex-col items-center py-3">
       <button
@@ -175,6 +177,19 @@ function CollapsedShell({
           }
         >
           <FolderTree className="h-4 w-4" aria-hidden strokeWidth={1.75} />
+        </Link>
+        <Link
+          to="/agents"
+          aria-label="Agents"
+          title="Agents"
+          className={
+            "grid h-9 w-9 place-items-center rounded-lg transition-colors duration-150 " +
+            (onAgents
+              ? "bg-secondary text-foreground"
+              : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground")
+          }
+        >
+          <Bot className="h-4 w-4" aria-hidden strokeWidth={1.75} />
         </Link>
       </div>
 
@@ -250,6 +265,7 @@ function ExpandedShell({
 }: ExpandedProps): JSX.Element {
   const { pathname } = useLocation()
   const onKb = pathname.startsWith("/kb")
+  const onAgents = pathname.startsWith("/agents")
   return (
     <div className="flex h-full w-[272px] flex-col">
       <header className="flex items-center justify-between px-3 pb-2 pt-3">
@@ -289,6 +305,19 @@ function ExpandedShell({
             strokeWidth={1.75}
           />
           <span className="flex-1 truncate text-left">Knowledge</span>
+        </Link>
+        <Link
+          to="/agents"
+          aria-current={onAgents ? "page" : undefined}
+          className={
+            "group flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-[13.5px] transition-colors duration-150 " +
+            (onAgents
+              ? "bg-secondary font-medium text-foreground"
+              : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground")
+          }
+        >
+          <Bot className="h-4 w-4 shrink-0" aria-hidden strokeWidth={1.75} />
+          <span className="flex-1 truncate text-left">Agents</span>
         </Link>
       </nav>
 
