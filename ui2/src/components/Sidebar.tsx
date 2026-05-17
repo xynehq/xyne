@@ -14,7 +14,6 @@ import { useSidebarCollapse } from "@/hooks/useSidebarCollapse"
 import { useSidebarMobile } from "@/hooks/useSidebarMobile"
 import { useSidebarSearch } from "@/hooks/useSidebarSearch"
 import { BrandMark } from "./BrandMark"
-import { ThemeToggle } from "./ThemeToggle"
 import { SidebarNavItem } from "./SidebarNavItem"
 import { ChatHistory, type ChatHistoryItem } from "./ChatHistory"
 
@@ -329,15 +328,12 @@ function ExpandedShell({
         />
       </div>
 
-      <footer className="flex flex-col gap-2 border-t border-sidebar-border px-3 py-3">
-        <div className="flex justify-start">
-          <ThemeToggle />
-        </div>
+      <footer className="flex items-center gap-1 border-t border-sidebar-border px-3 py-3">
         <button
           type="button"
           onClick={onAccount}
           title={me?.email ?? "Account"}
-          className="group inline-flex min-w-0 items-center gap-2 rounded-full px-1.5 py-1 transition-colors hover:bg-secondary/70"
+          className="group inline-flex min-w-0 flex-1 items-center gap-2 rounded-full px-1.5 py-1 transition-colors hover:bg-secondary/70"
         >
           <span className="grid h-7 w-7 flex-shrink-0 place-items-center rounded-full bg-primary text-[10.5px] font-medium text-primary-foreground">
             {me ? initials(me.email) : "··"}
@@ -348,6 +344,7 @@ function ExpandedShell({
             </span>
           ) : null}
         </button>
+        <CollapsedThemeButton />
       </footer>
     </div>
   )

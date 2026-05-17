@@ -75,16 +75,17 @@ export function MessageBubble({
   }
 
   const reasoningItems: ReasoningItem[] = []
-  const renderBlocks: Array<{ block: Block; key: number }> = []
+  const renderBlocks: Array<{ block: Block; key: number; isLastBlock: boolean }> = []
   let isReasoningActive = false
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i]
     if (!b) continue
+    if (b.kind === "tool_result") continue
     const isLast = i === blocks.length - 1
-    if (b.kind === "thinking") {
+    if (collapseTools && b.kind === "thinking") {
       reasoningItems.push({ kind: "thought", text: b.text })
       if (pending && isLast) isReasoningActive = true
-    } else if (b.kind === "tool_use" && collapseTools) {
+    } else if (collapseTools && b.kind === "tool_use") {
       const result = resultById.get(b.toolCallId)
       reasoningItems.push({
         kind: "tool",
@@ -93,13 +94,19 @@ export function MessageBubble({
         ...(result ? { result } : {}),
       })
       if (pending && isLast) isReasoningActive = true
-    } else if (b.kind === "tool_result" && collapseTools) {
-      if (pending && isLast) isReasoningActive = true
     } else {
-      renderBlocks.push({ block: b, key: i })
+      renderBlocks.push({ block: b, key: i, isLastBlock: isLast })
     }
   }
-  const showReasoning = reasoningItems.length > 0
+  const trailing = blocks[blocks.length - 1]
+  if (
+    collapseTools &&
+    pending &&
+    trailing?.kind === "tool_result"
+  ) {
+    isReasoningActive = true
+  }
+  const showReasoning = collapseTools && reasoningItems.length > 0
 
   const fullText = collectText(blocks)
   const hasAnyContent = blocks.length > 0
@@ -115,12 +122,22 @@ export function MessageBubble({
                 pending={isReasoningActive}
               />
             )}
-            {renderBlocks.map(({ block: b, key }) => {
+            {renderBlocks.map(({ block: b, key, isLastBlock }) => {
               if (b.kind === "text") {
                 return (
                   <ReactMarkdown key={key} remarkPlugins={[remarkGfm]}>
                     {b.text}
                   </ReactMarkdown>
+                )
+              }
+              if (b.kind === "thinking") {
+                const isLive = pending && isLastBlock
+                return (
+                  <ThinkingChip
+                    key={key}
+                    items={[{ kind: "thought", text: b.text }]}
+                    pending={isLive}
+                  />
                 )
               }
               if (b.kind === "tool_use") {
@@ -154,7 +171,6 @@ export function MessageBubble({
                   </div>
                 )
               }
-              // tool_result handled via pairing above; ignore here.
               return null
             })}
           </div>
