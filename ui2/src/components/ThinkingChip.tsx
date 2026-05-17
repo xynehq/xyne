@@ -1,14 +1,47 @@
-import { useState } from "react"
-import { ChevronRight, Brain, Loader2 } from "lucide-react"
+import { useEffect, useState } from "react"
+import { ChevronRight, Brain } from "lucide-react"
 
 type Props = {
   text: string
   pending?: boolean
 }
 
+const BRAILLE_FRAMES = [
+  "⠋",
+  "⠙",
+  "⠹",
+  "⠸",
+  "⠼",
+  "⠴",
+  "⠦",
+  "⠧",
+  "⠇",
+  "⠏",
+] as const
+
+function BrailleLoader(): JSX.Element {
+  const [frame, setFrame] = useState(0)
+  useEffect((): (() => void) => {
+    const id = window.setInterval((): void => {
+      setFrame((x): number => (x + 1) % BRAILLE_FRAMES.length)
+    }, 90)
+    return (): void => {
+      window.clearInterval(id)
+    }
+  }, [])
+  return (
+    <span
+      aria-hidden
+      className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center font-mono text-[15px] leading-none"
+      style={{ color: "#E63946" }}
+    >
+      {BRAILLE_FRAMES[frame]}
+    </span>
+  )
+}
+
 export function ThinkingChip({ text, pending = false }: Props): JSX.Element {
-  // Open while streaming so the user sees reasoning happen; collapse on done.
-  const [open, setOpen] = useState(pending)
+  const [open, setOpen] = useState(false)
 
   return (
     <div className="my-2 overflow-hidden rounded-lg border border-border/60 text-[12.5px]">
@@ -25,20 +58,22 @@ export function ThinkingChip({ text, pending = false }: Props): JSX.Element {
           }
           aria-hidden
         />
-        <Brain
-          className="h-3 w-3 flex-shrink-0 text-muted-foreground"
-          aria-hidden
-          strokeWidth={1.75}
-        />
-        <span className="text-foreground/80">
-          {pending ? "Thinking…" : "Thought"}
-        </span>
-        {pending && (
-          <Loader2
-            className="ml-auto h-3 w-3 animate-spin text-muted-foreground"
+        {pending ? (
+          <BrailleLoader />
+        ) : (
+          <Brain
+            className="h-3 w-3 flex-shrink-0 text-muted-foreground"
             aria-hidden
+            strokeWidth={1.75}
           />
         )}
+        <span
+          className={
+            "text-foreground/80 " + (pending ? "animate-breathe" : "")
+          }
+        >
+          {pending ? "Thinking…" : "Thought"}
+        </span>
       </button>
 
       {open && text.length > 0 && (

@@ -31,14 +31,12 @@ function NewChatRoute(): JSX.Element {
 
   return (
     <div className="flex h-full flex-col">
-      <Topbar title="New chat" />
-      <main className="flex flex-1 flex-col">
-        <div className="flex flex-1 items-center justify-center px-6 py-8">
+      <Topbar />
+      <main className="flex flex-1 items-center justify-center px-6 pb-24 pt-8">
+        <div className="flex w-full max-w-2xl flex-col">
           <EmptyState name={me.email} />
-        </div>
-        <div className="border-t border-border bg-background/70 backdrop-blur-md">
-          <div className="mx-auto w-full max-w-3xl px-4 py-4">
-            <Composer autoFocus onSubmit={onSubmit} />
+          <div className="mt-6">
+            <Composer autoFocus onSubmit={onSubmit} hideDisclaimer />
           </div>
         </div>
       </main>

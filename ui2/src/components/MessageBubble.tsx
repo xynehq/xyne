@@ -1,7 +1,6 @@
 import { Copy, RefreshCcw, AlertTriangle } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { BrandMark } from "./BrandMark"
 import { ToolCallChip } from "./ToolCallChip"
 import { ThinkingChip } from "./ThinkingChip"
 import type { Block } from "@/lib/chat-store"
@@ -57,19 +56,8 @@ export function MessageBubble({
   const hasAnyContent = blocks.length > 0
 
   return (
-    <article className="group flex w-full gap-3 px-2 py-5 sm:px-4">
-      <div className="mt-0.5 flex-shrink-0">
-        <span className="relative inline-flex">
-          <BrandMark withWordmark={false} />
-          {pending && (
-            <span
-              aria-hidden
-              className="absolute inset-[-5px] animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/80"
-            />
-          )}
-        </span>
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-2">
+    <article className="group w-full px-2 py-5 sm:px-4">
+      <div className="flex min-w-0 flex-col gap-2">
         {hasAnyContent && (
           <div className="prose-chat text-[15px] leading-7 text-foreground">
             {blocks.map((b, i) => {
@@ -81,7 +69,14 @@ export function MessageBubble({
                 )
               }
               if (b.kind === "thinking") {
-                return <ThinkingChip key={i} text={b.text} />
+                const isLast = i === blocks.length - 1
+                return (
+                  <ThinkingChip
+                    key={i}
+                    text={b.text}
+                    pending={pending && isLast}
+                  />
+                )
               }
               if (b.kind === "tool_use") {
                 return (

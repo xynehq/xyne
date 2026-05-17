@@ -23,7 +23,8 @@ type Props = {
    * last user message). Bump `key` to push a new seed even if `text` is the
    * same as before.
    */
-  seed?: { text: string; key: number }
+  seed?: { text: string; key: number } | undefined
+  hideDisclaimer?: boolean | undefined
 }
 
 const newChatId = (): string => {
@@ -36,6 +37,7 @@ export function Composer({
   onSubmit,
   placeholder = "Ask anything",
   seed,
+  hideDisclaimer,
 }: Props): JSX.Element {
   const [value, setValue] = useState("")
   const navigate = useNavigate()
@@ -151,9 +153,11 @@ export function Composer({
           </div>
         </div>
       </div>
-      <p className="mt-2 text-center text-[11px] text-muted-foreground/80">
-        xyne can be mistaken. Verify important details.
-      </p>
+      {hideDisclaimer ? null : (
+        <p className="mt-2 text-center text-[11px] text-muted-foreground/80">
+          Xyne can make mistakes. Verify important details.
+        </p>
+      )}
     </form>
   )
 }

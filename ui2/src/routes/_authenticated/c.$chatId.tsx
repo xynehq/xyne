@@ -44,6 +44,12 @@ function ChatThreadRoute(): JSX.Element {
       const synthetic: Block[] = []
       if (isStreaming && conv.streamingThinking.length > 0) {
         synthetic.push({ kind: "thinking", text: conv.streamingThinking })
+      } else if (
+        isStreaming &&
+        m.blocks.length === 0 &&
+        conv.streamingText.length === 0
+      ) {
+        synthetic.push({ kind: "thinking", text: "" })
       }
       if (isStreaming && conv.streamingText.length > 0) {
         synthetic.push({
@@ -111,8 +117,8 @@ function ChatThreadRoute(): JSX.Element {
             <div ref={tailRef} aria-hidden />
           </div>
         </div>
-        <div className="border-t border-border bg-background/70 backdrop-blur-md">
-          <div className="mx-auto w-full max-w-3xl px-4 py-4">
+        <div className="bg-background/70 backdrop-blur-md">
+          <div className="mx-auto w-full max-w-3xl px-4 pb-4">
             <Composer onSubmit={onSubmit} placeholder="Reply…" seed={seed} />
           </div>
         </div>
