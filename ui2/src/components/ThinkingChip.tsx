@@ -19,6 +19,7 @@ export type ReasoningItem =
 type Props = {
   items: ReasoningItem[]
   pending?: boolean
+  streaming?: boolean
 }
 
 const BRAILLE_FRAMES = [
@@ -57,24 +58,47 @@ function BrailleLoader(): JSX.Element {
 export function ThinkingChip({
   items,
   pending = false,
+  streaming,
 }: Props): JSX.Element {
-  const [open, setOpen] = useState(pending)
+  const aggregated = streaming !== undefined
+  const streamingNow = streaming ?? false
+  const [open, setOpen] = useState(pending || streamingNow)
   const prevPending = useRef(pending)
+  const prevStreaming = useRef(streamingNow)
   useEffect((): void => {
-    if (prevPending.current !== pending) {
-      setOpen(pending)
-      prevPending.current = pending
+    if (pending && !prevPending.current) {
+      setOpen(true)
     }
-  }, [pending])
+    if (aggregated) {
+      if (prevStreaming.current && !streamingNow) {
+        setOpen(false)
+      }
+    } else {
+      if (prevPending.current && !pending) {
+        setOpen(false)
+      }
+    }
+    prevPending.current = pending
+    prevStreaming.current = streamingNow
+  }, [pending, streamingNow, aggregated])
 
   // While live, pin the panel to the latest tokens.
   const bodyRef = useRef<HTMLDivElement | null>(null)
+  const stickToBottomRef = useRef(true)
   useEffect((): void => {
     if (!pending) return
     const el = bodyRef.current
     if (!el) return
+    if (!stickToBottomRef.current) return
     el.scrollTop = el.scrollHeight
   }, [pending, items])
+
+  const onBodyScroll = (): void => {
+    const el = bodyRef.current
+    if (!el) return
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    stickToBottomRef.current = distanceFromBottom < 20
+  }
 
   const renderable = items.filter((it): boolean =>
     it.kind === "tool" ? true : it.text.length > 0,
@@ -119,7 +143,8 @@ export function ThinkingChip({
       {open && hasContent && (
         <div
           ref={bodyRef}
-          className="animate-fade-in ml-2 mt-1.5 max-h-80 overflow-y-auto border-l-2 border-border/70 pl-3 pr-1"
+          onScroll={onBodyScroll}
+          className="animate-fade-in ml-2 mt-1.5 max-h-80 overflow-y-auto overscroll-contain border-l-2 border-border/70 pl-3 pr-1"
         >
           {renderable.map((it, i): JSX.Element => (
             <div key={i}>

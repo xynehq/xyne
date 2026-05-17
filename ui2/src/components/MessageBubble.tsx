@@ -120,6 +120,7 @@ export function MessageBubble({
               <ThinkingChip
                 items={reasoningItems}
                 pending={isReasoningActive}
+                streaming={pending}
               />
             )}
             {renderBlocks.map(({ block: b, key, isLastBlock }) => {
