@@ -1,6 +1,7 @@
 import { Outlet, createFileRoute, redirect } from "@tanstack/react-router"
 import { ApiError, getMe, type Me } from "@/lib/api"
 import { Sidebar } from "@/components/Sidebar"
+import { ToastHost } from "@/components/Toast"
 
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: async (): Promise<{ me: Me }> => {
@@ -27,6 +28,7 @@ function AuthenticatedLayout(): JSX.Element {
       <div className="flex h-full min-w-0 flex-1 flex-col">
         <Outlet />
       </div>
+      <ToastHost />
     </div>
   )
 }

@@ -25,12 +25,17 @@ export async function apiFetch<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
+  const isMultipart =
+    typeof FormData !== "undefined" && init.body instanceof FormData
   const send = (): Promise<Response> =>
     fetch(path, {
       ...init,
       credentials: "include",
-      // eslint-disable-next-line @typescript-eslint/naming-convention
-      headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
+      headers: {
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        ...(isMultipart ? {} : { "Content-Type": "application/json" }),
+        ...(init.headers ?? {}),
+      },
     })
 
   let res = await send()
