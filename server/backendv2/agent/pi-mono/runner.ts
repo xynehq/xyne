@@ -210,7 +210,7 @@ export async function runPiMonoTurn(
     }),
     modelOptions: {
       contextWindow,
-      maxTokens: 16000,
+      maxTokens: 32000,
       reasoning: true,
     },
     thinkingLevel: "medium",
