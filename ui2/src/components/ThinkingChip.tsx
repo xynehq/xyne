@@ -82,16 +82,23 @@ export function ThinkingChip({
     prevStreaming.current = streamingNow
   }, [pending, streamingNow, aggregated])
 
-  // While live, pin the panel to the latest tokens.
+  const liveLabel = aggregated ? streamingNow : pending
+
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const stickToBottomRef = useRef(true)
   useEffect((): void => {
-    if (!pending) return
+    if (open) {
+      stickToBottomRef.current = true
+    }
+  }, [open])
+  useEffect((): void => {
+    if (!open) return
+    if (!liveLabel) return
     const el = bodyRef.current
     if (!el) return
     if (!stickToBottomRef.current) return
     el.scrollTop = el.scrollHeight
-  }, [pending, items])
+  }, [open, liveLabel, items])
 
   const onBodyScroll = (): void => {
     const el = bodyRef.current
@@ -104,8 +111,6 @@ export function ThinkingChip({
     it.kind === "tool" ? true : it.text.length > 0,
   )
   const hasContent = renderable.length > 0
-  
-  const liveLabel = aggregated ? streamingNow : pending
 
   return (
     <div className="my-1 text-[12.5px]">
