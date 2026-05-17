@@ -9,7 +9,6 @@
         "@tanstack/react-virtual": "^3.13.24",
         "@tanstack/router-plugin": "^1.168.3",
         "lucide-react": "^0.456.0",
-        "pdfjs-dist": "5.4.296",
         "react": "^19.2.1",
         "react-dom": "^19.2.1",
         "react-markdown": "^10.1.0",
