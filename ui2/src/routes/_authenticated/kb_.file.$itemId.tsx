@@ -26,10 +26,15 @@ import {
 import { fileContentUrl, getBreadcrumb } from "@/lib/kb"
 
 // Worker is shipped as a static asset from ui2/public/ → served at the
-// origin root. Using an absolute path avoids the `?url` bundler dance and
-// avoids the route-relative `/kb/file/pdf.worker.mjs` resolution that
-// pdf.js falls back to when GlobalWorkerOptions.workerSrc is unset.
-pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.mjs"
+// origin root. We assign workerSrc at import time AND inside the component
+// (belt-and-suspenders): vite + TanStack's route-splitting plugin can drop
+// the top-level side effect during tree-shaking, leaving pdf.js to fall
+// back to its built-in default `pdf.worker.mjs`, which resolves against
+// the current route (`/kb/file/<id>/pdf.worker.mjs`) and 404s into the SPA
+// fallback. The runtime assignment inside the component body is the one
+// that's guaranteed to survive bundling.
+const PDF_WORKER_URL = "/pdf.worker.mjs"
+pdfjs.GlobalWorkerOptions.workerSrc = PDF_WORKER_URL
 
 type ViewerSearch = { cl?: string }
 
@@ -50,6 +55,9 @@ const INITIAL_PAGE_HEIGHT = 1100
 const PAGE_GAP = 16
 
 function PdfViewerRoute(): JSX.Element {
+  // Runtime re-assert — see the comment near PDF_WORKER_URL above.
+  pdfjs.GlobalWorkerOptions.workerSrc = PDF_WORKER_URL
+
   const { itemId } = Route.useParams()
   const { cl } = Route.useSearch()
   const navigate = useNavigate()
