@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router"
-import { MessageSquarePlus, Search } from "lucide-react"
+import { FolderTree, MessageSquarePlus, Search } from "lucide-react"
 import { BrandMark } from "./BrandMark"
 
 function initials(email: string): string {
@@ -47,6 +47,19 @@ export function Sidebar({ me }: Props): JSX.Element {
         >
           <Search className="h-4 w-4" aria-hidden strokeWidth={1.75} />
         </button>
+
+        <Link
+          to="/kb"
+          aria-label="Knowledge"
+          title="Knowledge"
+          className="grid h-9 w-9 place-items-center rounded-md text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+          activeProps={{
+            className:
+              "grid h-9 w-9 place-items-center rounded-md text-foreground bg-secondary",
+          }}
+        >
+          <FolderTree className="h-4 w-4" aria-hidden strokeWidth={1.75} />
+        </Link>
       </div>
 
       <div className="flex-1" />

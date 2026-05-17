@@ -18,6 +18,8 @@ import { getAvailableModels } from "@/ai/fetchModels"
 import keycloakRouter from "./auth/keycloak"
 import { googleAuthMiddleware, googleCallback } from "./auth/google"
 import chatRouter from "./agent/routes/chat"
+import kbRouter from "./routes/knowledgeBase"
+import { initApiServerQueue } from "@/queue/api-server-queue"
 import {
   ACCESS_COOKIE,
   REFRESH_COOKIE,
@@ -152,6 +154,7 @@ app.route("/v1/auth/keycloak", keycloakRouter)
 app.use("/v2/*", AuthMiddleware)
 
 app.route("/v2/chat", chatRouter)
+app.route("/v2/kb", kbRouter)
 
 app.get("/v2/me", (c) => {
   const p = c.get("jwtPayload")
@@ -290,6 +293,10 @@ app.onError((err, c) => {
 })
 
 Logger.info(`backendv2 listening on port ${PORT}`)
+
+initApiServerQueue().catch((err) => {
+  Logger.error({ err }, "Failed to init pg-boss queue for backendv2")
+})
 
 export default {
   port: PORT,
