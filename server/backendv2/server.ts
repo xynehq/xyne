@@ -4,7 +4,12 @@ import { logger as honoLogger } from "hono/logger"
 import { HTTPException } from "hono/http-exception"
 
 import { db } from "@/db/client"
-import { getPublicUserAndWorkspaceByEmail, saveRefreshTokenToDB } from "@/db/user"
+import {
+  getPublicUserAndWorkspaceByEmail,
+  getUserAndWorkspaceByEmail,
+  saveRefreshTokenToDB,
+} from "@/db/user"
+import { getUserAccessibleAgents } from "@/db/userAgentPermission"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import config from "@/config"
@@ -114,6 +119,11 @@ const AuthMiddleware = async (c: Context, next: Next): Promise<void> => {
 
 // ── Public routes ─────────────────────────────────────────────────────────
 app.get("/v2/health", (c) => c.json({ ok: true, service: "backendv2" }))
+// Alias — the GCP HTTPS LB in front of Caddy probes /health and only marks
+// the backend healthy on 2xx. v1 exposed /health/postgres for this; v2
+// answers the bare /health path so the LB sees OK without any LB-side
+// config change.
+app.get("/health", (c) => c.json({ ok: true, service: "backendv2" }))
 
 app.post("/v2/refresh-token", async (c) => {
   const refreshed = await tryRefresh(c)
@@ -153,6 +163,36 @@ app.get("/v2/me", (c) => {
   })
 })
 
+// Lightweight projection of the v1 `agents` table for the composer's agent
+// picker. Returns the same set v1 exposes (owned, explicitly shared, public)
+// trimmed to fields the UI actually uses. Heavy fields like `appIntegrations`
+// and `docIds` stay server-side — the scope is resolved at sendMessage time.
+app.get("/v2/agents", async (c) => {
+  const p = c.get("jwtPayload")
+  try {
+    const { user, workspace } = await getUserAndWorkspaceByEmail(
+      db,
+      p.workspaceId,
+      p.sub,
+    )
+    const agents = await getUserAccessibleAgents(db, user.id, workspace.id)
+    return c.json({
+      agents: agents.map((a) => ({
+        externalId: a.externalId,
+        name: a.name,
+        description: a.description ?? "",
+        model: a.model,
+        isPublic: a.isPublic,
+        isRagOn: a.isRagOn ?? true,
+        allowWebSearch: a.allowWebSearch ?? false,
+      })),
+    })
+  } catch (err) {
+    Logger.error({ err, email: p.sub }, "/v2/agents failed")
+    throw new HTTPException(500, { message: "Could not fetch agents" })
+  }
+})
+
 // Catalog of LLMs available to the composer's model picker. Same shape and
 // source as xyne's /api/v1/chat/models.
 app.get("/v2/models", async (c) => {
@@ -188,6 +228,58 @@ app.get("/v2/models", async (c) => {
     throw new HTTPException(500, { message: "Could not fetch models" })
   }
 })
+
+// ── Static SPA (ui2 build output) ─────────────────────────────────────────
+// In prod we serve ui2's built assets directly from this process so we ship
+// a single container with single port (same shape as v1's xyne deploy).
+// The path is relative to the server's cwd (the `server/` directory at
+// runtime), and the Docker image copies ui2/dist there as `server/ui2-dist`.
+// In dev, vite serves ui2 itself on :5176 and proxies /v2/* + /v1/auth/* here,
+// so these static handlers are no-ops because no /assets/* lands on :3000.
+const SPA_DIST = process.env["UI2_DIST_DIR"] ?? "./ui2-dist"
+// Hono's serveStatic from hono/bun doesn't accept absolute `path` cleanly in
+// every release; we serve assets via Bun.file directly. Same shape, simpler
+// resolution — and we can return useful content-types without an extra dep.
+const mime = (p: string): string => {
+  if (p.endsWith(".html")) return "text/html; charset=utf-8"
+  if (p.endsWith(".js")) return "application/javascript; charset=utf-8"
+  if (p.endsWith(".css")) return "text/css; charset=utf-8"
+  if (p.endsWith(".svg")) return "image/svg+xml"
+  if (p.endsWith(".png")) return "image/png"
+  if (p.endsWith(".ico")) return "image/x-icon"
+  if (p.endsWith(".json")) return "application/json"
+  if (p.endsWith(".woff2")) return "font/woff2"
+  if (p.endsWith(".woff")) return "font/woff"
+  return "application/octet-stream"
+}
+
+const serveSpaFile = async (
+  c: Context,
+  filePath: string,
+): Promise<Response> => {
+  const file = Bun.file(filePath)
+  if (!(await file.exists())) {
+    return c.notFound()
+  }
+  return new Response(file, {
+    headers: { "Content-Type": mime(filePath) },
+  })
+}
+
+app.get("/assets/*", async (c) => {
+  // Strip leading slash so it's relative to SPA_DIST. Path is URL-decoded by
+  // hono; reject any '..' to avoid escaping the dist root.
+  const rel = c.req.path.replace(/^\//, "")
+  if (rel.includes("..")) {
+    return c.notFound()
+  }
+  return serveSpaFile(c, `${SPA_DIST}/${rel.replace(/^assets\//, "assets/")}`)
+})
+app.get("/favicon.ico", (c) => serveSpaFile(c, `${SPA_DIST}/favicon.ico`))
+app.get("/favicon.svg", (c) => serveSpaFile(c, `${SPA_DIST}/favicon.svg`))
+// TanStack file-based router uses client-side routing — any unknown GET that
+// isn't an API/auth path falls through to index.html so the SPA can take over.
+app.get("*", (c) => serveSpaFile(c, `${SPA_DIST}/index.html`))
 
 app.onError((err, c) => {
   if (err instanceof HTTPException) {

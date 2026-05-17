@@ -1,5 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { LogOut } from "lucide-react"
+import { useState } from "react"
 import { Topbar } from "@/components/Topbar"
 
 export const Route = createFileRoute("/_authenticated/account")({
@@ -16,6 +17,29 @@ function initials(email: string): string {
 
 function AccountRoute(): JSX.Element {
   const { me } = Route.useRouteContext()
+  const navigate = useNavigate()
+  const [signingOut, setSigningOut] = useState(false)
+
+  // Logout is a POST to /v2/logout (clears session cookies on the backend).
+  // Anchor href can't issue a POST, and using GET would leave the cookies
+  // intact. We POST same-origin with credentials, then hard-navigate to
+  // /signin so the TanStack Router cache is fully invalidated.
+  const handleSignOut = async (): Promise<void> => {
+    setSigningOut(true)
+    try {
+      await fetch("/v2/logout", {
+        method: "POST",
+        credentials: "include",
+      })
+    } catch {
+      // Network error — still proceed to /signin; cookies may have already
+      // cleared and the auth guard will re-issue if not.
+    }
+    // Replace history entry so back button doesn't return to a stale
+    // authenticated view.
+    void navigate({ to: "/signin", replace: true })
+  }
+
   return (
     <div className="flex h-full flex-col">
       <Topbar title="Account" />
@@ -57,13 +81,15 @@ function AccountRoute(): JSX.Element {
           title="Session"
           hint="Tokens rotate automatically; sign out clears them on both surfaces."
           action={
-            <a
-              href="http://localhost:5173/v1/auth/logout"
-              className="inline-flex h-9 items-center gap-2 rounded-full border border-border bg-surface px-3 text-[13px] text-foreground transition hover:border-destructive hover:text-destructive"
+            <button
+              type="button"
+              onClick={() => void handleSignOut()}
+              disabled={signingOut}
+              className="inline-flex h-9 items-center gap-2 rounded-full border border-border bg-surface px-3 text-[13px] text-foreground transition hover:border-destructive hover:text-destructive disabled:cursor-not-allowed disabled:opacity-60"
             >
               <LogOut className="h-3.5 w-3.5" aria-hidden strokeWidth={1.75} />
-              <span>Sign out</span>
-            </a>
+              <span>{signingOut ? "Signing out…" : "Sign out"}</span>
+            </button>
           }
         />
       </main>

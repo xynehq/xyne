@@ -28,8 +28,9 @@ const REDIRECT_URI = new URL(
   config.host,
 ).toString()
 
-const UI_BASE_URL =
-  process.env["BACKENDV2_UI_BASE_URL"] ?? "http://localhost:5176"
+// Same-origin in prod (backendv2 also serves the SPA). Env override is only
+// needed when the SPA lives on a different origin (vite dev :5176).
+const UI_BASE_URL = process.env["BACKENDV2_UI_BASE_URL"] ?? ""
 
 const router = new Hono()
 

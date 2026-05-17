@@ -12,11 +12,9 @@
 import { SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent"
 
 import { createRAGAgent, type RAGAgent } from "@/api/chat/pi-mono/core"
+import type { AgentScope } from "../agent-scope"
 import { buildVespaTools } from "./tools/vespa"
-import {
-  getActualNameFromEnum,
-  getModelValueFromLabel,
-} from "@/ai/modelConfig"
+import { getActualNameFromEnum, getModelValueFromLabel } from "@/ai/modelConfig"
 import { Models } from "@/ai/types"
 import config from "@/config"
 import { baseLogger, type Log } from "../log"
@@ -106,6 +104,10 @@ export type RunPiMonoTurnArgs = {
   modelLabel?: string
   systemPrompt?: string
   signal?: AbortSignal
+  /** Optional custom-agent scope. When set, RAG tools query the agent's
+   *  allowlist (apps, docIds, KB collections) instead of the user-owned KB.
+   *  Loaded by the chat service via `loadAgentScope`. */
+  agentScope?: AgentScope
   /**
    * Logger bound to the turn (conversationId, userId, turnId, runId, …).
    * If omitted, falls back to the module-level logger — useful for tests.
@@ -121,10 +123,33 @@ export type RunPiMonoTurnArgs = {
   onToolResult?: (result: PiMonoToolResult) => Promise<void> | void
 }
 
+export type RunPiMonoTokenUsage = {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+}
+
+export type RunPiMonoContextUsage = {
+  tokens?: number
+  contextWindow?: number
+  percent?: number
+}
+
 export type RunPiMonoTurnResult = {
   text: string
   stopReason?: string
   error?: string
+  /** Per-turn telemetry — same numbers that go into the run-completed log. */
+  stats: {
+    tokenUsage: RunPiMonoTokenUsage
+    /** cacheRead / (cacheRead + input). 0 when nothing cached. */
+    cacheHitRatio: number
+    contextUsage?: RunPiMonoContextUsage
+    compactionRounds: number
+    retryAttempts: number
+    durationMs: number
+  }
 }
 
 export async function runPiMonoTurn(
@@ -168,7 +193,11 @@ export async function runPiMonoTurn(
     model: llmModelName,
     baseUrl,
     apiKey,
-    tools: buildVespaTools({ userEmail: args.userEmail, logger: log }),
+    tools: buildVespaTools({
+      userEmail: args.userEmail,
+      logger: log,
+      ...(args.agentScope ? { agentScope: args.agentScope } : {}),
+    }),
     systemPrompt: args.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     sessionManager,
     settingsManager: SettingsManager.inMemory({
@@ -181,7 +210,7 @@ export async function runPiMonoTurn(
     }),
     modelOptions: {
       contextWindow,
-      maxTokens: 4000,
+      maxTokens: 16000,
       reasoning: true,
     },
     thinkingLevel: "medium",
@@ -192,6 +221,14 @@ export async function runPiMonoTurn(
   let text = ""
   let stopReason: string | undefined
   let error: string | undefined
+  // Token usage accumulated across all internal turns within this run. Pi-mono
+  // surfaces this on each `message_end` (under the upstream AgentSessionEvent),
+  // but our RAGEvent wrapper drops it — so we read it via the raw event.
+  // `cacheRead`/`cacheWrite` are the definitive prompt-cache hit signals from
+  // the inference engine; previously invisible to us.
+  const tokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+  let compactionRounds = 0
+  let retryAttempts = 0
 
   const onAbort = (): void => {
     agent.stop().catch(() => {})
@@ -200,7 +237,62 @@ export async function runPiMonoTurn(
 
   try {
     for await (const event of agent.run(args.message)) {
+      // `raw` carries the original AgentSessionEvent — our RAGEvent mapper
+      // doesn't forward usage stats or lifecycle events like compaction/
+      // retry, so we tap into the raw stream for those. Everything else is
+      // still handled via the mapped events below.
       if (event.type === "raw") {
+        const e = event.event as {
+          type?: string
+          message?: {
+            role?: string
+            usage?: {
+              input?: number
+              output?: number
+              cacheRead?: number
+              cacheWrite?: number
+            }
+          }
+          reason?: string
+          aborted?: boolean
+          willRetry?: boolean
+          errorMessage?: string
+          attempt?: number
+          maxAttempts?: number
+        }
+        if (
+          e.type === "message_end" &&
+          e.message?.role === "assistant" &&
+          e.message.usage
+        ) {
+          const u = e.message.usage
+          tokenUsage.input += u.input ?? 0
+          tokenUsage.output += u.output ?? 0
+          tokenUsage.cacheRead += u.cacheRead ?? 0
+          tokenUsage.cacheWrite += u.cacheWrite ?? 0
+        } else if (e.type === "auto_compaction_start") {
+          compactionRounds++
+          log.info({ reason: e.reason }, "pi-mono: auto_compaction_start")
+        } else if (e.type === "auto_compaction_end") {
+          log.info(
+            {
+              aborted: e.aborted,
+              willRetry: e.willRetry,
+              errorMessage: e.errorMessage?.slice(0, 300),
+            },
+            "pi-mono: auto_compaction_end",
+          )
+        } else if (e.type === "auto_retry_start") {
+          retryAttempts++
+          log.warn(
+            {
+              attempt: e.attempt,
+              maxAttempts: e.maxAttempts,
+              errorMessage: e.errorMessage?.slice(0, 300),
+            },
+            "pi-mono: auto_retry_start",
+          )
+        }
         continue
       }
       switch (event.type) {
@@ -268,10 +360,7 @@ export async function runPiMonoTurn(
             event.message.content
           ) {
             const content = event.message.content
-            const final =
-              typeof content === "string"
-                ? content.trim()
-                : ""
+            const final = typeof content === "string" ? content.trim() : ""
             if (final) {
               text = final
               if (args.onTextDelta) {
@@ -282,7 +371,15 @@ export async function runPiMonoTurn(
           break
         }
         case "error": {
+          // Previously we just stashed the message into a local — meaning
+          // upstream stream errors (LiteLLM timeouts, parse failures, etc.)
+          // were silently swallowed. Surface them in the run log so a stuck
+          // turn has a debuggable footprint.
           error = event.error.message
+          log.error(
+            { errorMessage: event.error.message, code: event.error.code },
+            "pi-mono: error event",
+          )
           break
         }
         default:
@@ -294,17 +391,67 @@ export async function runPiMonoTurn(
     log.error({ err }, "pi-mono run failed")
   } finally {
     args.signal?.removeEventListener("abort", onAbort)
-    agent.dispose()
+  }
+
+  // Snapshot context usage BEFORE disposing the session — pi-mono surfaces it
+  // via piSession.getContextUsage(), reachable through agent.getSession().
+  // Gives a preemptive view of how close we are to the compaction threshold.
+  let contextUsage:
+    | { tokens?: number; contextWindow?: number; percent?: number }
+    | undefined
+  try {
+    const sess = (
+      agent as unknown as {
+        getSession?: () => {
+          getContextUsage?: () =>
+            | { tokens?: number; contextWindow?: number; percent?: number }
+            | undefined
+        }
+      }
+    ).getSession?.()
+    const usage = sess?.getContextUsage?.()
+    if (usage) {
+      // Build via conditional spreads — exactOptionalPropertyTypes rejects
+      // explicit `: undefined` assignments to optional fields.
+      contextUsage = {
+        ...(usage.tokens !== undefined ? { tokens: usage.tokens } : {}),
+        ...(usage.contextWindow !== undefined
+          ? { contextWindow: usage.contextWindow }
+          : {}),
+        ...(usage.percent !== undefined ? { percent: usage.percent } : {}),
+      }
+    }
+  } catch {
+    // best-effort, never block run completion on telemetry
+  }
+  agent.dispose()
+
+  const durationMs = Date.now() - startedAt
+  // cacheHitRatio = cacheRead / (input + cacheRead) — the practical signal
+  // of whether prompt caching is firing upstream.
+  const cacheHitRatio =
+    tokenUsage.cacheRead + tokenUsage.input > 0
+      ? Number(
+          (
+            tokenUsage.cacheRead /
+            (tokenUsage.cacheRead + tokenUsage.input)
+          ).toFixed(3),
+        )
+      : 0
+  const stats: RunPiMonoTurnResult["stats"] = {
+    tokenUsage,
+    cacheHitRatio,
+    ...(contextUsage ? { contextUsage } : {}),
+    compactionRounds,
+    retryAttempts,
+    durationMs,
   }
 
   log.info(
-    {
-      stopReason,
-      error,
-      textChars: text.length,
-      durationMs: Date.now() - startedAt,
-    },
+    { stopReason, error, textChars: text.length, ...stats },
     error ? "pi-mono: run errored" : "pi-mono: run completed",
   )
-  return error ? { text, stopReason, error } : { text, stopReason }
+  return error
+    ? { text, stopReason, error, stats }
+    : { text, stopReason, stats }
 }

@@ -71,7 +71,7 @@ export enum LiteLLMModels {
   KIMI_LATEST = "kimi-latest",
   PRIVATE_LARGE = "private-large",
   GLM_PRIVATE = "glm-private",
-  
+
   // glm
   GLM_LATEST = "glm-latest",
   GLM_FLASH = "glm-flash-experimental",
@@ -90,6 +90,10 @@ export enum LiteLLMModels {
 
   // Non chinese open source models
   NEMOTRON = "nemotron",
+  // The proxy exposes this as "gemma-4" (with hyphen). Make sure MODELS_LIST
+  // env uses the same spelling — `gemma-4`, not `gemma4` — or the model gets
+  // filtered out by isModelAllowed().
+  GEMMA_4 = "gemma-4",
 }
 
 export enum VertexAIModels {
@@ -228,6 +232,7 @@ export enum Models {
 
   // Non chinese open source models
   NEMOTRON = LiteLLMModels.NEMOTRON,
+  GEMMA_4 = LiteLLMModels.GEMMA_4,
 }
 
 // Model availability mapping - which providers support which models
@@ -363,6 +368,7 @@ export enum ModelDisplayNames {
 
   // Non chinese open source models
   LITELLM_NEMOTRON = "Nemotron",
+  LITELLM_GEMMA_4 = "Gemma 4",
 }
 
 export enum QueryCategory {

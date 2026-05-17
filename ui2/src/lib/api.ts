@@ -74,3 +74,19 @@ export type ModelInfo = {
 
 export const getModels = (): Promise<{ models: ModelInfo[] }> =>
   apiFetch<{ models: ModelInfo[] }>("/v2/models")
+
+/** Minimal projection of the server-side `agents` row the agent picker
+ *  needs. Heavy fields (appIntegrations, docIds) stay server-side; the scope
+ *  is materialized at sendMessage time. */
+export type AgentInfo = {
+  externalId: string
+  name: string
+  description: string
+  model: string
+  isPublic: boolean
+  isRagOn: boolean
+  allowWebSearch: boolean
+}
+
+export const getAgents = (): Promise<{ agents: AgentInfo[] }> =>
+  apiFetch<{ agents: AgentInfo[] }>("/v2/agents")

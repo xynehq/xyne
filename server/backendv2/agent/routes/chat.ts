@@ -2,7 +2,9 @@ import { Hono, type Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { streamSSE } from "hono/streaming"
 import {
+  AgentNotAccessibleError,
   ChatService,
+  ConcurrentRunError,
   ConversationNotFoundError,
   ForbiddenError,
   viewerFromPayload,
@@ -22,7 +24,9 @@ const service = new ChatService(agentDeps())
 
 const router = new Hono<{ Variables: Vars }>()
 
-const viewer = (c: Context<{ Variables: Vars }>): ReturnType<typeof viewerFromPayload> =>
+const viewer = (
+  c: Context<{ Variables: Vars }>,
+): ReturnType<typeof viewerFromPayload> =>
   viewerFromPayload(c.get("jwtPayload"))
 
 const readCursor = (c: Context): Cursor => {
@@ -53,6 +57,12 @@ const handle = async (
       throw new HTTPException(404, { message: err.message })
     }
     if (err instanceof ForbiddenError) {
+      throw new HTTPException(403, { message: err.message })
+    }
+    if (err instanceof ConcurrentRunError) {
+      throw new HTTPException(409, { message: err.message })
+    }
+    if (err instanceof AgentNotAccessibleError) {
       throw new HTTPException(403, { message: err.message })
     }
     if (err instanceof HTTPException) {
@@ -120,16 +130,31 @@ router.post("/conversations/:id/messages", (c) =>
     const body = (await c.req.json().catch(() => ({}))) as {
       text?: string
       model?: string
+      agentId?: string
     }
     if (!body.text) {
       throw new HTTPException(400, { message: "text required" })
     }
+    // DO NOT forward c.req.raw.signal. We want the pi-mono run to outlive
+    // client disconnects (refresh, tab close, network blip) so the user can
+    // resume by reattaching to the conversation's SSE stream — they get back
+    // a partial answer instead of losing the whole turn. The run still ends
+    // bounded by pi-mono's own timeouts. Explicit cancel is a separate
+    // endpoint (TODO), not coupled to TCP teardown.
     return service.sendMessage(viewer(c), {
       conversationId: asConversationId(c.req.param("id")),
       text: body.text,
       ...(body.model ? { model: body.model } : {}),
+      ...(body.agentId ? { agentId: body.agentId } : {}),
     })
   }),
+)
+
+// POST /v2/chat/conversations/:id/interrupt
+router.post("/conversations/:id/interrupt", (c) =>
+  handle(c, async () =>
+    service.interrupt(viewer(c), asConversationId(c.req.param("id"))),
+  ),
 )
 
 // GET /v2/chat/conversations/:id/messages
@@ -146,8 +171,20 @@ router.get("/conversations/:id/messages", (c) =>
 // GET /v2/chat/conversations/:id/stream  (SSE — live turn/block events)
 router.get("/conversations/:id/stream", (c) => {
   const convId = asConversationId(c.req.param("id"))
+
+  // Resume cursor — the browser's native EventSource sends the last id it
+  // saw as `Last-Event-ID` on auto-reconnect. We also accept it as a query
+  // param so clients without the auto-reconnect header (or doing a manual
+  // explicit reopen) can pass one.
+  const lastEventIdHeader =
+    c.req.header("Last-Event-ID") ?? c.req.header("last-event-id")
+  const sinceSeqQ = c.req.query("sinceSeq")
+  const parsed = Number(lastEventIdHeader ?? sinceSeqQ ?? 0)
+  const sinceSeq = Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+
   return streamSSE(c, async (stream) => {
-    const queue: StreamEvent[] = []
+    type Pending = { event: StreamEvent; seq: number }
+    const queue: Pending[] = []
     let waiter: (() => void) | null = null
     const wake = (): void => {
       const w = waiter
@@ -157,10 +194,15 @@ router.get("/conversations/:id/stream", (c) => {
 
     let unsubscribe: (() => void) | null
     try {
-      unsubscribe = await service.subscribe(viewer(c), convId, (event) => {
-        queue.push(event)
-        wake()
-      })
+      unsubscribe = await service.subscribe(
+        viewer(c),
+        convId,
+        (event, seq) => {
+          queue.push({ event, seq })
+          wake()
+        },
+        { sinceSeq },
+      )
     } catch (err) {
       if (err instanceof ConversationNotFoundError) {
         throw new HTTPException(404, { message: err.message })
@@ -193,8 +235,11 @@ router.get("/conversations/:id/stream", (c) => {
         const next = queue.shift()
         if (next) {
           await stream.writeSSE({
-            event: next.kind,
-            data: JSON.stringify(next),
+            event: next.event.kind,
+            data: JSON.stringify(next.event),
+            // SSE `id:` field — the browser stores it; on auto-reconnect it
+            // sends `Last-Event-ID: <id>` so we can resume from the cursor.
+            id: String(next.seq),
           })
           continue
         }

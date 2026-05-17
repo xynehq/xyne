@@ -11,8 +11,10 @@
 import { defineTool } from "@mariozechner/pi-coding-agent"
 import { Type } from "@sinclair/typebox"
 
-import { searchVespaKnowledgeBase } from "@/search/vespa"
+import { searchVespaAgent, searchVespaKnowledgeBase } from "@/search/vespa"
+import type { VespaSearchResponse } from "@xyne/vespa-ts/types"
 
+import type { AgentScope } from "../../../agent-scope"
 import type { Log } from "../../../log"
 import {
   formatPages,
@@ -55,9 +57,55 @@ const params = Type.Object({
   ),
 })
 
+type SearchToolArgs = {
+  userEmail: string
+  logger: Log
+  agentScope?: AgentScope
+}
+
+/** Pick the right vespa entrypoint for the current turn. When the agent has a
+ *  scope, route through `searchVespaAgent` so its allowlist (apps, item IDs,
+ *  KB collections, channels, filters) is honored — that's what lets a user
+ *  query a public agent's documents they don't personally own. Without a
+ *  scope we keep the KB-only behavior (createdBy == email) which is the safe
+ *  default for unscoped sessions. */
+const runSearch = async (
+  query: string,
+  limit: number,
+  args: SearchToolArgs,
+): Promise<VespaSearchResponse> => {
+  const { userEmail, agentScope } = args
+  if (!agentScope) {
+    return searchVespaKnowledgeBase(query, userEmail, { limit })
+  }
+  // If the agent has no app allowlist at all (rare — usually misconfigured),
+  // searchVespaAgent would have nothing to query. Fall back to KB so the user
+  // at least gets their own items rather than an empty response.
+  if (agentScope.appEnums.length === 0) {
+    return searchVespaKnowledgeBase(query, userEmail, { limit })
+  }
+  return searchVespaAgent(query, userEmail, null, null, agentScope.appEnums, {
+    limit,
+    ...(agentScope.dataSourceIds.length
+      ? { dataSourceIds: agentScope.dataSourceIds }
+      : {}),
+    ...(agentScope.channelIds.length
+      ? { channelIds: agentScope.channelIds }
+      : {}),
+    ...(Object.keys(agentScope.selectedItems).length
+      ? { selectedItem: agentScope.selectedItems }
+      : {}),
+    ...(Object.keys(agentScope.appFilters).length
+      ? { appFilters: agentScope.appFilters }
+      : {}),
+    ...(agentScope.collectionSelections.length
+      ? { collectionSelections: agentScope.collectionSelections }
+      : {}),
+  })
+}
+
 export const buildVespaSearchTool = (
-  userEmail: string,
-  parentLogger: Log,
+  args: SearchToolArgs,
 ): ReturnType<typeof defineTool> =>
   defineTool({
     name: "vespaSearch",
@@ -68,20 +116,23 @@ export const buildVespaSearchTool = (
       "SEBI research question. Vary the query phrasing across calls.",
     parameters: params,
     async execute(toolCallId, p) {
-      const log = parentLogger.child({
+      const log = args.logger.child({
         toolName: "vespaSearch",
         toolCallId,
       })
       const startedAt = Date.now()
       log.info(
-        { query: p.query, limit: p.limit ?? 10 },
+        {
+          query: p.query,
+          limit: p.limit ?? 10,
+          agentScoped: !!args.agentScope,
+          agentExternalId: args.agentScope?.externalId,
+        },
         "tool: vespaSearch start",
       )
       const limit = p.limit ?? 10
       try {
-        const resp = await searchVespaKnowledgeBase(p.query, userEmail, {
-          limit,
-        })
+        const resp = await runSearch(p.query, limit, args)
         const children = resp?.root?.children ?? []
         if (children.length === 0) {
           log.info(
@@ -129,10 +180,12 @@ export const buildVespaSearchTool = (
           let pages = ""
           const chunksMap = fields["chunks_map"]
           if (Array.isArray(chunksMap) && chunkIndex !== null) {
-            const entry = (chunksMap as Array<{
-              chunk_index: number
-              page_numbers?: number[]
-            }>).find((m) => m.chunk_index === chunkIndex)
+            const entry = (
+              chunksMap as Array<{
+                chunk_index: number
+                page_numbers?: number[]
+              }>
+            ).find((m) => m.chunk_index === chunkIndex)
             pages = formatPages(entry?.page_numbers)
           }
 

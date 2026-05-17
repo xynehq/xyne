@@ -1,10 +1,10 @@
-import { Copy, RefreshCcw, AlertTriangle } from "lucide-react"
+import { Copy, RefreshCcw, AlertTriangle, Layers, RotateCw } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { BrandMark } from "./BrandMark"
 import { ToolCallChip } from "./ToolCallChip"
 import { ThinkingChip } from "./ThinkingChip"
-import type { Block } from "@/lib/chat-store"
+import type { Block, MessageStats } from "@/lib/chat-store"
 
 export type ChatRole = "user" | "assistant"
 
@@ -14,6 +14,25 @@ type Props = {
   pending?: boolean
   onCopy?: () => void
   onRetry?: () => void
+  /** Per-turn telemetry from backendv2; rendered as a tabular-numeric footer
+   *  under the action icons when present. Absent for in-flight messages and
+   *  for historical messages from before backendv2 started emitting stats. */
+  stats?: MessageStats
+}
+
+const formatDuration = (ms: number): string => {
+  if (ms < 1000) return `${ms}ms`
+  const s = ms / 1000
+  if (s < 60) return `${s.toFixed(1)}s`
+  const m = Math.floor(s / 60)
+  const rem = Math.round(s - m * 60)
+  return `${m}m ${rem}s`
+}
+
+const formatTokens = (n: number): string => {
+  if (n < 1000) return String(n)
+  if (n < 10_000) return `${(n / 1000).toFixed(1)}k`
+  return `${Math.round(n / 1000)}k`
 }
 
 const collectText = (blocks: Block[]): string => {
@@ -32,6 +51,7 @@ export function MessageBubble({
   pending = false,
   onCopy,
   onRetry,
+  stats,
 }: Props): JSX.Element {
   if (role === "user") {
     const body = collectText(blocks)
@@ -81,7 +101,13 @@ export function MessageBubble({
                 )
               }
               if (b.kind === "thinking") {
-                return <ThinkingChip key={i} text={b.text} />
+                // The thinking block is "live" only when (a) the whole
+                // message is still streaming and (b) it's the last block —
+                // i.e. text/tool hasn't started for the next hop yet.
+                // Pi-mono emits thinking BEFORE text within a hop, so once a
+                // text/tool block follows, the chip's content is final.
+                const isLive = pending && i === blocks.length - 1
+                return <ThinkingChip key={i} text={b.text} pending={isLive} />
               }
               if (b.kind === "tool_use") {
                 return (
@@ -119,6 +145,7 @@ export function MessageBubble({
             })}
           </div>
         )}
+        {!pending && stats && <StatsFooter stats={stats} />}
         {!pending && fullText.length > 0 && (
           <div className="flex items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
             <ActionIcon
@@ -138,6 +165,59 @@ export function MessageBubble({
         )}
       </div>
     </article>
+  )
+}
+
+function StatsFooter({ stats }: { stats: MessageStats }): JSX.Element {
+  const ctxPct =
+    typeof stats.contextUsage?.percent === "number"
+      ? Math.round(stats.contextUsage.percent)
+      : undefined
+  // cacheHitRatio comes in 0–1; surface as a percentage like the others.
+  const cachePct = Math.round(stats.cacheHitRatio * 100)
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 font-mono text-[11px] tabular-nums text-muted-foreground/80">
+      <span>{formatDuration(stats.durationMs)}</span>
+      <span aria-hidden>·</span>
+      <span title="Input tokens (uncached)">
+        {formatTokens(stats.tokenUsage.input)} in
+      </span>
+      <span aria-hidden>·</span>
+      <span title="Output tokens">
+        {formatTokens(stats.tokenUsage.output)} out
+      </span>
+      {ctxPct !== undefined && (
+        <>
+          <span aria-hidden>·</span>
+          <span title="Context window utilisation">ctx {ctxPct}%</span>
+        </>
+      )}
+      <span aria-hidden>·</span>
+      <span
+        title="Prompt-cache hit ratio (cacheRead / (cacheRead + input))"
+        className={cachePct >= 30 ? "text-foreground/70" : ""}
+      >
+        cache {cachePct}%
+      </span>
+      {stats.compactionRounds > 0 && (
+        <span
+          title="Pi-mono auto-compaction fired this many times during the run"
+          className="inline-flex items-center gap-1 rounded-md border border-border/60 px-1.5 py-0.5 text-foreground/70"
+        >
+          <Layers className="h-3 w-3" aria-hidden strokeWidth={1.75} />
+          {stats.compactionRounds}
+        </span>
+      )}
+      {stats.retryAttempts > 0 && (
+        <span
+          title="Pi-mono retried the upstream call this many times"
+          className="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-amber-700 dark:text-amber-300"
+        >
+          <RotateCw className="h-3 w-3" aria-hidden strokeWidth={1.75} />
+          {stats.retryAttempts}
+        </span>
+      )}
+    </div>
   )
 }
 

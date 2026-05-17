@@ -5,6 +5,7 @@ import { Composer } from "@/components/Composer"
 import { MessageBubble } from "@/components/MessageBubble"
 import { chatStore, useConversation, type Block } from "@/lib/chat-store"
 import { useModels } from "@/lib/models"
+import { useAgents } from "@/lib/agents"
 
 export const Route = createFileRoute("/_authenticated/c/$chatId")({
   component: ChatThreadRoute,
@@ -23,17 +24,44 @@ const collectText = (blocks: Block[]): string => {
 function ChatThreadRoute(): JSX.Element {
   const { chatId } = Route.useParams()
   const conv = useConversation(chatId)
-  const { selected } = useModels()
+  const { selected: selectedModel } = useModels()
+  const { selected: selectedAgent } = useAgents()
+  const scrollRef = useRef<HTMLDivElement | null>(null)
   const tailRef = useRef<HTMLDivElement | null>(null)
+  // True while the user is glued to the bottom of the scroll view. As soon as
+  // they scroll up, we stop auto-following stream deltas so the view doesn't
+  // fight their scroll position. Flips back on once they scroll near bottom.
+  const stickToBottomRef = useRef(true)
   const [seed, setSeed] = useState<{ text: string; key: number } | undefined>()
 
-  useEffect((): void => {
+  useEffect((): (() => void) | void => {
     void chatStore.loadConv(chatId)
+    // Fresh route — assume they want to follow along.
+    stickToBottomRef.current = true
+    // On unmount (route change or close), tear down the SSE connection. The
+    // resume cursor persists in sessionStorage, so coming back picks up
+    // exactly where this user left off without a duplicate-replay.
+    return (): void => {
+      chatStore.closeStream(chatId)
+    }
   }, [chatId])
 
   useEffect((): void => {
-    tailRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
+    if (!stickToBottomRef.current) return
+    const el = scrollRef.current
+    if (!el) return
+    // Direct assignment instead of scrollIntoView({behavior:"smooth"}) so
+    // rapid deltas don't queue overlapping smooth animations.
+    el.scrollTop = el.scrollHeight
   }, [conv.messages.length, conv.streamingText, conv.streamingThinking])
+
+  const onScroll = (): void => {
+    const el = scrollRef.current
+    if (!el) return
+    // 80px slack so small upward nudges don't break the stick.
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    stickToBottomRef.current = distanceFromBottom < 80
+  }
 
   const rendered = useMemo(() => {
     return conv.messages.map((m, idx) => {
@@ -72,6 +100,7 @@ function ChatThreadRoute(): JSX.Element {
         blocks,
         pending: isStreaming,
         promptText,
+        stats: conv.statsByMessageId[m.id],
       }
     })
   }, [
@@ -79,10 +108,17 @@ function ChatThreadRoute(): JSX.Element {
     conv.streamingMessageId,
     conv.streamingText,
     conv.streamingThinking,
+    conv.statsByMessageId,
   ])
 
   const onSubmit = (text: string): void => {
-    void chatStore.sendMessage(chatId, text, selected ? { model: selected } : {})
+    // Sending a new message means the user wants to see it land — even if
+    // they had scrolled up to read earlier content.
+    stickToBottomRef.current = true
+    const opts: { model?: string; agentId?: string } = {}
+    if (selectedModel) opts.model = selectedModel
+    if (selectedAgent) opts.agentId = selectedAgent
+    void chatStore.sendMessage(chatId, text, opts)
   }
 
   const onRetry = (promptText: string): void => {
@@ -95,14 +131,19 @@ function ChatThreadRoute(): JSX.Element {
     <div className="flex h-full flex-col">
       <Topbar title={title} />
       <main className="flex flex-1 flex-col overflow-hidden">
-        <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-3xl px-2 pb-6 pt-4 sm:px-6">
+        <div
+          ref={scrollRef}
+          onScroll={onScroll}
+          className="flex-1 overflow-y-auto"
+        >
+          <div className="mx-auto w-full max-w-3xl px-2 pb-8 pt-4 sm:px-6">
             {rendered.map((m) => (
               <MessageBubble
                 key={m.id}
                 role={m.role === "user" ? "user" : "assistant"}
                 blocks={m.blocks}
                 pending={m.pending}
+                {...(m.stats ? { stats: m.stats } : {})}
                 {...(m.role === "assistant" && m.promptText
                   ? { onRetry: () => onRetry(m.promptText ?? "") }
                   : {})}
@@ -111,9 +152,17 @@ function ChatThreadRoute(): JSX.Element {
             <div ref={tailRef} aria-hidden />
           </div>
         </div>
-        <div className="border-t border-border bg-background/70 backdrop-blur-md">
+        <div className="border-t border-border bg-background">
           <div className="mx-auto w-full max-w-3xl px-4 py-4">
-            <Composer onSubmit={onSubmit} placeholder="Reply…" seed={seed} />
+            <Composer
+              onSubmit={onSubmit}
+              placeholder="Reply…"
+              pending={Boolean(conv.streamingMessageId)}
+              onStop={() => {
+                void chatStore.interrupt(chatId)
+              }}
+              {...(seed ? { seed } : {})}
+            />
           </div>
         </div>
       </main>

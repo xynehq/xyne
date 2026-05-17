@@ -130,6 +130,27 @@ export type RunStats = {
 
 export type MessageRole = "user" | "assistant" | "system"
 
+/** Per-turn telemetry attached to the assistant Message at run completion.
+ *  Lives on the record so a page refresh's GET /messages restores it — the
+ *  in-flight run_stats SSE event is only delivered once. */
+export type MessageStats = {
+  tokenUsage: {
+    input: number
+    output: number
+    cacheRead: number
+    cacheWrite: number
+  }
+  cacheHitRatio: number
+  contextUsage?: {
+    tokens?: number
+    contextWindow?: number
+    percent?: number
+  }
+  compactionRounds: number
+  retryAttempts: number
+  durationMs: number
+}
+
 export type Message = {
   id: MessageId
   conversationId: ConversationId
@@ -139,6 +160,7 @@ export type Message = {
   ordinal: number
   parentMessageId?: MessageId
   createdAt: number
+  stats?: MessageStats
 }
 
 export type MessageWithBlocks = Message & { blocks: Block[] }
@@ -203,6 +225,29 @@ export type StreamEvent =
   // UI can render it in a collapsible panel distinct from the answer text.
   | { kind: "thinking_delta"; messageId: MessageId; delta: string }
   | { kind: "thinking_committed"; messageId: MessageId; text: string }
+  // Per-turn telemetry — emitted once when the pi-mono run wraps. Frontend
+  // attaches this to the assistant message so the UI can render token usage,
+  // context %, cache hit ratio, and any compaction/retry counts.
+  | {
+      kind: "run_stats"
+      runId: RunId
+      messageId: MessageId
+      tokenUsage: {
+        input: number
+        output: number
+        cacheRead: number
+        cacheWrite: number
+      }
+      cacheHitRatio: number
+      contextUsage?: {
+        tokens?: number
+        contextWindow?: number
+        percent?: number
+      }
+      compactionRounds: number
+      retryAttempts: number
+      durationMs: number
+    }
   | {
       kind: "turn_ended"
       turnId: TurnId
@@ -303,6 +348,10 @@ export interface MessageRepo {
   // blocks are projected into the `toolCalls` index automatically.
   appendBlock(messageId: MessageId, block: Block, tx?: Tx): Promise<void>
 
+  // Attach per-turn telemetry to an assistant message after the run wraps,
+  // so a refresh's listMessages() can rehydrate the stats footer.
+  setStats(messageId: MessageId, stats: MessageStats, tx?: Tx): Promise<void>
+
   endTurn(
     turnId: TurnId,
     status: TurnStatus,
@@ -339,10 +388,20 @@ export interface MessageRepo {
 }
 
 export interface StreamBus {
-  publish(channelId: string, event: StreamEvent): Promise<void>
+  /** Publish an event to a channel. Returns the per-channel monotonic seq#
+   *  assigned to this event — caller (the SSE handler) writes it as the SSE
+   *  `id:` field so the browser will send it back as `Last-Event-ID` on
+   *  reconnect, enabling exact resume. */
+  publish(channelId: string, event: StreamEvent): Promise<number>
+  /** Subscribe to a channel.
+   *  @param sinceSeq  optional cursor — replay buffered events with seq > sinceSeq
+   *                   to the new subscriber BEFORE attaching it for future events.
+   *  @param onEvent  delivers each event with its monotonic seq.
+   */
   subscribe(
     channelId: string,
-    onEvent: (e: StreamEvent) => void,
+    onEvent: (e: StreamEvent, seq: number) => void,
+    opts?: { sinceSeq?: number },
   ): Unsubscribe
 }
 

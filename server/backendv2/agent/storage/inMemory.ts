@@ -67,8 +67,7 @@ const paginate = <T>(
   const limit = Math.max(1, Math.min(page.limit, 200))
   const slice = items.slice(start, start + limit)
   const last = slice[slice.length - 1]
-  const nextCursor =
-    slice.length === limit && last ? cursorOf(last) : undefined
+  const nextCursor = slice.length === limit && last ? cursorOf(last) : undefined
   return nextCursor ? { items: slice, nextCursor } : { items: slice }
 }
 
@@ -347,6 +346,17 @@ export class InMemoryMessageRepo implements MessageRepo {
     this.projectToolCallBlock(msg, block)
   }
 
+  public async setStats(
+    messageId: MessageId,
+    stats: import("./types").MessageStats,
+  ): Promise<void> {
+    const msg = this.msgsById.get(messageId)
+    if (!msg) {
+      throw new Error(`Message not found: ${messageId}`)
+    }
+    msg.stats = stats
+  }
+
   private projectToolCallBlock(msg: StoredMessage, block: Block): void {
     if (block.kind === "tool_use") {
       const run = msg.runId ? this.runsById.get(msg.runId) : null
@@ -447,9 +457,7 @@ export class InMemoryMessageRepo implements MessageRepo {
 
   public async listRunsForTurn(turnId: TurnId): Promise<Run[]> {
     const ids = this.runIdsByTurn.get(turnId) ?? []
-    return ids
-      .map((id) => this.runsById.get(id))
-      .filter((r): r is Run => !!r)
+    return ids.map((id) => this.runsById.get(id)).filter((r): r is Run => !!r)
   }
 
   public async listRunsForConversation(
@@ -502,28 +510,114 @@ const stripBlocks = (m: MessageWithBlocks): Message => {
 // ─── InMemoryStreamBus ───────────────────────────────────────────────────────
 type Listener = (e: StreamEvent) => void
 
-export class InMemoryStreamBus implements StreamBus {
-  private readonly listeners = new Map<string, Set<Listener>>()
+type BufferedEvent = { seq: number; event: StreamEvent }
+type SeqListener = (e: StreamEvent, seq: number) => void
 
-  public async publish(channelId: string, event: StreamEvent): Promise<void> {
-    const set = this.listeners.get(channelId)
-    if (!set) {
-      return
+/** In-memory StreamBus with per-channel ring buffer + monotonic seq#.
+ *
+ *  - Each publish gets a new seq (per-channel, monotonic).
+ *  - Last MAX_BUFFERED events stay in the channel's ring so a new subscriber
+ *    can replay-from-cursor via `sinceSeq`. The browser's native EventSource
+ *    sends the last-seen id as the `Last-Event-ID` header automatically on
+ *    reconnect; the SSE route translates that into `sinceSeq` here.
+ *  - Eviction policy: when a `text_committed` / `thinking_committed` lands
+ *    for a given messageId, any prior `*_delta` events for the same message
+ *    are dropped from the buffer — the committed block carries the same
+ *    content via the persisted MessageRepo, so replaying the deltas would
+ *    just duplicate it.
+ *  - When `turn_ended` lands, the whole channel buffer is cleared — that
+ *    turn's content is fully captured in MessageRepo + stats now. */
+export class InMemoryStreamBus implements StreamBus {
+  private readonly listeners = new Map<string, Set<SeqListener>>()
+  private readonly buffers = new Map<string, BufferedEvent[]>()
+  private readonly nextSeq = new Map<string, number>()
+  private readonly MAX_BUFFERED = 256
+
+  public async publish(channelId: string, event: StreamEvent): Promise<number> {
+    const seq = (this.nextSeq.get(channelId) ?? 0) + 1
+    this.nextSeq.set(channelId, seq)
+
+    // Buffer + evict superseded entries.
+    let buf = this.buffers.get(channelId) ?? []
+    if (event.kind === "text_committed") {
+      const mid = event.messageId
+      buf = buf.filter(
+        (b) => !(b.event.kind === "text_delta" && b.event.messageId === mid),
+      )
+    } else if (event.kind === "thinking_committed") {
+      const mid = event.messageId
+      buf = buf.filter(
+        (b) =>
+          !(b.event.kind === "thinking_delta" && b.event.messageId === mid),
+      )
+    } else if (event.kind === "turn_ended") {
+      // Turn done — everything for this channel is now durably captured in
+      // MessageRepo. Reset the buffer so future subscribers don't replay a
+      // completed run on reconnect.
+      //
+      // Critically: we DO NOT push the turn_ended marker into the buffer
+      // either. If we did, a fresh subscriber (e.g., next sendMessage's
+      // openStream) would receive it as a "replayed event" and the client's
+      // onTurnEnded handler would do its end-of-turn cleanup (set status to
+      // idle, drop streamingMessageId) — for a turn that's not the current
+      // one. Live subscribers already got this turn_ended via the normal
+      // fan-out below before we cleared.
+      buf = []
+      const live = this.listeners.get(channelId)
+      if (live) {
+        for (const fn of live) {
+          try {
+            fn(event, seq)
+          } catch {
+            // defensive
+          }
+        }
+      }
+      this.buffers.set(channelId, buf)
+      return seq
     }
-    for (const fn of set) {
-      try {
-        fn(event)
-      } catch {
-        // listeners must be defensive; we don't let one bad listener kill the rest
+    buf.push({ seq, event })
+    if (buf.length > this.MAX_BUFFERED) {
+      buf = buf.slice(buf.length - this.MAX_BUFFERED)
+    }
+    this.buffers.set(channelId, buf)
+
+    // Fan out to live listeners.
+    const set = this.listeners.get(channelId)
+    if (set) {
+      for (const fn of set) {
+        try {
+          fn(event, seq)
+        } catch {
+          // listeners must be defensive; one bad listener doesn't kill others
+        }
       }
     }
+    return seq
   }
 
   public subscribe(
     channelId: string,
-    onEvent: (e: StreamEvent) => void,
+    onEvent: SeqListener,
+    opts?: { sinceSeq?: number },
   ): Unsubscribe {
-    const set = this.listeners.get(channelId) ?? new Set()
+    // Replay from cursor BEFORE attaching, so the subscriber sees buffered
+    // events in order without any live events sneaking in between.
+    const since = opts?.sinceSeq ?? 0
+    const buf = this.buffers.get(channelId)
+    if (buf && since >= 0) {
+      for (const b of buf) {
+        if (b.seq > since) {
+          try {
+            onEvent(b.event, b.seq)
+          } catch {
+            // defensive
+          }
+        }
+      }
+    }
+
+    const set = this.listeners.get(channelId) ?? new Set<SeqListener>()
     set.add(onEvent)
     this.listeners.set(channelId, set)
     return () => {

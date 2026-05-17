@@ -6,8 +6,9 @@ import {
   type KeyboardEvent,
 } from "react"
 import { useNavigate } from "@tanstack/react-router"
-import { ArrowUp, Paperclip } from "lucide-react"
+import { ArrowUp, Paperclip, Square } from "lucide-react"
 import { ModelSelector } from "./ModelSelector"
+import { AgentSelector } from "./AgentSelector"
 
 type Props = {
   autoFocus?: boolean
@@ -24,11 +25,24 @@ type Props = {
    * same as before.
    */
   seed?: { text: string; key: number }
+  /**
+   * When true, an assistant turn is streaming. We keep the textarea editable
+   * (the user can compose their next message), but block submission and swap
+   * the send button for a "stop" affordance ringed by an outline spinner.
+   * Interrupt isn't wired server-side yet, so the stop button is visual only
+   * — it just signals that we know they want to send and we're holding it.
+   */
+  pending?: boolean
+  /** Called when the user clicks the stop button while `pending` is true.
+   *  Should request a server-side interrupt of the in-flight assistant run. */
+  onStop?: () => void
 }
 
 const newChatId = (): string => {
   // small, URL-safe id — replace with backendv2's id when wired up
-  return crypto.randomUUID().split("-")[0] ?? Math.random().toString(36).slice(2)
+  return (
+    crypto.randomUUID().split("-")[0] ?? Math.random().toString(36).slice(2)
+  )
 }
 
 export function Composer({
@@ -36,6 +50,8 @@ export function Composer({
   onSubmit,
   placeholder = "Ask anything",
   seed,
+  pending = false,
+  onStop,
 }: Props): JSX.Element {
   const [value, setValue] = useState("")
   const navigate = useNavigate()
@@ -79,6 +95,9 @@ export function Composer({
   }, [autoFocus])
 
   const submit = (): void => {
+    if (pending) {
+      return
+    }
     const trimmed = value.trim()
     if (!trimmed) {
       return
@@ -137,17 +156,51 @@ export function Composer({
           </button>
 
           <div className="ml-auto flex items-center gap-1.5">
+            <AgentSelector />
             <ModelSelector />
 
-            <button
-              type="submit"
-              disabled={!canSend}
-              aria-label="Send"
-              title="Send"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
-            >
-              <ArrowUp className="h-4 w-4" aria-hidden strokeWidth={2.25} />
-            </button>
+            {pending ? (
+              <button
+                type="button"
+                onClick={onStop}
+                aria-label="Stop generating"
+                title="Stop"
+                className="relative inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition hover:opacity-90"
+              >
+                <svg
+                  className="absolute inset-0 h-full w-full -rotate-90 animate-spin"
+                  viewBox="0 0 36 36"
+                  aria-hidden
+                  style={{ animationDuration: "1.4s" }}
+                >
+                  <circle
+                    cx="18"
+                    cy="18"
+                    r="16"
+                    fill="none"
+                    stroke="hsl(var(--primary-foreground) / 0.85)"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeDasharray="28 72"
+                  />
+                </svg>
+                <Square
+                  className="h-3 w-3 fill-current"
+                  aria-hidden
+                  strokeWidth={0}
+                />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={!canSend}
+                aria-label="Send"
+                title="Send"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
+              >
+                <ArrowUp className="h-4 w-4" aria-hidden strokeWidth={2.25} />
+              </button>
+            )}
           </div>
         </div>
       </div>

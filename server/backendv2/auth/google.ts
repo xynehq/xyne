@@ -12,8 +12,11 @@ const clientId = process.env["GOOGLE_CLIENT_ID"]
 const clientSecret = process.env["GOOGLE_CLIENT_SECRET"]
 // Use the exact value already registered in the GCP console (xyne's value).
 const REDIRECT_URI = process.env["GOOGLE_REDIRECT_URI"] ?? ""
-const UI_BASE_URL =
-  process.env["BACKENDV2_UI_BASE_URL"] ?? "http://localhost:5176"
+// In prod the SPA is served from the same Bun process as this backend, so
+// we redirect to a relative path. The env var only needs to be set when the
+// SPA lives on a different origin — e.g. local vite dev (5176) — or when
+// returning to a custom domain after a multi-host signin flow.
+const UI_BASE_URL = process.env["BACKENDV2_UI_BASE_URL"] ?? ""
 
 if (!clientId || !clientSecret || !REDIRECT_URI) {
   Logger.warn(
@@ -33,6 +36,11 @@ export const googleAuthMiddleware: MiddlewareHandler = (c, next) => {
     scope: ["openid", "email", "profile"],
     // eslint-disable-next-line @typescript-eslint/naming-convention
     redirect_uri: REDIRECT_URI,
+    // Force the Google account chooser every time. Without this, Google sees
+    // an existing google.com session and silently re-authenticates the user
+    // — so "Sign out" looks broken (cookies clear, then one click on the
+    // Continue-with-Google button re-issues fresh cookies with no prompt).
+    prompt: "select_account",
     // hono/oauth-providers uses a wider Context type than ours; passthrough.
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
   })(c as any, next)
@@ -60,7 +68,7 @@ export const googleCallback = async (c: Context): Promise<Response> => {
   if (!googleUser?.verified_email) {
     throw new HTTPException(403, { message: "Email not verified by Google" })
   }
-  const domain = googleUser.hd ?? (email.split("@")[1] ?? "")
+  const domain = googleUser.hd ?? email.split("@")[1] ?? ""
   if (!domain) {
     throw new HTTPException(400, { message: "Missing email domain" })
   }

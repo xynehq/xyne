@@ -1,10 +1,14 @@
 import { Models } from "@/ai/types"
 import { isURLValid } from "@/validate"
 import { AuthType } from "./shared/types"
-let vespaBaseHost = "0.0.0.0"
+// Honor VESPA_HOST in dev too. The previous default of "0.0.0.0" worked by
+// accident on macOS/Linux loopback but breaks anywhere host-targeting is
+// strict — and silently returns "no hits" instead of erroring, which masks
+// the real problem.
+let vespaBaseHost = process.env.VESPA_HOST || "0.0.0.0"
 let vespaFeedPort = parseInt(process.env.VESPA_FEED_PORT || "8080", 10)
 let vespaQueryPort = parseInt(process.env.VESPA_QUERY_PORT || "8081", 10)
-let postgresBaseHost = "0.0.0.0"
+let postgresBaseHost = process.env.DATABASE_HOST || "0.0.0.0"
 let port = process.env.PORT || 3000
 let metricsPort = process.env.METRICS_PORT || 3001
 let syncServerPort = process.env.SYNC_SERVER_PORT || 3010
