@@ -2,6 +2,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { LogOut } from "lucide-react"
 import { useState } from "react"
 import { Topbar } from "@/components/Topbar"
+import { PreferenceRow } from "@/components/PreferenceRow"
+import { preferencesStore, usePreferences } from "@/lib/preferences"
 
 export const Route = createFileRoute("/_authenticated/account")({
   component: AccountRoute,
@@ -19,6 +21,7 @@ function AccountRoute(): JSX.Element {
   const { me } = Route.useRouteContext()
   const navigate = useNavigate()
   const [signingOut, setSigningOut] = useState(false)
+  const prefs = usePreferences()
 
   // Logout is a POST to /v2/logout (clears session cookies on the backend).
   // Anchor href can't issue a POST, and using GET would leave the cookies
@@ -75,6 +78,28 @@ function AccountRoute(): JSX.Element {
         <Card title="Workspace" hint="Routing and permissions are scoped here.">
           <Row label="ID" value={me.workspaceId} mono />
         </Card>
+
+        {/* Preferences */}
+        <section>
+          <header className="mb-3">
+            <h3 className="text-[13px] font-medium text-foreground">
+              Preferences
+            </h3>
+            <p className="mt-0.5 text-[12px] text-muted-foreground">
+              Saved in this browser. Settings don't sync across devices yet.
+            </p>
+          </header>
+          <div className="overflow-hidden rounded-2xl border border-border bg-surface">
+            <PreferenceRow
+              label="Compact reasoning"
+              description="Fold tool calls into the Thoughts accordion in chat so the answer stays the focus."
+              checked={prefs.collapseTools}
+              onChange={(v): void => {
+                preferencesStore.set({ collapseTools: v })
+              }}
+            />
+          </div>
+        </section>
 
         {/* Session */}
         <Card
@@ -144,3 +169,4 @@ function Row({
     </>
   )
 }
+

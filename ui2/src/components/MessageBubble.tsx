@@ -1,10 +1,10 @@
 import { Copy, RefreshCcw, AlertTriangle, Layers, RotateCw } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { BrandMark } from "./BrandMark"
 import { ToolCallChip } from "./ToolCallChip"
-import { ThinkingChip } from "./ThinkingChip"
+import { ThinkingChip, type ReasoningItem } from "./ThinkingChip"
 import type { Block, MessageStats } from "@/lib/chat-store"
+import { usePreferences } from "@/lib/preferences"
 
 export type ChatRole = "user" | "assistant"
 
@@ -53,6 +53,7 @@ export function MessageBubble({
   onRetry,
   stats,
 }: Props): JSX.Element {
+  const { collapseTools } = usePreferences()
   if (role === "user") {
     const body = collectText(blocks)
     return (
@@ -73,46 +74,59 @@ export function MessageBubble({
     }
   }
 
+  const reasoningItems: ReasoningItem[] = []
+  const renderBlocks: Array<{ block: Block; key: number }> = []
+  let isReasoningActive = false
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i]
+    if (!b) continue
+    const isLast = i === blocks.length - 1
+    if (b.kind === "thinking") {
+      reasoningItems.push({ kind: "thought", text: b.text })
+      if (pending && isLast) isReasoningActive = true
+    } else if (b.kind === "tool_use" && collapseTools) {
+      const result = resultById.get(b.toolCallId)
+      reasoningItems.push({
+        kind: "tool",
+        name: b.toolName,
+        args: b.args,
+        ...(result ? { result } : {}),
+      })
+      if (pending && isLast) isReasoningActive = true
+    } else if (b.kind === "tool_result" && collapseTools) {
+      if (pending && isLast) isReasoningActive = true
+    } else {
+      renderBlocks.push({ block: b, key: i })
+    }
+  }
+  const showReasoning = reasoningItems.length > 0
+
   const fullText = collectText(blocks)
   const hasAnyContent = blocks.length > 0
 
   return (
-    <article className="group flex w-full gap-3 px-2 py-5 sm:px-4">
-      <div className="mt-0.5 flex-shrink-0">
-        <span className="relative inline-flex">
-          <BrandMark withWordmark={false} />
-          {pending && (
-            <span
-              aria-hidden
-              className="absolute inset-[-5px] animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/80"
-            />
-          )}
-        </span>
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-2">
+    <article className="group w-full px-2 py-5 sm:px-4">
+      <div className="flex min-w-0 flex-col gap-2">
         {hasAnyContent && (
           <div className="prose-chat text-[15px] leading-7 text-foreground">
-            {blocks.map((b, i) => {
+            {showReasoning && (
+              <ThinkingChip
+                items={reasoningItems}
+                pending={isReasoningActive}
+              />
+            )}
+            {renderBlocks.map(({ block: b, key }) => {
               if (b.kind === "text") {
                 return (
-                  <ReactMarkdown key={i} remarkPlugins={[remarkGfm]}>
+                  <ReactMarkdown key={key} remarkPlugins={[remarkGfm]}>
                     {b.text}
                   </ReactMarkdown>
                 )
               }
-              if (b.kind === "thinking") {
-                // The thinking block is "live" only when (a) the whole
-                // message is still streaming and (b) it's the last block —
-                // i.e. text/tool hasn't started for the next hop yet.
-                // Pi-mono emits thinking BEFORE text within a hop, so once a
-                // text/tool block follows, the chip's content is final.
-                const isLive = pending && i === blocks.length - 1
-                return <ThinkingChip key={i} text={b.text} pending={isLive} />
-              }
               if (b.kind === "tool_use") {
                 return (
                   <ToolCallChip
-                    key={i}
+                    key={key}
                     name={b.toolName}
                     args={b.args}
                     {...(resultById.has(b.toolCallId)
@@ -129,7 +143,7 @@ export function MessageBubble({
               if (b.kind === "error") {
                 return (
                   <div
-                    key={i}
+                    key={key}
                     className="my-2 flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive"
                   >
                     <AlertTriangle
