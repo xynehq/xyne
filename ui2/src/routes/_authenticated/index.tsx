@@ -1,5 +1,4 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { Topbar } from "@/components/Topbar"
 import { Composer } from "@/components/Composer"
 import { EmptyState } from "@/components/EmptyState"
 import { chatStore } from "@/lib/chat-store"
@@ -18,31 +17,23 @@ function NewChatRoute(): JSX.Element {
 
   const onSubmit = (text: string): void => {
     void (async (): Promise<void> => {
-      // Placeholder title — backend replaces it with an AI-generated one
-      // as soon as the first turn lands (via `conversation_renamed` SSE).
       const conv = await chatStore.createConv("New chat")
       const opts: { model?: string; agentId?: string } = {}
       if (selectedModel) opts.model = selectedModel
       if (selectedAgent) opts.agentId = selectedAgent
       void chatStore.sendMessage(conv.id, text, opts)
-      // Don't await — navigate immediately so the user sees the streaming UI.
       void navigate({ to: "/c/$chatId", params: { chatId: conv.id } })
     })()
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <Topbar title="New chat" />
-      <main className="flex flex-1 flex-col">
-        <div className="flex flex-1 items-center justify-center px-6 py-8">
-          <EmptyState name={me.email} />
+    <main className="flex h-full flex-1 items-center justify-center px-6 py-8">
+      <div className="flex w-full max-w-2xl flex-col">
+        <EmptyState name={me.email} />
+        <div className="mt-6">
+          <Composer autoFocus onSubmit={onSubmit} hideDisclaimer />
         </div>
-        <div className="border-t border-border bg-background/70 backdrop-blur-md">
-          <div className="mx-auto w-full max-w-3xl px-4 py-4">
-            <Composer autoFocus onSubmit={onSubmit} />
-          </div>
-        </div>
-      </main>
-    </div>
+      </div>
+    </main>
   )
 }

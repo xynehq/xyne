@@ -24,7 +24,8 @@ type Props = {
    * last user message). Bump `key` to push a new seed even if `text` is the
    * same as before.
    */
-  seed?: { text: string; key: number }
+  seed?: { text: string; key: number } | undefined
+  hideDisclaimer?: boolean | undefined
   /**
    * When true, an assistant turn is streaming. We keep the textarea editable
    * (the user can compose their next message), but block submission and swap
@@ -52,6 +53,7 @@ export function Composer({
   seed,
   pending = false,
   onStop,
+  hideDisclaimer,
 }: Props): JSX.Element {
   const [value, setValue] = useState("")
   const navigate = useNavigate()
@@ -165,27 +167,10 @@ export function Composer({
                 onClick={onStop}
                 aria-label="Stop generating"
                 title="Stop"
-                className="relative inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition hover:opacity-90"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition hover:opacity-90"
               >
-                <svg
-                  className="absolute inset-0 h-full w-full -rotate-90 animate-spin"
-                  viewBox="0 0 36 36"
-                  aria-hidden
-                  style={{ animationDuration: "1.4s" }}
-                >
-                  <circle
-                    cx="18"
-                    cy="18"
-                    r="16"
-                    fill="none"
-                    stroke="hsl(var(--primary-foreground) / 0.85)"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeDasharray="28 72"
-                  />
-                </svg>
                 <Square
-                  className="h-3 w-3 fill-current"
+                  className="h-2.5 w-2.5 fill-current"
                   aria-hidden
                   strokeWidth={0}
                 />
@@ -204,9 +189,11 @@ export function Composer({
           </div>
         </div>
       </div>
-      <p className="mt-2 text-center text-[11px] text-muted-foreground/80">
-        xyne can be mistaken. Verify important details.
-      </p>
+      {hideDisclaimer ? null : (
+        <p className="mt-2 text-center text-[11px] text-muted-foreground/80">
+          Xyne can make mistakes. Verify important details.
+        </p>
+      )}
     </form>
   )
 }

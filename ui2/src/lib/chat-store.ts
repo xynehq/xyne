@@ -830,6 +830,39 @@ export const chatStore = {
   closeStream(convId: string): void {
     closeStream(convId)
   },
+
+  async renameConv(convId: string, title: string): Promise<void> {
+    const trimmed = title.trim()
+    if (!trimmed) {
+      throw new Error("title required")
+    }
+    await apiFetch<{ ok: true }>(`/v2/chat/conversations/${convId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ title: trimmed }),
+    })
+    updateConv(convId, (p) => ({ ...p, title: trimmed }))
+    const idx = convList.findIndex((c) => c.id === convId)
+    if (idx >= 0) {
+      const existing = convList[idx]
+      if (existing) {
+        const next = convList.slice()
+        next[idx] = { ...existing, title: trimmed, updatedAt: Date.now() }
+        convList = next
+        notifyList()
+      }
+    }
+  },
+
+  async deleteConv(convId: string): Promise<void> {
+    closeStream(convId)
+    await apiFetch<{ ok: true }>(`/v2/chat/conversations/${convId}`, {
+      method: "DELETE",
+    })
+    convList = convList.filter((c) => c.id !== convId)
+    convs.delete(convId)
+    notifyList()
+    notifyConv(convId)
+  },
 }
 
 // ─── React hooks ────────────────────────────────────────────────────────────
