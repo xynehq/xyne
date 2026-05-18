@@ -19,6 +19,7 @@ import keycloakRouter from "./auth/keycloak"
 import { googleAuthMiddleware, googleCallback } from "./auth/google"
 import chatRouter from "./agent/routes/chat"
 import kbRouter from "./routes/knowledgeBase"
+import agentsRouter, { usersRouter } from "./routes/agents"
 import { reconcileRunningOnBoot } from "./agent/storage/postgres"
 import { initApiServerQueue } from "@/queue/api-server-queue"
 import {
@@ -156,6 +157,8 @@ app.use("/v2/*", AuthMiddleware)
 
 app.route("/v2/chat", chatRouter)
 app.route("/v2/kb", kbRouter)
+app.route("/v2/agents", agentsRouter)
+app.route("/v2/users", usersRouter)
 
 app.get("/v2/me", (c) => {
   const p = c.get("jwtPayload")
@@ -165,36 +168,6 @@ app.get("/v2/me", (c) => {
     workspaceId: p.workspaceId,
     tokenType: p.tokenType,
   })
-})
-
-// Lightweight projection of the v1 `agents` table for the composer's agent
-// picker. Returns the same set v1 exposes (owned, explicitly shared, public)
-// trimmed to fields the UI actually uses. Heavy fields like `appIntegrations`
-// and `docIds` stay server-side — the scope is resolved at sendMessage time.
-app.get("/v2/agents", async (c) => {
-  const p = c.get("jwtPayload")
-  try {
-    const { user, workspace } = await getUserAndWorkspaceByEmail(
-      db,
-      p.workspaceId,
-      p.sub,
-    )
-    const agents = await getUserAccessibleAgents(db, user.id, workspace.id)
-    return c.json({
-      agents: agents.map((a) => ({
-        externalId: a.externalId,
-        name: a.name,
-        description: a.description ?? "",
-        model: a.model,
-        isPublic: a.isPublic,
-        isRagOn: a.isRagOn ?? true,
-        allowWebSearch: a.allowWebSearch ?? false,
-      })),
-    })
-  } catch (err) {
-    Logger.error({ err, email: p.sub }, "/v2/agents failed")
-    throw new HTTPException(500, { message: "Could not fetch agents" })
-  }
 })
 
 // Catalog of LLMs available to the composer's model picker. Same shape and

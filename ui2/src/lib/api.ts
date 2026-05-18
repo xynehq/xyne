@@ -105,12 +105,13 @@ export type AgentInfo = {
 export const getAgents = (): Promise<{ agents: AgentInfo[] }> =>
   apiFetch<{ agents: AgentInfo[] }>("/v2/agents")
 
-// ── v1 agents CRUD ──────────────────────────────────────────────────────────
-// backendv2 only ships the lightweight composer projection above. The full
-// CRUD lives in v1 — we hit it through the vite proxy at /api/v1/agent*. Same
-// access-token cookie, shared JWT secret, no token swap.
+// ── Agents CRUD ─────────────────────────────────────────────────────────────
+// All handlers live on backendv2 under /v2/agents/*. Same business logic as
+// v1: workspace-scoped, JWT-gated, per-agent permission checks (owner |
+// editor | viewer | public). Wire shapes are preserved so the form payloads
+// don't change.
 
-/** Server-side agent row as returned by v1's GET/PUT/POST handlers. The
+/** Server-side agent row as returned by /v2/agents GET/PUT/POST handlers. The
  *  composer's AgentInfo above is a strict subset of this. */
 export type Agent = {
   externalId: string
@@ -169,32 +170,29 @@ export const listAgents = async (
   if (params.offset !== undefined) qs.set("offset", String(params.offset))
   if (params.filter !== undefined) qs.set("filter", params.filter)
   const q = qs.toString()
-  // v1's handler returns a raw array (not the `{ agents: [...] }` envelope v2
-  // uses on `/v2/agents`). Normalize so callers can destructure consistently.
-  const res = await apiFetch<Agent[] | { agents: Agent[] }>(
-    `/api/v1/agents${q ? `?${q}` : ""}`,
+  const res = await apiFetch<{ agents: Agent[] }>(
+    `/v2/agents${q ? `?${q}` : ""}`,
   )
-  if (Array.isArray(res)) return { agents: res }
   return { agents: res.agents ?? [] }
 }
 
-/** Permissions companion to `getAgent`. v1's GET single-agent omits the
- *  user/owner lists from its public projection; this returns them. */
+/** Permissions companion to `getAgent`. The single-agent GET omits user/owner
+ *  email lists from its public projection; this fills them in. */
 export const getAgentPermissions = (
   externalId: string,
 ): Promise<{ userEmails: string[]; ownerEmails: string[] }> =>
   apiFetch<{ userEmails: string[]; ownerEmails: string[] }>(
-    `/api/v1/agent/${encodeURIComponent(externalId)}/permissions`,
+    `/v2/agents/${encodeURIComponent(externalId)}/permissions`,
   )
 
 /** Fetch the agent row AND its permissions list in parallel, then merge so
- *  the caller doesn't have to remember v1 splits these across two endpoints.
+ *  the caller doesn't have to remember they're split across two endpoints.
  *  Permissions failures degrade silently (empty lists) rather than killing
  *  the whole agent load — the user might have public-viewer access without
  *  being able to read the full member list. */
 export const getAgent = async (externalId: string): Promise<Agent> => {
   const [agent, perms] = await Promise.all([
-    apiFetch<Agent>(`/api/v1/agent/${encodeURIComponent(externalId)}`),
+    apiFetch<Agent>(`/v2/agents/${encodeURIComponent(externalId)}`),
     getAgentPermissions(externalId).catch(() => ({
       userEmails: [] as string[],
       ownerEmails: [] as string[],
@@ -208,7 +206,7 @@ export const getAgent = async (externalId: string): Promise<Agent> => {
 }
 
 export const createAgent = (input: AgentCreateInput): Promise<Agent> =>
-  apiFetch<Agent>("/api/v1/agent/create", {
+  apiFetch<Agent>("/v2/agents", {
     method: "POST",
     body: JSON.stringify(input),
   })
@@ -217,13 +215,13 @@ export const updateAgent = (
   externalId: string,
   input: AgentUpdateInput,
 ): Promise<Agent> =>
-  apiFetch<Agent>(`/api/v1/agent/${encodeURIComponent(externalId)}`, {
+  apiFetch<Agent>(`/v2/agents/${encodeURIComponent(externalId)}`, {
     method: "PUT",
     body: JSON.stringify(input),
   })
 
 export const deleteAgent = (externalId: string): Promise<void> =>
-  apiFetch<void>(`/api/v1/agent/${encodeURIComponent(externalId)}`, {
+  apiFetch<void>(`/v2/agents/${encodeURIComponent(externalId)}`, {
     method: "DELETE",
   })
 
@@ -244,15 +242,10 @@ export const searchWorkspaceUsers = async (
 ): Promise<WorkspaceUser[]> => {
   const qs = new URLSearchParams({ q: query, limit: String(limit) })
   try {
-    const res = await apiFetch<
-      | { users: WorkspaceUser[] }
-      | { results: WorkspaceUser[] }
-      | WorkspaceUser[]
-    >(`/api/v1/workspace/users/search?${qs.toString()}`)
-    if (Array.isArray(res)) return res
-    if ("users" in res) return res.users
-    if ("results" in res) return res.results
-    return []
+    const res = await apiFetch<{ users: WorkspaceUser[] }>(
+      `/v2/users/search?${qs.toString()}`,
+    )
+    return res.users ?? []
   } catch {
     return []
   }
@@ -290,37 +283,32 @@ export type KbSearchResult = {
   vespaDocId?: string | null
 }
 
-export const listKbCollections = (): Promise<KbCollection[]> =>
-  apiFetch<KbCollection[]>("/api/v1/cl")
+export const listKbCollections = async (): Promise<KbCollection[]> => {
+  const res = await apiFetch<{ collections: KbCollection[] }>(
+    "/v2/kb/collections",
+  )
+  return res.collections ?? []
+}
 
-export const listKbItems = (
+export const listKbItems = async (
   collectionId: string,
   parentId: string | null = null,
 ): Promise<KbItem[]> => {
   const qs = new URLSearchParams()
   if (parentId) qs.set("parentId", parentId)
   const q = qs.toString()
-  return apiFetch<KbItem[]>(
-    `/api/v1/cl/${encodeURIComponent(collectionId)}/items${q ? `?${q}` : ""}`,
+  const res = await apiFetch<{ items: KbItem[] }>(
+    `/v2/kb/collections/${encodeURIComponent(collectionId)}/items${q ? `?${q}` : ""}`,
   )
+  return res.items ?? []
 }
 
+/** Cross-collection search isn't yet exposed on backendv2's KB router.
+ *  Degrade gracefully — the picker still works by browsing collections.
+ *  Callers already wrap this in try/catch and tolerate an empty result. */
 export const searchKb = async (
-  query: string,
-  limit = 25,
+  _query: string,
+  _limit = 25,
 ): Promise<KbSearchResult[]> => {
-  const qs = new URLSearchParams({
-    query,
-    type: "all",
-    limit: String(limit),
-  })
-  try {
-    const res = await apiFetch<
-      { results: KbSearchResult[] } | KbSearchResult[]
-    >(`/api/v1/cl/search?${qs.toString()}`)
-    if (Array.isArray(res)) return res
-    return res.results ?? []
-  } catch {
-    return []
-  }
+  return []
 }
