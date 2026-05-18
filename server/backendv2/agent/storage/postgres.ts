@@ -178,6 +178,30 @@ const rowToToolCall = (row: ToolCallRow): ToolCall => {
   return t
 }
 
+// ─── Boot reconciliation ────────────────────────────────────────────────────
+// A process kill (deploy, crash, bun --watch restart) leaves turns and runs
+// frozen in `running` forever — there's no in-process actor left to end them.
+// On boot, mark anything still `running` as `aborted` with an explanatory
+// error string. Pure additive UPDATE; no risk to data outside this subsystem.
+export const reconcileRunningOnBoot = async (): Promise<{
+  turns: number
+  runs: number
+}> => {
+  const ts = now()
+  const reason = "reconciled on boot: process was not running"
+  const turnRows = await db
+    .update(v2ChatTurns)
+    .set({ status: "aborted", endedAt: ts, error: reason })
+    .where(eq(v2ChatTurns.status, "running"))
+    .returning({ id: v2ChatTurns.id })
+  const runRows = await db
+    .update(v2ChatRuns)
+    .set({ status: "aborted", endedAt: ts, error: reason })
+    .where(eq(v2ChatRuns.status, "running"))
+    .returning({ id: v2ChatRuns.id })
+  return { turns: turnRows.length, runs: runRows.length }
+}
+
 // ─── UnitOfWork ─────────────────────────────────────────────────────────────
 export class PostgresUnitOfWork implements UnitOfWork {
   public async run<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {

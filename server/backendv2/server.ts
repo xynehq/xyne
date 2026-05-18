@@ -19,6 +19,7 @@ import keycloakRouter from "./auth/keycloak"
 import { googleAuthMiddleware, googleCallback } from "./auth/google"
 import chatRouter from "./agent/routes/chat"
 import kbRouter from "./routes/knowledgeBase"
+import { reconcileRunningOnBoot } from "./agent/storage/postgres"
 import { initApiServerQueue } from "@/queue/api-server-queue"
 import {
   ACCESS_COOKIE,
@@ -303,6 +304,20 @@ Logger.info(`backendv2 listening on port ${PORT}`)
 initApiServerQueue().catch((err) => {
   Logger.error({ err }, "Failed to init pg-boss queue for backendv2")
 })
+
+// Sweep turns/runs left in `running` by a previous process. Only meaningful
+// for the postgres driver — memory state is gone on restart anyway.
+if ((process.env["AGENT_STORAGE"] ?? "postgres") === "postgres") {
+  reconcileRunningOnBoot()
+    .then(({ turns, runs }) => {
+      if (turns > 0 || runs > 0) {
+        Logger.warn({ turns, runs }, "reconciled stale running turns/runs")
+      }
+    })
+    .catch((err) => {
+      Logger.error({ err }, "boot reconcile failed")
+    })
+}
 
 export default {
   port: PORT,
