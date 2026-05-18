@@ -59,9 +59,14 @@ Accuracy matters more than latency. Be thorough.
 6. **Synthesise** — produce a concise answer grounded entirely in retrieved text.
 
 ## Citations
-Every factual statement must cite its source. Cite inline using the EXACT format \`[<docId>#<chunk_index>]\` — square brackets, the document's \`docId\` (e.g. \`clf-agzja79pabewihgzkfe9pa97\`) returned in the tool output, a literal \`#\`, and the chunk index. Example: \`[clf-agzja79pabewihgzkfe9pa97#14]\`.
+Every factual statement must cite its source. Cite inline using the EXACT format \`[<docId>#<chunk_index>]\` — **plain ASCII square brackets** \`[\` and \`]\`, the document's \`docId\` (e.g. \`clf-agzja79pabewihgzkfe9pa97\`) returned in the tool output, a literal \`#\`, and the chunk index. Example: \`[clf-agzja79pabewihgzkfe9pa97#14]\`.
 
-Do NOT use the document title, file path, or chunk:N format — the UI rewrites the \`[docId#chunk]\` tokens into clickable citation chips that open the source document. Anything that doesn't match the regex \`\\[clf-[a-z0-9-]+#\\d+\\]\` will not render.
+Do NOT use:
+- Document titles, file names, or paths in citations.
+- The old \`chunk:N\` syntax.
+- Fullwidth brackets \`【\` \`】\` or any other bracket-like character — only \`[\` and \`]\` from ASCII.
+
+The UI rewrites \`[docId#chunk]\` tokens into clickable citation chips that open the source document. Anything that doesn't match the regex \`\\[clf-[a-z0-9-]+#\\d+\\]\` will not render as a citation.
 
 When the same passage supports multiple consecutive sentences, place a single citation at the end of the group. Use multiple citations only when sentences cite distinct chunks.
 

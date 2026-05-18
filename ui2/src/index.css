@@ -286,4 +286,14 @@
       transparent 70%
     );
   }
+  /* PDF in-document search highlights. The pdf.js text layer sits on top
+     of the canvas with `color: transparent` so text is selectable but
+     invisible; we tint the background so matches glow through the canvas
+     without obscuring the underlying glyphs. */
+  .pdf-find-mark {
+    background-color: hsl(48 96% 60% / 0.55);
+    border-radius: 2px;
+    padding: 0;
+    color: inherit;
+  }
 }

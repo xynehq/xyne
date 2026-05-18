@@ -1,6 +1,12 @@
 import { Copy, RefreshCcw, AlertTriangle, Layers, RotateCw } from "lucide-react"
-import ReactMarkdown from "react-markdown"
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown"
 import remarkGfm from "remark-gfm"
+
+// react-markdown 9 strips unknown URL schemes (`cite:`) via its default
+// sanitizer, leaving the rendered `<a>` with an empty href. Allow `cite:`
+// through verbatim and defer to the built-in sanitizer for everything else.
+const passthroughCiteUrl = (url: string): string =>
+  url.startsWith("cite:") ? url : defaultUrlTransform(url)
 import { ToolCallChip } from "./ToolCallChip"
 import { ThinkingChip, type ReasoningItem } from "./ThinkingChip"
 import { CitationChip, CitationNumberProvider } from "./CitationChip"
@@ -162,6 +168,12 @@ export function MessageBubble({
                     key={key}
                     remarkPlugins={MARKDOWN_PLUGINS}
                     components={markdownComponents}
+                    // react-markdown 9.x's default `urlTransform` strips
+                    // unknown schemes, which wipes out our `cite:docId#chunk`
+                    // hrefs before the `components.a` override can see them.
+                    // Pass-through for `cite:` URLs; defer to the default for
+                    // anything else so http:// / https:// stay sanitized.
+                    urlTransform={passthroughCiteUrl}
                   >
                     {b.text}
                   </ReactMarkdown>

@@ -578,11 +578,46 @@ router.post("/collections/:clId/upload", async (c) => {
 //
 // GET /v2/kb/collections/:clId/files/:itemId/content
 // Streams inline file bytes with Range support so react-pdf can chunk loads.
+//
+// Local-dev fallback: when DB + Vespa are tunneled to the VM but file blobs
+// aren't (the common dev setup), set `KB_CONTENT_PROXY_URL` to forward this
+// request to the deployed instance. The user's access-token cookie is
+// reusable because the JWT secret is shared with the VM. When the env is
+// unset we hit the local disk as usual.
 router.get("/collections/:clId/files/:itemId/content", async (c) => {
   const actor = await loadActor(c)
   const clId = c.req.param("clId")
   const itemId = c.req.param("itemId")
   await loadCollection(clId, actor)
+
+  const proxyBase = process.env["KB_CONTENT_PROXY_URL"]
+  if (proxyBase) {
+    const target = `${proxyBase.replace(/\/$/, "")}${c.req.path}`
+    const forwardHeaders: Record<string, string> = {}
+    const cookie = c.req.header("cookie")
+    if (cookie) forwardHeaders["cookie"] = cookie
+    const range = c.req.header("range")
+    if (range) forwardHeaders["range"] = range
+    const upstream = await fetch(target, {
+      method: "GET",
+      headers: forwardHeaders,
+      redirect: "follow",
+    })
+    const passthrough = new Headers()
+    for (const [k, v] of upstream.headers.entries()) {
+      // Drop hop-by-hop + set-cookie so we don't leak VM cookies into local
+      // dev context. Content-* and Accept-Ranges are what we want to keep.
+      const lk = k.toLowerCase()
+      if (lk === "set-cookie" || lk === "transfer-encoding" || lk === "connection") {
+        continue
+      }
+      passthrough.set(k, v)
+    }
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers: passthrough,
+    })
+  }
 
   const item = await getCollectionItemById(db, itemId)
   if (!item || item.collectionId !== clId || item.type !== "file") {

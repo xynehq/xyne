@@ -9,7 +9,13 @@
 
 import type { Root, Text, Link, RootContent } from "mdast"
 
-const CITATION_RE = /\[(clf-[a-z0-9-]+)#(\d+)\]/gi
+// Accept the LLM-emitted citation token in any of these bracket flavors:
+//   [clf-xxx#42]       ← what the system prompt requests
+//   【clf-xxx#42】     ← Japanese fullwidth — Nemotron / GPT drift into this
+//   ⟦clf-xxx#42⟧       ← mathematical white square (rarer drift)
+// The capture is the same in every case so downstream handling stays uniform.
+const CITATION_RE =
+  /(?:\[(clf-[a-z0-9-]+)#(\d+)\]|【(clf-[a-z0-9-]+)#(\d+)】|⟦(clf-[a-z0-9-]+)#(\d+)⟧)/gi
 
 type ParentLike = { children: RootContent[] }
 
@@ -26,8 +32,12 @@ const transformTextNode = (node: Text): RootContent[] | null => {
     if (start > cursor) {
       out.push({ type: "text", value: value.slice(cursor, start) } as Text)
     }
-    const docId = m[1]
-    const chunk = m[2]
+    // Each alternation has its own pair of capture groups; pick whichever
+    // matched. The regex has three alternations × 2 groups so groups
+    // 1/3/5 carry the docId and 2/4/6 the chunk.
+    const docId = m[1] ?? m[3] ?? m[5]
+    const chunk = m[2] ?? m[4] ?? m[6]
+    if (!docId || !chunk) continue
     const link: Link = {
       type: "link",
       url: `cite:${docId}#${chunk}`,

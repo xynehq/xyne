@@ -4,6 +4,12 @@ import { Topbar } from "@/components/Topbar"
 import { Composer } from "@/components/Composer"
 import { MessageBubble } from "@/components/MessageBubble"
 import { CitationPanel } from "@/components/CitationPanel"
+import {
+  setCollapsed as setCitationCollapsed,
+  setScope as setCitationScope,
+  useCitationStore,
+} from "@/lib/citation-store"
+import { PanelRightOpen } from "lucide-react"
 import { chatStore, useConversation, type Block } from "@/lib/chat-store"
 import { useModels } from "@/lib/models"
 import { useAgents } from "@/lib/agents"
@@ -40,11 +46,16 @@ function ChatThreadRoute(): JSX.Element {
     void chatStore.loadConv(chatId)
     // Fresh route — assume they want to follow along.
     stickToBottomRef.current = true
+    // Point the citation panel at this conversation's tab set. The store
+    // persists tabs by conversationId in localStorage, so navigating
+    // between chats swaps tab strips without losing state.
+    setCitationScope(chatId)
     // On unmount (route change or close), tear down the SSE connection. The
     // resume cursor persists in sessionStorage, so coming back picks up
     // exactly where this user left off without a duplicate-replay.
     return (): void => {
       chatStore.closeStream(chatId)
+      setCitationScope(null)
     }
   }, [chatId])
 
@@ -141,10 +152,45 @@ function ChatThreadRoute(): JSX.Element {
   }
 
   const title = conv.title ?? "New chat"
+  const citationView = useCitationStore()
+  // When tabs exist but the panel is hidden, surface a small "show panel"
+  // affordance on the right side of the chat Topbar so the user can bring
+  // the viewer back without losing the per-conversation tab state.
+  const showPanelToggle =
+    citationView.collapsed && citationView.tabs.length > 0
 
   return (
-    <div className="flex h-full flex-col">
-      <Topbar title={title} />
+    <div className="flex h-full">
+      {/* Chat column — shrinks to make room for the CitationPanel when a
+          citation is open. min-w-0 lets the chat flex below its content
+          intrinsic width so messages wrap inside the narrower column. */}
+      <div className="flex h-full min-w-0 flex-1 flex-col">
+      <Topbar
+        title={title}
+        {...(showPanelToggle
+          ? {
+              rightSlot: (
+                <button
+                  type="button"
+                  aria-label={`Show source panel (${String(citationView.tabs.length)} open)`}
+                  onClick={(): void => {
+                    setCitationCollapsed(false)
+                  }}
+                  className="ml-2 flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-2 py-1 text-[11.5px] text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                >
+                  <PanelRightOpen
+                    className="h-3.5 w-3.5"
+                    aria-hidden
+                    strokeWidth={1.75}
+                  />
+                  <span className="font-medium">
+                    Sources · {String(citationView.tabs.length)}
+                  </span>
+                </button>
+              ),
+            }
+          : {})}
+      />
       <main className="flex flex-1 flex-col overflow-hidden">
         <div
           ref={scrollRef}
@@ -184,6 +230,7 @@ function ChatThreadRoute(): JSX.Element {
           </div>
         </div>
       </main>
+      </div>
       <CitationPanel />
     </div>
   )

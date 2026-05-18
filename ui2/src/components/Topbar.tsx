@@ -3,9 +3,11 @@ import { useSidebarMobile } from "@/hooks/useSidebarMobile"
 
 type Props = {
   title: string
+  /** Extreme-right slot, e.g. the citation panel toggle. */
+  rightSlot?: React.ReactNode
 }
 
-export function Topbar({ title }: Props): JSX.Element {
+export function Topbar({ title, rightSlot }: Props): JSX.Element {
   const { setOpen } = useSidebarMobile()
   return (
     <header className="flex items-center gap-1 border-b border-border bg-background/70 px-3 py-2 backdrop-blur-md sm:px-4">
@@ -20,9 +22,10 @@ export function Topbar({ title }: Props): JSX.Element {
       >
         <Menu className="h-4 w-4" aria-hidden strokeWidth={1.75} />
       </button>
-      <h1 className="truncate text-[13.5px] font-medium text-foreground">
+      <h1 className="truncate flex-1 text-[13.5px] font-medium text-foreground">
         {title}
       </h1>
+      {rightSlot}
     </header>
   )
 }
