@@ -177,6 +177,9 @@ export class ChatService {
        *  through a public agent without owning them. Permission is checked
        *  against v1's `userAgentPermissions` + `isPublic` model. */
       agentId?: string
+      /** Reasoning effort for this turn. Maps to pi-ai's ThinkingLevel.
+       *  Absent = server default (medium). */
+      thinkingLevel?: "minimal" | "low" | "medium" | "high"
     },
   ): Promise<AppendTurnResult & { assistantMessage: Message }> {
     const conv = await this.getConversation(viewer, input.conversationId)
@@ -362,7 +365,11 @@ export class ChatService {
     conv: Conversation
     ctrl: AbortController
     inflightKey: string
-    input: { text: string; model?: string }
+    input: {
+      text: string
+      model?: string
+      thinkingLevel?: "minimal" | "low" | "medium" | "high"
+    }
     viewerUserId: UserId
     runId: RunId
     assistantMessage: Message
@@ -436,6 +443,7 @@ export class ChatService {
         logger: runLog,
         ...(input.model ? { modelLabel: input.model } : {}),
         ...(agentScope ? { agentScope } : {}),
+        ...(input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
         signal: ctrl.signal,
         onTextDelta: async (delta) => {
           if (textDeltaCount === 0) {

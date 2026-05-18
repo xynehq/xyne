@@ -117,6 +117,9 @@ export type RunPiMonoTurnArgs = {
    *  allowlist (apps, docIds, KB collections) instead of the user-owned KB.
    *  Loaded by the chat service via `loadAgentScope`. */
   agentScope?: AgentScope
+  /** Reasoning effort for the turn. Maps directly to pi-ai's ThinkingLevel.
+   *  Defaults to "medium" if unset. */
+  thinkingLevel?: "minimal" | "low" | "medium" | "high"
   /**
    * Logger bound to the turn (conversationId, userId, turnId, runId, …).
    * If omitted, falls back to the module-level logger — useful for tests.
@@ -219,10 +222,10 @@ export async function runPiMonoTurn(
     }),
     modelOptions: {
       contextWindow,
-      maxTokens: 32000,
+      maxTokens: 64000,
       reasoning: true,
     },
-    thinkingLevel: "medium",
+    thinkingLevel: args.thinkingLevel ?? "medium",
     extensions: [],
     timeoutMs: 10 * 60 * 1000,
   })

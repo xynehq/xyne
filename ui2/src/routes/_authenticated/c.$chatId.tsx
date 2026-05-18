@@ -13,6 +13,7 @@ import { PanelRightOpen } from "lucide-react"
 import { chatStore, useConversation, type Block } from "@/lib/chat-store"
 import { useModels } from "@/lib/models"
 import { useAgents } from "@/lib/agents"
+import { useThinking, type ThinkingLevel } from "@/lib/thinking"
 
 export const Route = createFileRoute("/_authenticated/c/$chatId")({
   component: ChatThreadRoute,
@@ -33,6 +34,7 @@ function ChatThreadRoute(): JSX.Element {
   const conv = useConversation(chatId)
   const { selected: selectedModel } = useModels()
   const { selected: selectedAgent } = useAgents()
+  const { level: thinkingLevel } = useThinking()
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
   const tailRef = useRef<HTMLDivElement | null>(null)
@@ -141,9 +143,14 @@ function ChatThreadRoute(): JSX.Element {
     // Sending a new message means the user wants to see it land — even if
     // they had scrolled up to read earlier content.
     stickToBottomRef.current = true
-    const opts: { model?: string; agentId?: string } = {}
+    const opts: {
+      model?: string
+      agentId?: string
+      thinkingLevel?: ThinkingLevel
+    } = {}
     if (selectedModel) opts.model = selectedModel
     if (selectedAgent) opts.agentId = selectedAgent
+    opts.thinkingLevel = thinkingLevel
     void chatStore.sendMessage(chatId, text, opts)
   }
 

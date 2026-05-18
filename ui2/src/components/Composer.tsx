@@ -9,6 +9,7 @@ import { useNavigate } from "@tanstack/react-router"
 import { ArrowUp, Paperclip, Square } from "lucide-react"
 import { ModelSelector } from "./ModelSelector"
 import { AgentSelector } from "./AgentSelector"
+import { ThinkingSelector } from "./ThinkingSelector"
 
 type Props = {
   autoFocus?: boolean
@@ -159,6 +160,7 @@ export function Composer({
 
           <div className="ml-auto flex items-center gap-1.5">
             <AgentSelector />
+            <ThinkingSelector />
             <ModelSelector />
 
             {pending ? (

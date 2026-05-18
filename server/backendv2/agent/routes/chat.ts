@@ -131,10 +131,18 @@ router.post("/conversations/:id/messages", (c) =>
       text?: string
       model?: string
       agentId?: string
+      thinkingLevel?: string
     }
     if (!body.text) {
       throw new HTTPException(400, { message: "text required" })
     }
+    const allowedLevels = ["minimal", "low", "medium", "high"] as const
+    type ThinkingLevel = (typeof allowedLevels)[number]
+    const thinkingLevel: ThinkingLevel | undefined = allowedLevels.includes(
+      body.thinkingLevel as ThinkingLevel,
+    )
+      ? (body.thinkingLevel as ThinkingLevel)
+      : undefined
     // DO NOT forward c.req.raw.signal. We want the pi-mono run to outlive
     // client disconnects (refresh, tab close, network blip) so the user can
     // resume by reattaching to the conversation's SSE stream — they get back
@@ -146,6 +154,7 @@ router.post("/conversations/:id/messages", (c) =>
       text: body.text,
       ...(body.model ? { model: body.model } : {}),
       ...(body.agentId ? { agentId: body.agentId } : {}),
+      ...(thinkingLevel ? { thinkingLevel } : {}),
     })
   }),
 )

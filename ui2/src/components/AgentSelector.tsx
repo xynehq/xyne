@@ -3,8 +3,8 @@ import { Bot, Check, ChevronDown } from "lucide-react"
 import { useAgents } from "@/lib/agents"
 
 // Mirrors ModelSelector's shape so the composer's footer feels uniform. The
-// "No agent" option is first-class — it puts vespa search back into KB-only
-// mode (the user's own items, no shared docs).
+// "General agent" option is first-class — it puts vespa search back into
+// KB-only mode (the user's own items, no shared docs).
 export function AgentSelector(): JSX.Element {
   const { agents, selected, setSelected, loading } = useAgents()
   const [open, setOpen] = useState(false)
@@ -17,16 +17,21 @@ export function AgentSelector(): JSX.Element {
         setOpen(false)
       }
     }
+    const onKey = (e: globalThis.KeyboardEvent): void => {
+      if (e.key === "Escape") setOpen(false)
+    }
     document.addEventListener("mousedown", onDoc)
+    document.addEventListener("keydown", onKey)
     return () => {
       document.removeEventListener("mousedown", onDoc)
+      document.removeEventListener("keydown", onKey)
     }
   }, [])
 
   const active = selected
     ? (agents.find((a) => a.externalId === selected) ?? null)
     : null
-  const label = loading ? "Loading…" : (active?.name ?? "No agent")
+  const label = loading ? "Loading…" : (active?.name ?? "General agent")
 
   // Hide the picker entirely when the workspace has no agents — there's
   // nothing meaningful to choose and the chip just adds noise.
@@ -42,21 +47,24 @@ export function AgentSelector(): JSX.Element {
           setOpen((v) => !v)
         }}
         disabled={loading}
-        className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 text-[12.5px] font-medium text-foreground transition hover:border-ring disabled:cursor-not-allowed disabled:opacity-60"
         aria-haspopup="listbox"
         aria-expanded={open}
         title={
           active?.description ||
-          (active ? active.name : "No agent — KB-only mode")
+          (active ? active.name : "General agent — KB-only mode")
         }
+        className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-[12.5px] text-muted-foreground transition-colors duration-150 hover:bg-secondary/60 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
       >
-        <Bot
-          className="h-3.5 w-3.5 opacity-70"
+        <Bot className="h-3.5 w-3.5 opacity-80" aria-hidden strokeWidth={1.75} />
+        <span className="max-w-[14rem] truncate">{label}</span>
+        <ChevronDown
+          className={
+            "h-3.5 w-3.5 opacity-60 transition-transform duration-150 " +
+            (open ? "rotate-180" : "")
+          }
           aria-hidden
           strokeWidth={1.75}
         />
-        <span className="max-w-[14rem] truncate">{label}</span>
-        <ChevronDown className="h-3.5 w-3.5 opacity-70" aria-hidden />
       </button>
 
       {open && (
@@ -88,7 +96,7 @@ export function AgentSelector(): JSX.Element {
                 </span>
                 <span className="flex min-w-0 flex-col">
                   <span className="text-[13px] font-medium text-foreground">
-                    No agent
+                    General agent
                   </span>
                   <span className="text-[11.5px] leading-snug text-muted-foreground">
                     Query only your own knowledge-base items.

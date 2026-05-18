@@ -745,7 +745,11 @@ export const chatStore = {
   sendMessage(
     convId: string,
     text: string,
-    options: { model?: string; agentId?: string } = {},
+    options: {
+      model?: string
+      agentId?: string
+      thinkingLevel?: "minimal" | "low" | "medium" | "high"
+    } = {},
   ): void {
     updateConv(convId, (p) => ({
       ...p,
@@ -771,12 +775,17 @@ export const chatStore = {
         // message_appended, run_started) fire on the bus with no listener.
         await openStream(convId)
         // Build the body conditionally so we don't send empty `model`/
-        // `agentId` keys — the server treats absence as "use defaults".
-        const body: { text: string; model?: string; agentId?: string } = {
-          text,
-        }
+        // `agentId`/`thinkingLevel` keys — the server treats absence as
+        // "use defaults".
+        const body: {
+          text: string
+          model?: string
+          agentId?: string
+          thinkingLevel?: "minimal" | "low" | "medium" | "high"
+        } = { text }
         if (options.model) body.model = options.model
         if (options.agentId) body.agentId = options.agentId
+        if (options.thinkingLevel) body.thinkingLevel = options.thinkingLevel
         await apiFetch<SendResp>(`/v2/chat/conversations/${convId}/messages`, {
           method: "POST",
           body: JSON.stringify(body),
