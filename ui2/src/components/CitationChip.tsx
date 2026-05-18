@@ -11,15 +11,32 @@ import { createContext, useContext, useRef } from "react"
 import { openCitation } from "@/lib/citation-store"
 
 // ── Numbering ──────────────────────────────────────────────────────────────
+//
+// Each docId gets a "major" number from the order it first appears in the
+// assistant message; each chunkIndex within that doc gets a "minor". So
+// the first cited chunk of the first doc is "1.1", the second chunk from
+// the same doc is "1.2", and the first chunk of the next doc is "2.1".
+// Assignment is lazy on first render of each chip — render order matches
+// text order, which matches the order the LLM placed citations in.
 
 class CitationNumberer {
-  private readonly map = new Map<string, number>()
-  next(key: string): number {
-    const existing = this.map.get(key)
-    if (existing !== undefined) return existing
-    const n = this.map.size + 1
-    this.map.set(key, n)
-    return n
+  private readonly docs = new Map<
+    string,
+    { major: number; chunks: Map<number, number> }
+  >()
+
+  next(docId: string, chunkIndex: number): { major: number; minor: number } {
+    let entry = this.docs.get(docId)
+    if (!entry) {
+      entry = { major: this.docs.size + 1, chunks: new Map() }
+      this.docs.set(docId, entry)
+    }
+    let minor = entry.chunks.get(chunkIndex)
+    if (minor === undefined) {
+      minor = entry.chunks.size + 1
+      entry.chunks.set(chunkIndex, minor)
+    }
+    return { major: entry.major, minor }
   }
 }
 
@@ -54,9 +71,12 @@ export function CitationChip({
   chunkIndex: number
 }): JSX.Element {
   const numberer = useContext(CitationNumberContext)
-  const key = `${docId}#${String(chunkIndex)}`
-  const n = numberer ? numberer.next(key) : 0
-  const label = n > 0 ? String(n) : `${docId.slice(-4)}#${String(chunkIndex)}`
+  const label = numberer
+    ? (() => {
+        const { major, minor } = numberer.next(docId, chunkIndex)
+        return `${String(major)}.${String(minor)}`
+      })()
+    : `${docId.slice(-4)}#${String(chunkIndex)}`
   return (
     <button
       type="button"

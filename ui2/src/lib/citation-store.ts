@@ -32,9 +32,12 @@ export type CitationTab = {
   docId: string
   chunkIndex: number | null
   pageNumber: number | null
+  /** Short phrase fed into pdf.js's findController to highlight the
+   *  cited passage on the page. Populated by the resolve endpoint. */
+  chunkText: string | null
   // Monotonic counter bumped on every click landing on this tab. PdfViewer
-  // re-scrolls to pageNumber when navSeq changes (so re-clicking the same
-  // chunk also re-scrolls).
+  // re-scrolls to pageNumber and re-applies highlightQuery whenever this
+  // changes (so re-clicking the same chunk also re-fires both).
   navSeq: number
 }
 
@@ -238,6 +241,7 @@ const upsertTab = (target: CitationTarget): void => {
                 docId: target.docId,
                 chunkIndex: target.chunkIndex,
                 pageNumber: target.pageNumber,
+                chunkText: target.chunkText,
                 navSeq: t.navSeq + 1,
               }
             : t,
@@ -251,6 +255,7 @@ const upsertTab = (target: CitationTarget): void => {
         docId: target.docId,
         chunkIndex: target.chunkIndex,
         pageNumber: target.pageNumber,
+        chunkText: target.chunkText,
         navSeq: 1,
       }
       return { tabs: [...s.tabs, tab], activeItemId: target.itemId }

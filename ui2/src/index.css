@@ -287,9 +287,27 @@
     );
   }
   /* PDF in-document search highlights. The pdf.js text layer sits on top
-     of the canvas with `color: transparent` so text is selectable but
-     invisible; we tint the background so matches glow through the canvas
-     without obscuring the underlying glyphs. */
+     of the canvas with `color: transparent` so matches show as a colored
+     glow through the canvas without obscuring the underlying glyphs.
+     We override pdf.js's CSS variables (default: muted purple / green)
+     with a saturated amber so cited passages pop clearly. */
+  .pdfViewer .textLayer .highlight {
+    --highlight-bg-color: hsl(45 95% 55% / 0.45);
+    --highlight-selected-bg-color: hsl(38 100% 50% / 0.55);
+  }
+  /* pdf.js sizes its layers (canvas, text, annotation, etc.) assuming the
+     legacy `content-box` model: the `.page` wrapper has a 9px transparent
+     border that pdf.js expects to ADD to the total box, so the canvas
+     fills the inner content and the text layer overlays the same area.
+     Tailwind's preflight applies `box-sizing: border-box` globally, which
+     makes that 9px border eat INTO the content — leaving the canvas 18px
+     smaller than the text layer that's positioned over it. The result is
+     visible glyph/highlight misalignment (~9px shift). Restore
+     `content-box` for everything inside the pdf.js viewer subtree. */
+  .pdfViewer,
+  .pdfViewer * {
+    box-sizing: content-box;
+  }
   .pdf-find-mark {
     background-color: hsl(48 96% 60% / 0.55);
     border-radius: 2px;

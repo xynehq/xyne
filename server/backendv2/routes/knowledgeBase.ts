@@ -767,11 +767,21 @@ router.get("/files/resolve/:docId", async (c) => {
   // ACL — viewer needs at least read access on the parent collection.
   await loadCollection(row.collectionId, actor)
 
-  // Best-effort page resolution. The chunks_map field on the KB schema maps
-  // chunk_index → page_numbers[]; we return the first page in the array so
-  // the viewer can scroll there. Anything that fails here is non-fatal: the
-  // viewer just opens at page 1.
+  // Best-effort resolution. From the chunk's entry in chunks_map we lift
+  // both the page number(s) and the PDF-coordinate bounding box. The
+  // frontend uses the bbox to draw a precise rectangular overlay on the
+  // cited page — far more reliable than text-substring matching, which
+  // breaks on tables, footnotes, and hyphenation. We still ship a short
+  // text snippet as a fallback (for chunks with missing bbox).
   let pageNumber: number | null = null
+  let chunkText: string | null = null
+  let bbox: {
+    l: number
+    t: number
+    r: number
+    b: number
+  } | null = null
+  let pages: number[] = []
   if (chunkIndex !== null) {
     try {
       const span = getTracer("backendv2-kb").startSpan("resolveCitation")
@@ -784,15 +794,79 @@ router.get("/files/resolve/:docId", async (c) => {
           chunksMap as Array<{
             chunk_index: number
             page_numbers?: number[]
+            bbox_l?: number
+            bbox_t?: number
+            bbox_r?: number
+            bbox_b?: number
           }>
         ).find((m) => m.chunk_index === chunkIndex)
-        const first = entry?.page_numbers?.[0]
-        if (typeof first === "number" && first > 0) {
-          pageNumber = first
+        if (entry?.page_numbers && entry.page_numbers.length > 0) {
+          pages = entry.page_numbers
+          pageNumber = entry.page_numbers[0] ?? null
+        }
+        if (
+          entry &&
+          typeof entry.bbox_l === "number" &&
+          typeof entry.bbox_t === "number" &&
+          typeof entry.bbox_r === "number" &&
+          typeof entry.bbox_b === "number"
+        ) {
+          bbox = {
+            l: entry.bbox_l,
+            t: entry.bbox_t,
+            r: entry.bbox_r,
+            b: entry.bbox_b,
+          }
+        }
+      }
+      const chunksRaw = fields["chunks"] ?? fields["chunks_summary"]
+      if (Array.isArray(chunksRaw)) {
+        const raw = (chunksRaw as unknown[])[chunkIndex]
+        const text =
+          typeof raw === "string"
+            ? raw
+            : raw && typeof raw === "object"
+              ? ((raw as { chunk?: string; text?: string }).chunk ??
+                (raw as { chunk?: string; text?: string }).text ??
+                "")
+              : ""
+        // Build a snippet that the PDF text layer will actually contain.
+        // Docling sometimes emits HTML (`<th>…</th>`, `<table>`) or
+        // markdown (`**bold**`, `# header`) inside chunks; pdf.js's text
+        // layer only carries plain glyphs, so we strip all formatting,
+        // collapse whitespace, drop the leading "[Page N]" marker, and
+        // pick the first 6 prose words. Six is a sweet spot: long enough
+        // to be unique, short enough that minor line-break differences
+        // don't kill the substring match.
+        const cleaned = String(text)
+          .replace(/^\[Page \d+(-\d+)?\]\s*/, "")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&[a-z]+;|&#\d+;/gi, " ")
+          .replace(/[*_`~#>|]+/g, " ")
+          .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+          .replace(/\s+/g, " ")
+          .trim()
+        if (cleaned.length > 0) {
+          // We want the WHOLE cited passage highlighted, not just a
+          // prefix. pdf.js's findController matches the query as a
+          // single phrase, normalising whitespace/line-breaks in the
+          // PDF text layer — so a long contiguous span of prose works
+          // fine. We cap at ~30 words to keep the find input readable
+          // and to leave headroom against minor docling-vs-PDF
+          // formatting drift over long stretches. Drop a leading
+          // single-char token (table-cell residue like "I"/"a") so the
+          // snippet starts on real text.
+          const tokens = cleaned.split(" ")
+          while (tokens.length > 0 && tokens[0]!.length <= 1) tokens.shift()
+          const snippet = tokens.slice(0, 30).join(" ")
+          chunkText = snippet.length > 3 ? snippet : null
         }
       }
     } catch (err) {
-      Logger.warn({ err, docId, chunkIndex }, "resolve: vespa page lookup failed")
+      Logger.warn(
+        { err, docId, chunkIndex },
+        "resolve: vespa chunk lookup failed",
+      )
     }
   }
 
@@ -803,6 +877,9 @@ router.get("/files/resolve/:docId", async (c) => {
     name: row.name,
     chunkIndex,
     pageNumber,
+    pages,
+    bbox,
+    chunkText,
   })
 })
 

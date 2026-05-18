@@ -66,8 +66,16 @@ export type PdfViewerProps = {
    * change — used by the citation panel so re-clicking the same chunk
    * pulls the user back to that page, and switching between chunks of
    * the same document updates the target without remounting the viewer.
+   * Also re-applies `highlightQuery` on bump.
    */
   navSeq?: number | undefined
+  /**
+   * When provided, the viewer prefills its Find input with this text and
+   * the pdf.js findController highlights matches in the text layer. The
+   * citation panel passes the cited chunk's first few words here so the
+   * user lands on the exact passage. Re-applied whenever `navSeq` bumps.
+   */
+  highlightQuery?: string | null | undefined
   /** Filename pre-resolved by the caller; skips the breadcrumb round-trip. */
   docName?: string | undefined
   /** Leading slot in the toolbar (Back arrow on the route, nothing on panel). */
@@ -83,6 +91,7 @@ export function PdfViewer({
   itemId,
   initialPage,
   navSeq,
+  highlightQuery,
   docName: docNameProp,
   leading,
   onClose,
@@ -122,6 +131,25 @@ export function PdfViewer({
     if (!pageInputFocused) setPageInput(String(currentPage))
   }, [currentPage, pageInputFocused])
   const [query, setQuery] = useState<string>("")
+
+  // When the caller hands us a citation highlight phrase, drop it into
+  // the Find input and let pdf.js's findController do the rest. We track
+  // the last applied (highlightQuery, navSeq) signature so user edits
+  // aren't clobbered by re-renders, but a fresh navSeq (new chunk click)
+  // does re-apply. Auto-highlight is text-substring based — for chunks
+  // where the snippet doesn't match the PDF text layer exactly (heavy
+  // formatting drift, tables) the highlight may be partial; users can
+  // still drive Find manually.
+  const lastHighlightRef = useRef<string | null>(null)
+  useEffect((): void => {
+    if (loadState !== "ready") return
+    const sig = `${highlightQuery ?? ""}#${String(navSeq ?? 0)}`
+    if (lastHighlightRef.current === sig) return
+    lastHighlightRef.current = sig
+    if (highlightQuery && highlightQuery.length >= 2) {
+      setQuery(highlightQuery)
+    }
+  }, [highlightQuery, navSeq, loadState])
 
   const fileUrl = `${window.location.origin}${fileContentUrl(clId, itemId)}`
 

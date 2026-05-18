@@ -156,6 +156,10 @@ export type CitationTarget = {
   name: string
   chunkIndex: number | null
   pageNumber: number | null
+  /** Short representative phrase from the cited chunk. The viewer feeds
+   *  this into pdf.js's findController so the passage is highlighted in
+   *  the text layer when the panel opens. */
+  chunkText: string | null
 }
 
 /** Resolve a `[docId#chunk]` citation token emitted by pi-mono into the

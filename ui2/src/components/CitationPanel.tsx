@@ -313,6 +313,7 @@ export function CitationPanel(): JSX.Element | null {
                     ? { initialPage: t.pageNumber }
                     : {})}
                   navSeq={t.navSeq}
+                  {...(t.chunkText ? { highlightQuery: t.chunkText } : {})}
                   docName={t.name}
                   hideDownload
                   // Close *just this tab* from the viewer's toolbar X.
