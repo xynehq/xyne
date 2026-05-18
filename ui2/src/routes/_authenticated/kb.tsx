@@ -84,6 +84,7 @@ function KnowledgeRoute(): JSX.Element {
   const [reloadKey, setReloadKey] = useState(0)
   const [dialog, setDialog] = useState<"collection" | "folder" | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const [scrollEl, setScrollEl] = useState<HTMLElement | null>(null)
 
   const refresh = useCallback((): void => {
     setReloadKey((k) => k + 1)
@@ -488,7 +489,10 @@ function KnowledgeRoute(): JSX.Element {
         </div>
       </div>
 
-      <main className="relative flex-1 overflow-auto px-5 py-5">
+      <main
+        ref={setScrollEl}
+        className="relative flex-1 overflow-auto px-5 py-5"
+      >
         {dragging ? (
           <div className="pointer-events-none absolute inset-3 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-ring/60 bg-background/80 text-[14px] font-medium text-foreground">
             Drop files to upload
@@ -517,6 +521,7 @@ function KnowledgeRoute(): JSX.Element {
             <EntryGrid
               entries={entries}
               onOpen={onOpenEntry}
+              scrollElement={scrollEl}
               onDelete={(e): void => {
                 void onDelete(e)
               }}
@@ -526,6 +531,7 @@ function KnowledgeRoute(): JSX.Element {
               entries={entries}
               columns={KB_COLUMNS}
               onOpen={onOpenEntry}
+              scrollElement={scrollEl}
               onDelete={(e): void => {
                 void onDelete(e)
               }}
