@@ -67,7 +67,11 @@ const { JwtPayloadKey } = config
 const Logger = getLogger(Subsystem.Chat)
 
 import { bootstrapChat, persistAssistantMessage } from "./helpers"
-import { checkAndYieldCitationsForAgent } from "./tools/tool-utils"
+import {
+  checkAndYieldCitationsForAgent,
+  formatFragmentsForLLM,
+} from "./tools/tool-utils"
+import { runCitationPass } from "./citation-pass"
 
 export async function AgenticRAG(c: Context): Promise<Response> {
   const tracer = getTracer("chat")
@@ -529,41 +533,14 @@ export async function AgenticRAG(c: Context): Promise<Response> {
               break
             case "text_delta": {
               if (!event.delta) break
+              // BUFFER ONLY — synthesis output is held back from the SSE
+              // stream. After agent.run() exits we run a focused citation pass
+              // (see citation-pass.ts) and stream THAT call's output as the
+              // user-facing answer. This avoids leaking mangled citation
+              // tokens (e.g. `【1_3】`, `K[1_5.1.10]`) into the rendered
+              // message — synthesis is free to write naturally, the citation
+              // pass is responsible for emitting compliant `K[N_X]`.
               answer += event.delta
-              await stream.writeSSE({
-                event: ChatSSEvents.ResponseUpdate,
-                data: event.delta,
-              })
-
-              // Yield citations inline
-              for await (const ce of checkAndYieldCitationsForAgent(
-                answer,
-                yieldedCitations,
-                xyneState.allFragments,
-                yieldedImageCitations,
-                email,
-                xyneState.citationDocIdMapping,
-              )) {
-                if (stream.closed) break
-                if (ce.citation) {
-                  const { index, item } = ce.citation
-                  const docId = item.docId || String(index)
-                  if (citationsByDocId.has(docId)) {
-                    citationMap[index] = citationsByDocId.get(docId)!
-                  } else {
-                    citations.push(item)
-                    citationsByDocId.set(docId, citations.length - 1)
-                    citationMap[index] = citations.length - 1
-                  }
-                  await stream.writeSSE({
-                    event: ChatSSEvents.CitationsUpdate,
-                    data: JSON.stringify({
-                      contextChunks: citations,
-                      citationMap,
-                    }),
-                  })
-                }
-              }
               break
             }
 
@@ -663,12 +640,12 @@ export async function AgenticRAG(c: Context): Promise<Response> {
                       : ""
 
                 if (fullContent) {
+                  // BUFFER ONLY — same reasoning as the text_delta case.
+                  // This fallback fires when streaming text_delta didn't but
+                  // message_end carries the full message. We still want the
+                  // citation pass to be the sole producer of user-facing text,
+                  // so don't writeSSE here either.
                   answer = fullContent
-
-                  await stream.writeSSE({
-                    event: ChatSSEvents.ResponseUpdate,
-                    data: answer,
-                  })
                 }
               }
               break
@@ -695,6 +672,131 @@ export async function AgenticRAG(c: Context): Promise<Response> {
             emitReasoningStep,
             ReasoningSteps.synthesisCompleted(),
           )
+        }
+
+        // ── Citation pass ────────────────────────────────────────────
+        // Synthesis output was buffered into `answer` (not streamed).
+        // A focused second LLM call re-emits the same answer with inline
+        // `K[N_X]` citations. THIS is what the user sees streamed.
+        //
+        // On failure (network, model error, empty output) we fall back to
+        // streaming the uncited synthesis answer as-is so the user always
+        // gets *something*.
+        if (answer.trim() && !stream.closed) {
+          let citedAnswer = ""
+          let citationPassSucceeded = false
+          try {
+            const chunksFormatted = formatFragmentsForLLM(
+              xyneState.allFragments,
+              1,
+              Number.MAX_SAFE_INTEGER, // pass ALL fragments — citation pass
+              // needs the full evidence pool to pick the right `K[N_X]`
+            )
+
+            for await (const delta of runCitationPass({
+              chunks: chunksFormatted,
+              answer,
+              modelId,
+              numFragments: xyneState.allFragments.length,
+              email,
+            })) {
+              if (stream.closed) break
+              citedAnswer += delta
+              await stream.writeSSE({
+                event: ChatSSEvents.ResponseUpdate,
+                data: delta,
+              })
+
+              // Run the same inline citation extraction we used to do during
+              // synthesis — now against the citation-pass output, which is
+              // where the well-formed `K[N_X]` tokens live.
+              for await (const ce of checkAndYieldCitationsForAgent(
+                citedAnswer,
+                yieldedCitations,
+                xyneState.allFragments,
+                yieldedImageCitations,
+                email,
+                xyneState.citationDocIdMapping,
+              )) {
+                if (stream.closed) break
+                if (ce.citation) {
+                  const { index, item } = ce.citation
+                  const docId = item.docId || String(index)
+                  if (citationsByDocId.has(docId)) {
+                    citationMap[index] = citationsByDocId.get(docId)!
+                  } else {
+                    citations.push(item)
+                    citationsByDocId.set(docId, citations.length - 1)
+                    citationMap[index] = citations.length - 1
+                  }
+                  await stream.writeSSE({
+                    event: ChatSSEvents.CitationsUpdate,
+                    data: JSON.stringify({
+                      contextChunks: citations,
+                      citationMap,
+                    }),
+                  })
+                }
+              }
+            }
+            // Require the stream to STILL BE OPEN to count as a success.
+            // If the user aborted (stream.closed) we'd otherwise replace the
+            // full buffered synthesis answer with a truncated cited prefix
+            // and persist the truncation to the DB.
+            citationPassSucceeded =
+              !stream.closed && citedAnswer.trim().length > 0
+          } catch (citationErr) {
+            Logger.error(
+              citationErr,
+              "Citation pass failed — falling back to uncited synthesis answer",
+            )
+          }
+
+          if (citationPassSucceeded) {
+            // Replace the in-memory `answer` with the cited version so it
+            // gets persisted with proper `K[N_X]` tokens.
+            answer = citedAnswer
+          } else if (!stream.closed) {
+            // Fallback: stream the buffered synthesis answer in one go and
+            // run citation extraction on it (best-effort — synthesis may
+            // have emitted mangled citations, the existing regex will skip
+            // those gracefully).
+            Logger.warn(
+              "Citation pass produced no output; streaming uncited synthesis answer",
+            )
+            await stream.writeSSE({
+              event: ChatSSEvents.ResponseUpdate,
+              data: answer,
+            })
+            for await (const ce of checkAndYieldCitationsForAgent(
+              answer,
+              yieldedCitations,
+              xyneState.allFragments,
+              yieldedImageCitations,
+              email,
+              xyneState.citationDocIdMapping,
+            )) {
+              if (stream.closed) break
+              if (ce.citation) {
+                const { index, item } = ce.citation
+                const docId = item.docId || String(index)
+                if (citationsByDocId.has(docId)) {
+                  citationMap[index] = citationsByDocId.get(docId)!
+                } else {
+                  citations.push(item)
+                  citationsByDocId.set(docId, citations.length - 1)
+                  citationMap[index] = citations.length - 1
+                }
+                await stream.writeSSE({
+                  event: ChatSSEvents.CitationsUpdate,
+                  data: JSON.stringify({
+                    contextChunks: citations,
+                    citationMap,
+                  }),
+                })
+              }
+            }
+          }
         }
 
         try {
