@@ -48,9 +48,9 @@ const params = Type.Object({
   }),
   limit: Type.Optional(
     Type.Number({
-      description: "Maximum matching chunks to return (1–15). Default 8.",
+      description: "Maximum matching chunks to return (1–30). Default 15.",
       minimum: 1,
-      maximum: 15,
+      maximum: 30,
     }),
   ),
 })
@@ -74,10 +74,10 @@ export const buildSearchWithinDocTool = (
       })
       const startedAt = Date.now()
       log.info(
-        { docId: p.docId, query: p.query, limit: p.limit ?? 8 },
+        { docId: p.docId, query: p.query, limit: p.limit ?? 15 },
         "tool: searchWithinDoc start",
       )
-      const limit = p.limit ?? 8
+      const limit = p.limit ?? 15
       try {
         // KB items don't enforce per-user permissions, so userEmail isn't
         // needed here — the schema is filtered by docId only.

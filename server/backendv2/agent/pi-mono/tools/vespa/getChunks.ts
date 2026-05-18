@@ -23,7 +23,7 @@ import {
   truncate,
 } from "./util"
 
-const MAX_LIMIT = 50
+const MAX_LIMIT = 30
 // Slightly smaller per-chunk truncation than search snippets — we're returning
 // many chunks at once, so keep each one digestible.
 const CHUNK_MAX_CHARS = 1200
@@ -51,7 +51,7 @@ const params = Type.Object({
   }),
   limit: Type.Optional(
     Type.Number({
-      description: `Number of chunks to return (1–${String(MAX_LIMIT)}). Default 10.`,
+      description: `Number of chunks to return (1–${String(MAX_LIMIT)}). Default 15.`,
       minimum: 1,
       maximum: MAX_LIMIT,
     }),
@@ -76,11 +76,11 @@ export const buildGetChunksTool = (
         {
           docId: p.docId,
           startChunkIndex: p.startChunkIndex,
-          limit: p.limit ?? 10,
+          limit: p.limit ?? 15,
         },
         "tool: getChunks start",
       )
-      const limit = Math.min(p.limit ?? 10, MAX_LIMIT)
+      const limit = Math.min(p.limit ?? 15, MAX_LIMIT)
       try {
         const resp = await GetDocumentsByDocIds(
           [p.docId],

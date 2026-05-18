@@ -26,8 +26,8 @@ import { formatPages, snippetForChunk, textResult, titleOf, topChunkIndex, trunc
 
 // Max hits we return — the agent should narrow further if it gets a wide
 // result set rather than ask Vespa for a million rows.
-const DEFAULT_LIMIT = 20
-const MAX_LIMIT = 50
+const DEFAULT_LIMIT = 15
+const MAX_LIMIT = 30
 
 const DESCRIPTION = [
   "Structured metadata search across the SEBI corpus. Use when the user ",

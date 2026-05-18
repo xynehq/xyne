@@ -49,10 +49,10 @@ const params = Type.Object({
   limit: Type.Optional(
     Type.Number({
       description:
-        "Maximum chunks to return (1–20). Default 10. Use higher (15–20) " +
-        "for broad survey queries; keep tight (5–8) for precision.",
+        "Maximum chunks to return (1–30). Default 15. Use higher (20–30) " +
+        "for broad survey queries; keep tight (5–10) for precision.",
       minimum: 1,
-      maximum: 20,
+      maximum: 30,
     }),
   ),
 })
@@ -124,13 +124,13 @@ export const buildVespaSearchTool = (
       log.info(
         {
           query: p.query,
-          limit: p.limit ?? 10,
+          limit: p.limit ?? 15,
           agentScoped: !!args.agentScope,
           agentExternalId: args.agentScope?.externalId,
         },
         "tool: vespaSearch start",
       )
-      const limit = p.limit ?? 10
+      const limit = p.limit ?? 15
       try {
         const resp = await runSearch(p.query, limit, args)
         const children = resp?.root?.children ?? []
