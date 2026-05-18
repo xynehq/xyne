@@ -13,6 +13,7 @@ import { SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent"
 
 import { createRAGAgent, type RAGAgent } from "@/api/chat/pi-mono/core"
 import type { AgentScope } from "../agent-scope"
+import { mathTool } from "./tools/math"
 import { buildVespaTools } from "./tools/vespa"
 import { getActualNameFromEnum, getModelValueFromLabel } from "@/ai/modelConfig"
 import { Models } from "@/ai/types"
@@ -202,11 +203,14 @@ export async function runPiMonoTurn(
     model: llmModelName,
     baseUrl,
     apiKey,
-    tools: buildVespaTools({
-      userEmail: args.userEmail,
-      logger: log,
-      ...(args.agentScope ? { agentScope: args.agentScope } : {}),
-    }),
+    tools: [
+      ...buildVespaTools({
+        userEmail: args.userEmail,
+        logger: log,
+        ...(args.agentScope ? { agentScope: args.agentScope } : {}),
+      }),
+      mathTool,
+    ],
     systemPrompt: args.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     sessionManager,
     settingsManager: SettingsManager.inMemory({
