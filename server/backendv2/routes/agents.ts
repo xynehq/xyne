@@ -20,6 +20,7 @@ import {
   updateAgentSchema,
   type Auth,
 } from "../services/agents"
+import { DEFAULT_SYSTEM_PROMPT } from "../agent/pi-mono/system-prompt"
 
 type Vars = {
   jwtPayload: { sub: string; workspaceId: string }
@@ -77,6 +78,14 @@ const handle = async (
     })
   }
 }
+
+// GET /v2/agents/defaults — exposes the server's default system prompt so the
+// agent form's "Use default" button can pre-fill the textarea without
+// duplicating the prompt on the client. Registered before /:agentExternalId
+// to avoid path collision.
+router.get("/defaults", (c) =>
+  c.json({ prompt: DEFAULT_SYSTEM_PROMPT }),
+)
 
 // GET /v2/agents?limit=&offset=&filter=
 router.get("/", (c) =>

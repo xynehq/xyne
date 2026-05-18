@@ -225,6 +225,12 @@ export const deleteAgent = (externalId: string): Promise<void> =>
     method: "DELETE",
   })
 
+/** Server-side defaults for the agent form. Today this only exposes the
+ *  default system prompt; we keep the envelope generic so we can add other
+ *  defaults (model, reasoning level, …) without a second round-trip. */
+export const getAgentDefaults = (): Promise<{ prompt: string }> =>
+  apiFetch<{ prompt: string }>("/v2/agents/defaults")
+
 // ── Workspace user lookup ───────────────────────────────────────────────────
 // Used by the agent form's viewer / co-owner pickers so users get autocomplete
 // instead of having to type 200 emails by hand. Falls back gracefully if the

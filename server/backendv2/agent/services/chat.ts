@@ -443,6 +443,10 @@ export class ChatService {
         logger: runLog,
         ...(input.model ? { modelLabel: input.model } : {}),
         ...(agentScope ? { agentScope } : {}),
+        // When the selected agent has a custom system prompt, it REPLACES the
+        // default — pi-mono only honors one system prompt per run, so this
+        // is the seam at which the agent's persona overrides Xyne SEBI's.
+        ...(agentScope?.prompt ? { systemPrompt: agentScope.prompt } : {}),
         ...(input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
         signal: ctrl.signal,
         onTextDelta: async (delta) => {

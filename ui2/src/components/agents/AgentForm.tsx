@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react"
 import type { Agent, AgentCreateInput } from "@/lib/api"
+import { getAgentDefaults } from "@/lib/api"
 import { EmailMultiInput } from "./EmailMultiInput"
 import { KbPickerModal, type KbSelection } from "./KbPickerModal"
 
@@ -92,6 +93,26 @@ export const AgentForm = forwardRef<AgentFormHandle, Props>(function AgentForm(
     initial ? kbFromAgent(initial) : [],
   )
   const [kbPickerOpen, setKbPickerOpen] = useState(false)
+
+  // Lazy-fetched default system prompt for the "Use default" button. We
+  // fetch once on mount so the click is instant; failures degrade silently
+  // (button just no-ops with a console warning).
+  const [defaultPrompt, setDefaultPrompt] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    void (async (): Promise<void> => {
+      try {
+        const { prompt } = await getAgentDefaults()
+        if (!cancelled) setDefaultPrompt(prompt)
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("agent defaults fetch failed", err)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useImperativeHandle(
     ref,
@@ -216,10 +237,30 @@ export const AgentForm = forwardRef<AgentFormHandle, Props>(function AgentForm(
         title="Behaviour"
         hint="System prompt and the boundaries the agent operates within."
       >
-        <Field
-          label="System prompt"
-          hint="Pinned to every turn — tone, scope, and rules."
-        >
+        {/* Inlined instead of using <Field> because the label row carries
+            an action button ("Use default") — putting a clickable button
+            inside a <label> conflicts with the implicit focus handling. */}
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[12.5px] font-medium text-muted-foreground">
+              System prompt
+            </span>
+            <button
+              type="button"
+              disabled={!defaultPrompt}
+              onClick={() => {
+                if (defaultPrompt) setField("prompt", defaultPrompt)
+              }}
+              title={
+                defaultPrompt
+                  ? "Fill with the workspace default prompt"
+                  : "Loading…"
+              }
+              className="text-[11.5px] font-medium text-muted-foreground transition hover:text-foreground disabled:opacity-50"
+            >
+              Use default
+            </button>
+          </div>
           <textarea
             value={values.prompt ?? ""}
             onChange={(e) => {
@@ -232,7 +273,12 @@ export const AgentForm = forwardRef<AgentFormHandle, Props>(function AgentForm(
             // grow unbounded.
             className="h-64 w-full resize-none overflow-y-auto rounded-md border border-border bg-surface-elevated px-2.5 py-2 text-[13px] leading-relaxed text-foreground placeholder:text-muted-foreground/80 transition focus:border-ring focus:outline-none"
           />
-        </Field>
+          <span className="text-[11.5px] text-muted-foreground/80">
+            Pinned to every turn — tone, scope, and rules. Click{" "}
+            <em>Use default</em> to start from the workspace prompt and edit
+            from there.
+          </span>
+        </div>
 
         {/* "Use workspace knowledge" and "Allow web search" toggles are
             intentionally hidden — the team treats them as default-on for v2
