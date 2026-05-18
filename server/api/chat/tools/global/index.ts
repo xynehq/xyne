@@ -248,6 +248,8 @@ interface UnifiedSearchOptions {
   /** When set with query, KB schema-only docs get precomputed DB context (live SQL results). */
   userId?: number | null
   workspaceId?: number | null
+  /** Per-document chunk cap — KB tool passes 3 here to override the global default. */
+  maxChunksPerDoc?: number
 }
 
 export async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{ fragments: MinimalAgentFragment[]; rawDocuments: ToolRawDocument[] }> {
@@ -276,6 +278,7 @@ export async function executeVespaSearch(options: UnifiedSearchOptions): Promise
     eventAttendees,
     userId,
     workspaceId,
+    maxChunksPerDoc,
   } = options
 
   if (!query || query.trim() === "") {
@@ -376,6 +379,7 @@ export async function executeVespaSearch(options: UnifiedSearchOptions): Promise
     searchType: "Global search result",
     userId: userId ?? undefined,
     workspaceId: workspaceId ?? undefined,
+    ...(maxChunksPerDoc !== undefined ? { maxChunksPerDoc } : {}),
   })
 
   return { fragments, rawDocuments }

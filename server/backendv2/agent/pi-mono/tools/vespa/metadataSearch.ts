@@ -95,6 +95,19 @@ const params = Type.Object(
         maximum: MAX_LIMIT,
       }),
     ),
+    query: Type.Optional(
+      Type.String({
+        description:
+          "Optional free-text topical query — used to RANK within the " +
+          "metadata-filtered set via the title_boosted_hybrid profile. " +
+          "Provide 2-8 keywords that describe what the user is asking about " +
+          "(NOT another ID; IDs go in the structured filters above). When " +
+          "omitted, results are returned in arbitrary order within the " +
+          "filtered set.",
+        minLength: 2,
+        maxLength: 200,
+      }),
+    ),
   },
   { additionalProperties: false },
 )
@@ -107,6 +120,7 @@ type Params = {
   dateFrom?: string
   dateTo?: string
   limit?: number
+  query?: string
 }
 
 // ─── YQL building ───────────────────────────────────────────────────────────
@@ -124,6 +138,41 @@ const inClause = (field: string, values: readonly string[]): string =>
 
 const containsAnyClause = (field: string, values: readonly string[]): string =>
   `(${values.map((v) => `${field} contains ${yqlString(v)}`).join(" or ")})`
+
+// document_date is a `long` in the schema, encoded as YYYYMMDD (e.g.
+// "2025-12-01" → 20251201). Vespa YQL range ops (>=, <=) are numeric-only,
+// so a string date like "2025-12-01" parses as "[2025-12-01;]" and Vespa
+// rejects it. Convert ISO/looser inputs to that int form; for partial inputs
+// pad to the inclusive lower/upper bound of the implied period.
+const isoDateToInt = (input: string, bound: "lower" | "upper"): number | null => {
+  const s = input.trim()
+  // YYYY, YYYY-MM, YYYY-MM-DD (or compact YYYYMMDD)
+  const compact = s.replace(/-/g, "")
+  if (!/^\d{4}(\d{2})?(\d{2})?$/.test(compact)) return null
+  const year = compact.slice(0, 4)
+  const mm =
+    compact.length >= 6
+      ? compact.slice(4, 6)
+      : bound === "lower"
+        ? "01"
+        : "12"
+  const dd =
+    compact.length === 8
+      ? compact.slice(6, 8)
+      : bound === "lower"
+        ? "01"
+        : "31"
+  const n = Number(`${year}${mm}${dd}`)
+  return Number.isFinite(n) ? n : null
+}
+
+// Render YYYYMMDD int back to "YYYY-MM-DD" for the agent-facing output.
+const intDateToIso = (n: number): string | null => {
+  if (!Number.isFinite(n)) return null
+  const s = String(n).padStart(8, "0")
+  if (s.length !== 8) return null
+  return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`
+}
 
 /** Build the WHERE expression. At least one filter is required (the tool
  *  refuses to run otherwise — Vespa-wide unfiltered scans are wasteful and
@@ -146,10 +195,22 @@ const buildWhere = (p: Params, scope: AgentScope | undefined): string => {
     clauses.push(containsAnyClause("entities_involved", asList(p.entities)))
   }
   if (p.dateFrom) {
-    clauses.push(`document_date >= ${yqlString(p.dateFrom)}`)
+    const lo = isoDateToInt(p.dateFrom, "lower")
+    if (lo === null) {
+      throw new Error(
+        `dateFrom: could not parse "${p.dateFrom}" — use YYYY, YYYY-MM, or YYYY-MM-DD`,
+      )
+    }
+    clauses.push(`document_date >= ${String(lo)}`)
   }
   if (p.dateTo) {
-    clauses.push(`document_date <= ${yqlString(p.dateTo)}`)
+    const hi = isoDateToInt(p.dateTo, "upper")
+    if (hi === null) {
+      throw new Error(
+        `dateTo: could not parse "${p.dateTo}" — use YYYY, YYYY-MM, or YYYY-MM-DD`,
+      )
+    }
+    clauses.push(`document_date <= ${String(hi)}`)
   }
 
   // Agent scope narrowing — if the agent's KB scope is set via cl- / clfd- /
@@ -195,19 +256,36 @@ type VespaSearchResponse = {
  *  vespa-ts because the metadata fields it doesn't yet model would need a
  *  wrapper change there; a direct HTTP call is simpler and keeps the
  *  responsibility for these fields local to this tool. */
-const runYql = async (yql: string, limit: number): Promise<VespaSearchResponse> => {
+const runYql = async (
+  yql: string,
+  limit: number,
+  query: string | undefined,
+): Promise<VespaSearchResponse> => {
   const endpoint = `${config.vespaEndpoint.queryEndpoint}/search/`
+  // When the LLM passes a topical `query` alongside the structured filters,
+  // the YQL we built includes `userInput(@query)`; we rank that filtered set
+  // with `title_boosted_hybrid` (filename + chunks native-rank). When no
+  // query is provided, we fall back to `unranked` — the WHERE clause has
+  // already done the work, ordering doesn't matter.
+  const body: Record<string, unknown> = {
+    yql,
+    hits: limit,
+    timeout: "30s",
+  }
+  if (query && query.trim()) {
+    body["query"] = query
+    body["ranking.profile"] = "title_boosted_hybrid"
+    // alpha=0 keeps this lexical-only; the metadata filter has already
+    // narrowed candidates, vector retrieval inside the filter buys nothing
+    // (and requires an embedding call we don't want on this code path).
+    body["input.query(alpha)"] = 0
+  } else {
+    body["ranking"] = "unranked"
+  }
   const res = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      yql,
-      hits: limit,
-      timeout: "30s",
-      // Default ranking would still compute relevance; we just want match
-      // order. `unranked` skips relevance computation entirely.
-      ranking: "unranked",
-    }),
+    body: JSON.stringify(body),
   })
   if (!res.ok) {
     const body = await res.text().catch(() => "")
@@ -252,7 +330,17 @@ export const buildMetadataSearchTool = (
         return textResult(`metadataSearch refused: ${msg}`, { error: msg }, true)
       }
 
-      const yql = `select * from kb_items where ${where} limit ${String(limit)}`
+      // When the LLM also passes a topical `query`, we OR-conjoin a
+      // `userInput(@query)` term inside the WHERE clause so the rank profile
+      // (`title_boosted_hybrid`, set in runYql) has terms to score
+      // nativeRank(fileName) / nativeRank(chunks) against. The metadata
+      // filter still applies AS THE GATE — userInput() is added as an
+      // additional ANDed clause, not a replacement.
+      const yqlWhere =
+        p.query && p.query.trim()
+          ? `(${where}) and userInput(@query)`
+          : where
+      const yql = `select * from kb_items where ${yqlWhere} limit ${String(limit)}`
       log.info(
         {
           limit,
@@ -270,7 +358,7 @@ export const buildMetadataSearchTool = (
       )
 
       try {
-        const resp = await runYql(yql, limit)
+        const resp = await runYql(yql, limit, p.query)
         const children = resp.root?.children ?? []
         if (children.length === 0) {
           log.info(
@@ -294,25 +382,32 @@ export const buildMetadataSearchTool = (
           entities: string[]
           panIds: string[]
           referencedIds: string[]
+          fileName: string | null
         }> = []
 
         children.forEach((hit, i) => {
           const rank = i + 1
           const fields = (hit.fields ?? {}) as Record<string, unknown>
           const docId = typeof fields["docId"] === "string" ? fields["docId"] : ""
+          const fileName = fields["fileName"] as string | undefined
           const title = titleOf({
             title: fields["title"] as string | undefined,
-            fileName: fields["fileName"] as string | undefined,
+            fileName: fileName,
             docId,
           })
           const documentId =
             typeof fields["document_id"] === "string"
               ? (fields["document_id"] as string)
               : null
+          // document_date is now a `long` (YYYYMMDD) in the schema. Older
+          // dumps that still return a string are tolerated for the transition.
+          const rawDate = fields["document_date"]
           const documentDate =
-            typeof fields["document_date"] === "string"
-              ? (fields["document_date"] as string)
-              : null
+            typeof rawDate === "number"
+              ? intDateToIso(rawDate)
+              : typeof rawDate === "string"
+                ? rawDate
+                : null
           const entities = Array.isArray(fields["entities_involved"])
             ? (fields["entities_involved"] as unknown[]).filter(
                 (s): s is string => typeof s === "string",
@@ -377,6 +472,7 @@ export const buildMetadataSearchTool = (
           details.push({
             rank,
             docId,
+            fileName : fileName ?? null,
             documentId,
             documentDate,
             entities,

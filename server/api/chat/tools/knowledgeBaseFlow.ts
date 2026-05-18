@@ -1608,6 +1608,7 @@ export async function executeSearchKnowledgeBase(
       selectedItems: scopeState.selectedItems,
       userId: context.user.numericId ?? undefined,
       workspaceId: context.user.workspaceNumericId ?? undefined,
+      maxChunksPerDoc: 3,
     })
 
     if (!fragments.length) {

@@ -86,6 +86,8 @@ export async function formatSearchToolResponse(
     /** When set with query, precomputed DB context (live SQL results) is built for schema-only KB docs. */
     userId?: number | null
     workspaceId?: number | null
+    /** Per-document chunk cap. Overrides `config.maxDefaultSummary` for KB hits. */
+    maxChunksPerDoc?: number
   },
 ): Promise<MinimalAgentFragment[]> {
   const children = (searchResults?.root?.children || []).filter(
@@ -126,13 +128,18 @@ export async function formatSearchToolResponse(
       // Determine if chunk citations are enabled for KB files
       const allowChunkCitations = r.fields?.sddocname === KbItemsSchema
 
+      // Per-doc chunk cap: explicit override (KB tool sets this to 3) wins over
+      // the global default.
+      const effectiveMaxChunks =
+        searchContext.maxChunksPerDoc ?? config.maxDefaultSummary
+
       // Calculate which chunks will actually be returned in the content
       // This is needed for accurate deduplication
       let returnedChunkIndices: number[] | undefined
       if (allowChunkCitations) {
         const fields = r.fields as any
         const maxSummaryChunks =
-          config.maxDefaultSummary ?? fields.chunks_summary?.length
+          effectiveMaxChunks ?? fields.chunks_summary?.length
 
         returnedChunkIndices = computeReturnedChunkIndices(
           fields,
@@ -151,7 +158,7 @@ export async function formatSearchToolResponse(
         content: await answerContextMap(
           r,
           metadataForContext,
-          config.maxDefaultSummary,
+          effectiveMaxChunks,
           undefined,
           allowChunkCitations,
           builtUserQuery || undefined,

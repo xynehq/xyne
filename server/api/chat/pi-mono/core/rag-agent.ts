@@ -83,12 +83,18 @@ function mapEvent(event: AgentSessionEvent): RAGEvent[] {
       break
 
     case "tool_execution_end":
+      // pi-coding-agent only sets the top-level `isError` flag when the tool
+      // *throws*. Tools that catch a 4xx/5xx and return a structured error
+      // result via `textResult(text, details, true)` end up with
+      // `e.isError === false` here — which renders as a tick in the UI. Read
+      // the flag off the result body too so caught-and-returned errors still
+      // surface as errors downstream.
       events.push({
         type: "tool_result",
         toolName: e.toolName,
         toolCallId: e.toolCallId ?? "",
         result: e.result,
-        isError: e.isError ?? false,
+        isError: e.isError || (e.result as { isError?: boolean })?.isError === true,
       })
       break
 

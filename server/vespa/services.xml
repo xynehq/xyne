@@ -34,10 +34,13 @@
         </http>
           
         <nodes>
-            <!-- 25% of JVM for feed container -->
-            <!-- Running both containers on same host uses 50% total (25% + 25%), leaving 50% headroom -->
-            <jvm allocated-memory="25%"/>  
-            <node hostalias="node1"/>  
+            <!-- 40% of JVM for feed container -->
+            <!-- Running both containers on same host uses 80% total (40% + 40%); on a 16 GiB
+                 host that yields ~6.1 GiB heap each. 25% (~3.8 GiB) caused container OOM
+                 under eval load because vespa-start-container-daemon ignores the env-var
+                 -Xmx and re-derives heap from this attribute. -->
+            <jvm allocated-memory="40%"/>
+            <node hostalias="node1"/>
             <!-- If you have a separate physical node for feed, change to: <node hostalias="node2"/> -->
         </nodes>  
     </container>
@@ -76,10 +79,10 @@
         </http>
           
         <nodes>
-            <!-- 25% of JVM for query container -->
-            <!-- Running both containers on same host uses 50% total (25% + 25%), leaving 50% headroom -->
-            <jvm allocated-memory="25%"/>  
-            <node hostalias="node1"/>  
+            <!-- 40% of JVM for query container -->
+            <!-- See feed-container comment above for the rationale on 40% vs 25%. -->
+            <jvm allocated-memory="40%"/>
+            <node hostalias="node1"/>
             <!-- If you have a separate physical node for query, change to: <node hostalias="node2"/> -->
         </nodes>  
     </container>  
