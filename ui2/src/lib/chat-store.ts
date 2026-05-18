@@ -775,8 +775,7 @@ export const chatStore = {
         // message_appended, run_started) fire on the bus with no listener.
         await openStream(convId)
         // Build the body conditionally so we don't send empty `model`/
-        // `agentId`/`thinkingLevel` keys — the server treats absence as
-        // "use defaults".
+        // `agentId` keys — the server treats absence as "use defaults".
         const body: {
           text: string
           model?: string
