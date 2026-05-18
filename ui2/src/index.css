@@ -2,41 +2,159 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Theme tokens — sourced from Figma "Xyne Design System".
+ * Nodes: 3621:94 (Light) and 3621:907 (Dark).
+ *
+ * Values are stored as HSL channels ("H S% L%") so Tailwind's
+ * `hsl(var(--x) / <alpha>)` opacity modifiers work.
+ *
+ * Legacy shadcn-style aliases (--background, --primary, etc.) are
+ * preserved as references to the new semantic tokens so existing
+ * components keep working without churn.
+ */
+
 @layer base {
   /* ─── Light theme ───────────────────────────────────────────────────── */
   :root {
-    --background: 30 12% 99%;
-    --foreground: 230 14% 12%;
+    /* Primitive gray ramp */
+    --gray-0: 0 0% 100%;
+    --gray-25: 180 9% 97%;
+    --gray-50: 0 0% 96%;
+    --gray-100: 214 12% 91%;
+    --gray-200: 215 17% 84%;
+    --gray-300: 219 17% 73%;
+    --gray-400: 218 19% 60%;
+    --gray-500: 219 19% 47%;
+    --gray-600: 219 21% 37%;
+    --gray-700: 219 24% 28%;
+    --gray-900: 220 34% 16%;
+    --gray-950: 220 47% 11%;
 
-    --surface: 0 0% 100%;
-    --surface-elevated: 30 14% 98%;
-    --surface-muted: 30 10% 95%;
+    /* Primitive brand / status ramps */
+    --orange-50: 24 100% 97%;
+    --orange-500: 17 99% 60%;
+    --orange-600: 19 80% 50%;
+    --orange-700: 22 88% 41%;
 
-    --border: 230 12% 90%;
-    --input: 230 12% 90%;
-    --ring: 230 12% 60%;
+    --green-100: 137 85% 92%;
+    --green-500: 142 71% 45%;
+    --green-600: 142 76% 36%;
+    --green-700: 142 71% 29%;
 
-    --primary: 230 16% 14%;
-    --primary-foreground: 30 14% 98%;
+    --amber-100: 39 88% 93%;
+    --amber-500: 39 89% 50%;
+    --amber-600: 40 92% 42%;
+    --amber-700: 40 93% 35%;
 
-    --secondary: 30 10% 94%;
-    --secondary-foreground: 230 14% 12%;
+    --red-100: 0 93% 94%;
+    --red-500: 0 84% 60%;
+    --red-600: 0 72% 50%;
+    --red-700: 0 74% 42%;
 
-    --muted: 30 10% 94%;
-    --muted-foreground: 230 6% 42%;
+    --blue-500: 217 90% 60%;
 
-    --accent: 36 60% 92%;
-    --accent-foreground: 28 50% 18%;
+    /* Semantic — Surface */
+    --surface-page: var(--gray-100);
+    --surface-default: var(--gray-0);
+    --surface-hover: var(--gray-25);
+    --surface-elevated: var(--gray-50);
+    --surface-disabled: var(--gray-50);
+    --surface-highlight: var(--gray-200);
+    --surface-selected: var(--gray-300);
+    --surface-inverse: var(--gray-950);
+    --surface-information: var(--blue-500);
 
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 98%;
+    --surface-brand: var(--orange-500);
+    --surface-brand-subtle: var(--orange-50);
+    --surface-brand-hover: var(--orange-600);
+    --surface-brand-pressed: var(--orange-700);
 
-    --sidebar: 30 14% 96%;
-    --sidebar-foreground: 230 14% 12%;
-    --sidebar-border: 30 10% 89%;
+    --surface-success: var(--green-500);
+    --surface-success-subtle: var(--green-100);
+    --surface-success-hover: var(--green-600);
+    --surface-success-pressed: var(--green-700);
 
-    --assistant-bg: 30 14% 98%;
-    --user-bg: 30 10% 94%;
+    --surface-warning: var(--amber-500);
+    --surface-warning-subtle: var(--amber-100);
+    --surface-warning-hover: var(--amber-600);
+    --surface-warning-pressed: var(--amber-700);
+
+    --surface-error: var(--red-500);
+    --surface-error-subtle: var(--red-100);
+    --surface-error-hover: var(--red-600);
+    --surface-error-pressed: var(--red-700);
+
+    /* Semantic — Border */
+    --border-default: var(--gray-200);
+    --border-outline: var(--gray-0);
+    --border-bold: var(--gray-500);
+    --border-subtle: var(--gray-100);
+    --border-disabled: var(--gray-200);
+    --border-brand: var(--orange-500);
+    --border-brand-hover: var(--orange-600);
+    --border-success: var(--green-500);
+    --border-warning: var(--amber-500);
+    --border-error: var(--red-500);
+
+    /* Semantic — Icon */
+    --icon-default: var(--gray-600);
+    --icon-disabled: var(--gray-300);
+    --icon-on-action: var(--gray-0);
+    --icon-on-disabled: var(--gray-700);
+    --icon-information: var(--blue-500);
+    --icon-brand: var(--orange-500);
+    --icon-brand-hover: var(--orange-600);
+    --icon-success: var(--green-500);
+    --icon-warning: var(--amber-500);
+    --icon-error: var(--red-500);
+
+    /* Semantic — Text */
+    --text-default: var(--gray-900);
+    --text-subtle: var(--gray-500);
+    --text-muted: var(--gray-400);
+    --text-disabled: var(--gray-300);
+    --text-on-action: var(--gray-0);
+    --text-on-disabled: var(--gray-900);
+    --text-information: var(--blue-500);
+    --text-brand: var(--orange-500);
+    --text-brand-hover: var(--orange-600);
+    --text-success: var(--green-500);
+    --text-warning: var(--amber-500);
+    --text-error: var(--red-500);
+
+    /* Legacy shadcn aliases
+    --background: 38 30% 96%;             /* cream page  ~#f7f3ea */
+    --foreground: 30 16% 14%;             /* warm near-black */
+
+    --surface: 0 0% 100%;                 /* white cards pop on cream */
+    --surface-muted: 38 24% 93%;
+
+    --border: 36 14% 86%;                 /* warm border, no cool cast */
+    --input: 36 14% 86%;
+    --ring: 30 10% 62%;                   /* subtle warm-gray focus, not brand */
+
+    --primary: var(--surface-brand);
+    --primary-foreground: var(--text-on-action);
+
+    --secondary: 38 22% 92%;
+    --secondary-foreground: 30 16% 14%;
+
+    --muted: 38 22% 92%;
+    --muted-foreground: 30 8% 42%;
+
+    --accent: 32 55% 92%;
+    --accent-foreground: 22 70% 28%;
+
+    --destructive: var(--surface-error);
+    --destructive-foreground: var(--text-on-action);
+
+    --sidebar: 40 32% 97%;                /* slightly lighter cream */
+    --sidebar-foreground: 30 16% 14%;
+    --sidebar-border: 36 14% 88%;
+
+    --assistant-bg: 0 0% 100%;
+    --user-bg: 38 22% 92%;
 
     --radius: 0.75rem;
 
@@ -45,38 +163,77 @@
 
   /* ─── Dark theme ────────────────────────────────────────────────────── */
   .dark {
-    --background: 224 18% 6%;
-    --foreground: 30 8% 95%;
+    /* Primitive gray ramp — inverted in dark */
+    --gray-0: 0 0% 7%;
+    --gray-25: 0 0% 10%;
+    --gray-50: 0 0% 13%;
+    --gray-100: 0 0% 16%;
+    --gray-200: 0 0% 18%;
+    --gray-300: 0 0% 22%;
+    --gray-400: 0 0% 25%;
+    --gray-500: 0 0% 35%;
+    --gray-600: 0 0% 43%;
+    --gray-700: 0 0% 50%;
+    --gray-900: 0 0% 75%;
+    --gray-950: 0 0% 85%;
 
-    --surface: 224 16% 8%;
-    --surface-elevated: 224 16% 10%;
-    --surface-muted: 224 12% 12%;
+    /* Primitive brand / status ramps — dark variants */
+    --orange-50: 17 80% 6%;
+    --orange-500: 17 99% 60%;
+    --orange-600: 16 99% 70%;
+    --orange-700: 19 99% 80%;
 
-    --border: 224 8% 18%;
-    --input: 224 8% 18%;
-    --ring: 224 10% 38%;
+    --green-100: 142 65% 10%;
+    --green-500: 142 71% 45%;
+    --green-600: 138 58% 56%;
+    --green-700: 137 60% 68%;
 
-    --primary: 30 8% 95%;
-    --primary-foreground: 224 18% 6%;
+    --amber-100: 42 88% 13%;
+    --amber-500: 39 89% 50%;
+    --amber-600: 39 91% 60%;
+    --amber-700: 36 90% 71%;
 
-    --secondary: 224 12% 14%;
-    --secondary-foreground: 30 8% 95%;
+    --red-100: 0 62% 14%;
+    --red-500: 0 84% 60%;
+    --red-600: 0 87% 70%;
+    --red-700: 0 86% 79%;
 
-    --muted: 224 12% 14%;
-    --muted-foreground: 224 8% 62%;
+    --blue-500: 217 90% 60%;
 
-    --accent: 30 30% 18%;
-    --accent-foreground: 36 60% 88%;
+    /* ── Dark-mode alias overrides
+     */
+    --background: 30 8% 11%;                 /* warm dark page ~#1e1c19 */
+    --foreground: 38 22% 90%;                /* warm cream text ~#ece6d7 */
+    --surface-page: 30 8% 11%;
 
-    --destructive: 0 64% 46%;
-    --destructive-foreground: 0 0% 98%;
+    --sidebar: 30 8% 9%;                     /* slightly deeper, warm */
+    --sidebar-foreground: 38 22% 90%;
+    --sidebar-border: 30 6% 18%;
 
-    --sidebar: 224 22% 5%;
-    --sidebar-foreground: 30 8% 95%;
-    --sidebar-border: 224 8% 14%;
+    --surface: 30 8% 13%;                    /* card surface */
+    --surface-elevated: 30 8% 15%;           /* elevated card */
+    --surface-muted: 30 6% 17%;              /* code block bg */
 
-    --assistant-bg: 224 14% 9%;
-    --user-bg: 224 10% 13%;
+    --muted: 30 6% 17%;
+    --secondary: 30 6% 17%;
+    --secondary-foreground: 38 22% 90%;
+
+    --muted-foreground: 36 10% 60%;          /* warm mid for body muted */
+    --text-default: 38 22% 90%;
+    --text-subtle: 36 10% 70%;
+    --text-muted: 36 10% 60%;
+    --icon-default: 36 10% 65%;
+
+    --border-default: 30 6% 19%;
+    --border: 30 6% 19%;
+    --input: 30 6% 19%;
+    --ring: 30 8% 38%;                       /* subtle warm-gray focus, not brand */
+
+    --accent: 22 35% 18%;                    /* deep warm accent */
+    --accent-foreground: 32 70% 78%;
+
+    --assistant-bg: 30 8% 13%;
+    --user-bg: 30 8% 17%;
 
     color-scheme: dark;
   }
@@ -88,7 +245,6 @@
   }
 
   html {
-    /* Smooth swap between light/dark */
     transition:
       background-color 240ms ease,
       color 240ms ease;
@@ -104,13 +260,11 @@
     text-rendering: optimizeLegibility;
   }
 
-  /* Selection mirrors the accent token */
   ::selection {
     background-color: hsl(var(--accent));
     color: hsl(var(--accent-foreground));
   }
 
-  /* Thin, theme-aware scrollbars */
   * {
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--border)) transparent;
@@ -133,7 +287,6 @@
     background: transparent;
   }
 
-  /* Focus rings — a single restrained style across the app */
   :where(button, a, input, textarea, [role="radio"]):focus-visible {
     outline: 2px solid hsl(var(--ring) / 0.55);
     outline-offset: 2px;
@@ -142,7 +295,6 @@
 }
 
 @layer components {
-  /* Assistant markdown — keeps spacing tight and respects the design tokens. */
   .prose-chat > * + * {
     margin-top: 0.75rem;
   }
@@ -255,7 +407,6 @@
     margin: 1.25rem 0;
   }
 
-  /* A single hairline used to separate compositional regions */
   .hairline {
     background: linear-gradient(
       to right,
@@ -266,23 +417,21 @@
     height: 1px;
   }
 
-  /* Reusable card-like surface used by chips and message bubbles */
   .surface-card {
     @apply rounded-2xl border border-border bg-surface-elevated;
   }
 
-  /* Soft halo behind the empty state — whitish-red wash echoing the xyne mark */
   .halo {
     background: radial-gradient(
       60% 60% at 50% 30%,
-      hsl(4 88% 96% / 0.55),
+      hsl(var(--surface-brand-subtle) / 0.55),
       transparent 70%
     );
   }
   .dark .halo {
     background: radial-gradient(
       60% 60% at 50% 30%,
-      hsl(4 70% 60% / 0.09),
+      hsl(var(--surface-brand) / 0.09),
       transparent 70%
     );
   }

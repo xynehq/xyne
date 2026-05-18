@@ -19,6 +19,11 @@ import {
   InMemoryStreamBus,
   InMemoryUnitOfWork,
 } from "./storage/inMemory"
+import {
+  PostgresConversationRepo,
+  PostgresMessageRepo,
+  PostgresUnitOfWork,
+} from "./storage/postgres"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "agent/wiring" })
 
@@ -38,19 +43,29 @@ const memoryDeps = (): AgentDeps => ({
   uow: new InMemoryUnitOfWork(),
 })
 
+const postgresDeps = (): AgentDeps => ({
+  convs: new PostgresConversationRepo(),
+  msgs: new PostgresMessageRepo(),
+  stream: new InMemoryStreamBus(),
+  blobs: new InMemoryBlobStore(),
+  uow: new PostgresUnitOfWork(),
+})
+
 export function buildAgentDeps(): AgentDeps {
-  const driver = process.env["AGENT_STORAGE"] ?? "memory"
+  const driver = process.env["AGENT_STORAGE"] ?? "postgres"
   switch (driver) {
     case "memory":
       Logger.info("AgentDeps: in-memory storage")
       return memoryDeps()
-    // case "postgres": …  ← lands here when PostgresMessageRepo/etc. exist
+    case "postgres":
+      Logger.info("AgentDeps: postgres storage")
+      return postgresDeps()
     default:
       Logger.warn(
         { driver },
-        "Unknown AGENT_STORAGE value — falling back to memory",
+        "Unknown AGENT_STORAGE value — falling back to postgres",
       )
-      return memoryDeps()
+      return postgresDeps()
   }
 }
 
