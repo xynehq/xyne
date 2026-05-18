@@ -1,9 +1,11 @@
 import { Copy, RefreshCcw, AlertTriangle, Layers, RotateCw } from "lucide-react"
+import { isValidElement, useMemo } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { ToolCallChip } from "./ToolCallChip"
 import { ThinkingChip, type ReasoningItem } from "./ThinkingChip"
 import { CitationChip, CitationNumberProvider } from "./CitationChip"
+import { D2Diagram } from "./D2Diagram"
 import { remarkCitations } from "@/lib/remark-citations"
 import type { Block, MessageStats } from "@/lib/chat-store"
 import { usePreferences } from "@/lib/preferences"
@@ -12,30 +14,7 @@ import { usePreferences } from "@/lib/preferences"
 // prop is reference-stable, so we declare it module-scope.
 const MARKDOWN_PLUGINS = [remarkGfm, remarkCitations]
 
-// Custom <a> renderer: the remarkCitations plugin rewrites `[clf-xxx#42]`
-// tokens as <a href="cite:clf-xxx#42">…</a>. We detect the `cite:` scheme
-// and replace the link with a CitationChip.
 import type { Components } from "react-markdown"
-
-const markdownComponents: Components = {
-  a: (props): JSX.Element => {
-    const { href, children, ...rest } = props
-    if (typeof href === "string" && href.startsWith("cite:")) {
-      const body = href.slice("cite:".length)
-      const hash = body.indexOf("#")
-      const docId = hash >= 0 ? body.slice(0, hash) : body
-      const chunkRaw = hash >= 0 ? body.slice(hash + 1) : ""
-      const chunkIndex = /^\d+$/.test(chunkRaw) ? Number(chunkRaw) : 0
-      return <CitationChip docId={docId} chunkIndex={chunkIndex} />
-    }
-    return (
-      // eslint-disable-next-line react/jsx-no-target-blank
-      <a href={href} target="_blank" rel="noreferrer" {...rest}>
-        {children}
-      </a>
-    )
-  },
-}
 
 export type ChatRole = "user" | "assistant"
 
@@ -85,6 +64,54 @@ export function MessageBubble({
   stats,
 }: Props): JSX.Element {
   const { collapseTools } = usePreferences()
+
+  // react-markdown component overrides. `a` turns `cite:` links (rewritten by
+  // remarkCitations) into CitationChips; `pre` swaps ```d2 fenced code blocks
+  // for a rendered D2 diagram. Memoised on `pending` — D2Diagram needs it to
+  // suppress compile errors while the source is still streaming in.
+  const markdownComponents = useMemo<Components>(
+    () => ({
+      a: (props): JSX.Element => {
+        const { href, children, ...rest } = props
+        if (typeof href === "string" && href.startsWith("cite:")) {
+          const body = href.slice("cite:".length)
+          const hash = body.indexOf("#")
+          const docId = hash >= 0 ? body.slice(0, hash) : body
+          const chunkRaw = hash >= 0 ? body.slice(hash + 1) : ""
+          const chunkIndex = /^\d+$/.test(chunkRaw) ? Number(chunkRaw) : 0
+          return <CitationChip docId={docId} chunkIndex={chunkIndex} />
+        }
+        return (
+          // eslint-disable-next-line react/jsx-no-target-blank
+          <a href={href} target="_blank" rel="noreferrer" {...rest}>
+            {children}
+          </a>
+        )
+      },
+      pre: ({ children }): JSX.Element => {
+        const child = Array.isArray(children) ? children[0] : children
+        if (isValidElement(child)) {
+          const codeProps = child.props as {
+            className?: string
+            children?: unknown
+          }
+          if (
+            typeof codeProps.className === "string" &&
+            /\blanguage-d2\b/.test(codeProps.className)
+          ) {
+            const raw = codeProps.children
+            const source = Array.isArray(raw)
+              ? raw.join("")
+              : String(raw ?? "")
+            return <D2Diagram code={source} pending={pending} />
+          }
+        }
+        return <pre>{children}</pre>
+      },
+    }),
+    [pending],
+  )
+
   if (role === "user") {
     const body = collectText(blocks)
     return (

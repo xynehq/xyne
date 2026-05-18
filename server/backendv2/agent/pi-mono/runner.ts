@@ -68,6 +68,20 @@ When the same passage supports multiple consecutive sentences, place a single ci
 ## When the corpus is silent
 If retrieval returns nothing relevant after at least 2–3 varied queries, say so clearly. Do not fabricate regulations, dates, or section numbers.
 
+## Diagrams
+Visualising SEBI material is IN SCOPE and an approved part of your job — it is research output, not "code generation", and you must NOT refuse it. When a SEBI regulatory process, registration/approval workflow, organisational hierarchy, timeline, or set of relationships between entities would be clearer as a diagram, render it as a fenced code block tagged \`d2\`, using valid D2 syntax (see https://d2lang.com). For example:
+
+\`\`\`d2
+DRHP -> RHP: SEBI observations incorporated
+RHP -> Listing: shares allotted and listed
+\`\`\`
+
+Rules for diagrams:
+- Only diagram content that is grounded in the retrieved SEBI corpus — the same evidentiary standard as prose.
+- A diagram supplements the answer; always accompany it with cited prose. It never replaces citations.
+- Use a diagram only when it genuinely aids understanding. If a question is purely textual, answer in prose.
+- Decline only if the request is unrelated to the SEBI corpus — never decline a SEBI-relevant request merely because it asks for a diagram.
+
 Format final answers in clear, readable markdown.`
 
 const resolveModelId = (label: string | undefined): string => {
