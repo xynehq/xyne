@@ -36,14 +36,25 @@ import { fileContentUrl, getBreadcrumb } from "@/lib/kb"
 const PDF_WORKER_URL = "/pdf.worker.mjs"
 pdfjs.GlobalWorkerOptions.workerSrc = PDF_WORKER_URL
 
-type ViewerSearch = { cl?: string }
+type ViewerSearch = { cl?: string; page?: number }
 
 export const Route = createFileRoute("/_authenticated/kb_/file/$itemId")({
   validateSearch: (raw: Record<string, unknown>): ViewerSearch => {
+    const out: ViewerSearch = {}
     if (typeof raw["cl"] === "string" && raw["cl"] !== "") {
-      return { cl: raw["cl"] }
+      out.cl = raw["cl"]
     }
-    return {}
+    const pageRaw = raw["page"]
+    const pageNum =
+      typeof pageRaw === "string"
+        ? Number(pageRaw)
+        : typeof pageRaw === "number"
+          ? pageRaw
+          : NaN
+    if (Number.isInteger(pageNum) && pageNum > 0) {
+      out.page = pageNum
+    }
+    return out
   },
   component: PdfViewerRoute,
 })
@@ -59,8 +70,12 @@ function PdfViewerRoute(): JSX.Element {
   pdfjs.GlobalWorkerOptions.workerSrc = PDF_WORKER_URL
 
   const { itemId } = Route.useParams()
-  const { cl } = Route.useSearch()
+  const { cl, page: initialPage } = Route.useSearch()
   const navigate = useNavigate()
+  // Track whether we've already honored the `?page=` query so we only
+  // auto-scroll once per route load (otherwise scrolling the user back
+  // to the cited page on every render would fight their input).
+  const didJumpRef = useRef(false)
 
   const [numPages, setNumPages] = useState<number>(0)
   const [visiblePage, setVisiblePage] = useState<number>(1)
@@ -122,6 +137,19 @@ function PdfViewerRoute(): JSX.Element {
   useEffect((): void => {
     virtualizer.measure()
   }, [scale, virtualizer])
+
+  // Honor `?page=N` once per load — opened from a citation chip in the chat
+  // slide-over. Wait for numPages so the virtualizer has a defined range,
+  // and guard with didJumpRef so the user can scroll away afterwards.
+  useEffect((): void => {
+    if (!initialPage || numPages === 0 || didJumpRef.current) return
+    if (initialPage > numPages) {
+      didJumpRef.current = true
+      return
+    }
+    virtualizer.scrollToIndex(initialPage - 1, { align: "start" })
+    didJumpRef.current = true
+  }, [initialPage, numPages, virtualizer])
 
   // Track which page is "current" for the indicator. Derive from the
   // virtualizer's items + scroll offset: the page whose top is closest to

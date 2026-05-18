@@ -3,8 +3,39 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { ToolCallChip } from "./ToolCallChip"
 import { ThinkingChip, type ReasoningItem } from "./ThinkingChip"
+import { CitationChip, CitationNumberProvider } from "./CitationChip"
+import { remarkCitations } from "@/lib/remark-citations"
 import type { Block, MessageStats } from "@/lib/chat-store"
 import { usePreferences } from "@/lib/preferences"
+
+// Shared between every assistant text block — react-markdown's `components`
+// prop is reference-stable, so we declare it module-scope.
+const MARKDOWN_PLUGINS = [remarkGfm, remarkCitations]
+
+// Custom <a> renderer: the remarkCitations plugin rewrites `[clf-xxx#42]`
+// tokens as <a href="cite:clf-xxx#42">…</a>. We detect the `cite:` scheme
+// and replace the link with a CitationChip.
+import type { Components } from "react-markdown"
+
+const markdownComponents: Components = {
+  a: (props): JSX.Element => {
+    const { href, children, ...rest } = props
+    if (typeof href === "string" && href.startsWith("cite:")) {
+      const body = href.slice("cite:".length)
+      const hash = body.indexOf("#")
+      const docId = hash >= 0 ? body.slice(0, hash) : body
+      const chunkRaw = hash >= 0 ? body.slice(hash + 1) : ""
+      const chunkIndex = /^\d+$/.test(chunkRaw) ? Number(chunkRaw) : 0
+      return <CitationChip docId={docId} chunkIndex={chunkIndex} />
+    }
+    return (
+      // eslint-disable-next-line react/jsx-no-target-blank
+      <a href={href} target="_blank" rel="noreferrer" {...rest}>
+        {children}
+      </a>
+    )
+  },
+}
 
 export type ChatRole = "user" | "assistant"
 
@@ -113,6 +144,7 @@ export function MessageBubble({
 
   return (
     <article className="group w-full px-2 py-5 sm:px-4">
+      <CitationNumberProvider>
       <div className="flex min-w-0 flex-col gap-2">
         {hasAnyContent && (
           <div className="prose-chat text-[15px] leading-7 text-foreground">
@@ -126,7 +158,11 @@ export function MessageBubble({
             {renderBlocks.map(({ block: b, key, isLastBlock }) => {
               if (b.kind === "text") {
                 return (
-                  <ReactMarkdown key={key} remarkPlugins={[remarkGfm]}>
+                  <ReactMarkdown
+                    key={key}
+                    remarkPlugins={MARKDOWN_PLUGINS}
+                    components={markdownComponents}
+                  >
                     {b.text}
                   </ReactMarkdown>
                 )
@@ -195,6 +231,7 @@ export function MessageBubble({
           </div>
         )}
       </div>
+      </CitationNumberProvider>
     </article>
   )
 }

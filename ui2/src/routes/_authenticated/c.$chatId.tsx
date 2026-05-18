@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import { Topbar } from "@/components/Topbar"
 import { Composer } from "@/components/Composer"
 import { MessageBubble } from "@/components/MessageBubble"
+import { CitationPanel } from "@/components/CitationPanel"
 import { chatStore, useConversation, type Block } from "@/lib/chat-store"
 import { useModels } from "@/lib/models"
 import { useAgents } from "@/lib/agents"
@@ -183,6 +184,7 @@ function ChatThreadRoute(): JSX.Element {
           </div>
         </div>
       </main>
+      <CitationPanel />
     </div>
   )
 }

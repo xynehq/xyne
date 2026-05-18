@@ -147,6 +147,29 @@ export const getBreadcrumb = async (
 export const fileContentUrl = (clId: string, itemId: string): string =>
   `/v2/kb/collections/${clId}/files/${itemId}/content`
 
+// ── Citation resolution ────────────────────────────────────────────────────
+
+export type CitationTarget = {
+  docId: string
+  itemId: string
+  collectionId: string
+  name: string
+  chunkIndex: number | null
+  pageNumber: number | null
+}
+
+/** Resolve a `[docId#chunk]` citation token emitted by pi-mono into the
+ *  metadata needed to open the source file in the slide-over viewer. */
+export const resolveCitation = (
+  docId: string,
+  chunkIndex: number | null,
+): Promise<CitationTarget> => {
+  const qs = chunkIndex !== null ? `?chunk=${String(chunkIndex)}` : ""
+  return apiFetch<CitationTarget>(
+    `/v2/kb/files/resolve/${encodeURIComponent(docId)}${qs}`,
+  )
+}
+
 // ── Row → BrowserEntry mapping ─────────────────────────────────────────────
 
 export const itemToEntry = (item: ItemRow): BrowserEntry => {

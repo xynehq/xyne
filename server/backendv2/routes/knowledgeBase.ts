@@ -40,7 +40,8 @@ import {
   FileProcessingQueue,
   PdfFileProcessingQueue,
 } from "@/queue/api-server-queue"
-import { DeleteDocument } from "@/search/vespa"
+import { DeleteDocument, GetDocumentsByDocIds } from "@/search/vespa"
+import { getTracer } from "@/tracer"
 import { KbItemsSchema } from "@xyne/vespa-ts/types"
 import { expandSheetIds } from "@/search/utils"
 import { ProcessingJobType, type TxnOrClient } from "@/types"
@@ -693,6 +694,80 @@ router.get("/collections/:clId/files/:itemId/content", async (c) => {
       })
       rs.on("error", reject)
     })
+  })
+})
+
+// ── Citation resolution ────────────────────────────────────────────────────
+//
+// GET /v2/kb/files/resolve/:docId[?chunk=N]
+//
+// The pi-mono agent emits citations as `[<docId>#<chunk_index>]`. The chat UI
+// strips those tokens, calls this endpoint per unique docId, and opens the
+// resolved file in the slide-over viewer at the cited chunk's page number.
+//
+// Returns 404 when the docId isn't present in collection_items (e.g. agent
+// hallucinated, or the file was deleted post-ingest). Returns 403 if the
+// caller can't read the underlying collection — same rule as the rest of
+// /v2/kb. We deliberately do NOT leak the vespa fields directly; only the
+// minimal trio (clId, itemId, name) plus the resolved page number.
+router.get("/files/resolve/:docId", async (c) => {
+  const actor = await loadActor(c)
+  const docId = c.req.param("docId")
+  const chunkRaw = c.req.query("chunk")
+  const chunkIndex = chunkRaw && /^\d+$/.test(chunkRaw) ? Number(chunkRaw) : null
+
+  const [row] = await db
+    .select({
+      itemId: collectionItems.id,
+      collectionId: collectionItems.collectionId,
+      name: collectionItems.name,
+    })
+    .from(collectionItems)
+    .where(eq(collectionItems.vespaDocId, docId))
+    .limit(1)
+  if (!row) {
+    throw new HTTPException(404, { message: "Unknown docId" })
+  }
+
+  // ACL — viewer needs at least read access on the parent collection.
+  await loadCollection(row.collectionId, actor)
+
+  // Best-effort page resolution. The chunks_map field on the KB schema maps
+  // chunk_index → page_numbers[]; we return the first page in the array so
+  // the viewer can scroll there. Anything that fails here is non-fatal: the
+  // viewer just opens at page 1.
+  let pageNumber: number | null = null
+  if (chunkIndex !== null) {
+    try {
+      const span = getTracer("backendv2-kb").startSpan("resolveCitation")
+      const resp = await GetDocumentsByDocIds([docId], span)
+      const doc = resp?.root?.children?.[0]
+      const fields = (doc?.fields ?? {}) as Record<string, unknown>
+      const chunksMap = fields["chunks_map"]
+      if (Array.isArray(chunksMap)) {
+        const entry = (
+          chunksMap as Array<{
+            chunk_index: number
+            page_numbers?: number[]
+          }>
+        ).find((m) => m.chunk_index === chunkIndex)
+        const first = entry?.page_numbers?.[0]
+        if (typeof first === "number" && first > 0) {
+          pageNumber = first
+        }
+      }
+    } catch (err) {
+      Logger.warn({ err, docId, chunkIndex }, "resolve: vespa page lookup failed")
+    }
+  }
+
+  return c.json({
+    docId,
+    itemId: row.itemId,
+    collectionId: row.collectionId,
+    name: row.name,
+    chunkIndex,
+    pageNumber,
   })
 })
 
