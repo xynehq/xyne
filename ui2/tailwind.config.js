@@ -5,16 +5,50 @@ export default {
   theme: {
     extend: {
       colors: {
+        /* ── Legacy shadcn aliases (preserved) ───────────────────────── */
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
+
         surface: {
-          DEFAULT: "hsl(var(--surface))",
+          DEFAULT: "hsl(var(--surface-default))",
+          page: "hsl(var(--surface-page))",
+          hover: "hsl(var(--surface-hover))",
           elevated: "hsl(var(--surface-elevated))",
           muted: "hsl(var(--surface-muted))",
+          disabled: "hsl(var(--surface-disabled))",
+          highlight: "hsl(var(--surface-highlight))",
+          selected: "hsl(var(--surface-selected))",
+          inverse: "hsl(var(--surface-inverse))",
+          information: "hsl(var(--surface-information))",
+          brand: {
+            DEFAULT: "hsl(var(--surface-brand))",
+            subtle: "hsl(var(--surface-brand-subtle))",
+            hover: "hsl(var(--surface-brand-hover))",
+            pressed: "hsl(var(--surface-brand-pressed))",
+          },
+          success: {
+            DEFAULT: "hsl(var(--surface-success))",
+            subtle: "hsl(var(--surface-success-subtle))",
+            hover: "hsl(var(--surface-success-hover))",
+            pressed: "hsl(var(--surface-success-pressed))",
+          },
+          warning: {
+            DEFAULT: "hsl(var(--surface-warning))",
+            subtle: "hsl(var(--surface-warning-subtle))",
+            hover: "hsl(var(--surface-warning-hover))",
+            pressed: "hsl(var(--surface-warning-pressed))",
+          },
+          error: {
+            DEFAULT: "hsl(var(--surface-error))",
+            subtle: "hsl(var(--surface-error-subtle))",
+            hover: "hsl(var(--surface-error-hover))",
+            pressed: "hsl(var(--surface-error-pressed))",
+          },
         },
+
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
@@ -44,7 +78,83 @@ export default {
           assistant: "hsl(var(--assistant-bg))",
           user: "hsl(var(--user-bg))",
         },
+
+        /* ── Figma semantic tokens ───────────────────────────────────── */
+        brand: {
+          DEFAULT: "hsl(var(--surface-brand))",
+          subtle: "hsl(var(--surface-brand-subtle))",
+          hover: "hsl(var(--surface-brand-hover))",
+          pressed: "hsl(var(--surface-brand-pressed))",
+          fg: "hsl(var(--text-brand))",
+          "fg-hover": "hsl(var(--text-brand-hover))",
+        },
+        success: {
+          DEFAULT: "hsl(var(--surface-success))",
+          subtle: "hsl(var(--surface-success-subtle))",
+          hover: "hsl(var(--surface-success-hover))",
+          pressed: "hsl(var(--surface-success-pressed))",
+          fg: "hsl(var(--text-success))",
+        },
+        warning: {
+          DEFAULT: "hsl(var(--surface-warning))",
+          subtle: "hsl(var(--surface-warning-subtle))",
+          hover: "hsl(var(--surface-warning-hover))",
+          pressed: "hsl(var(--surface-warning-pressed))",
+          fg: "hsl(var(--text-warning))",
+        },
+        error: {
+          DEFAULT: "hsl(var(--surface-error))",
+          subtle: "hsl(var(--surface-error-subtle))",
+          hover: "hsl(var(--surface-error-hover))",
+          pressed: "hsl(var(--surface-error-pressed))",
+          fg: "hsl(var(--text-error))",
+        },
+        info: {
+          DEFAULT: "hsl(var(--surface-information))",
+          fg: "hsl(var(--text-information))",
+        },
+
+        /* Foreground / text tokens (use as text-fg-*) */
+        fg: {
+          DEFAULT: "hsl(var(--text-default))",
+          subtle: "hsl(var(--text-subtle))",
+          muted: "hsl(var(--text-muted))",
+          disabled: "hsl(var(--text-disabled))",
+          "on-action": "hsl(var(--text-on-action))",
+          "on-disabled": "hsl(var(--text-on-disabled))",
+        },
+
+        /* Icon tokens (use as text-icon-* on svg/icon elements) */
+        icon: {
+          DEFAULT: "hsl(var(--icon-default))",
+          disabled: "hsl(var(--icon-disabled))",
+          "on-action": "hsl(var(--icon-on-action))",
+          "on-disabled": "hsl(var(--icon-on-disabled))",
+          brand: "hsl(var(--icon-brand))",
+          "brand-hover": "hsl(var(--icon-brand-hover))",
+          success: "hsl(var(--icon-success))",
+          warning: "hsl(var(--icon-warning))",
+          error: "hsl(var(--icon-error))",
+          info: "hsl(var(--icon-information))",
+        },
       },
+
+      /* Border-color tokens (use as border-line-*) */
+      borderColor: {
+        line: {
+          DEFAULT: "hsl(var(--border-default))",
+          outline: "hsl(var(--border-outline))",
+          bold: "hsl(var(--border-bold))",
+          subtle: "hsl(var(--border-subtle))",
+          disabled: "hsl(var(--border-disabled))",
+          brand: "hsl(var(--border-brand))",
+          "brand-hover": "hsl(var(--border-brand-hover))",
+          success: "hsl(var(--border-success))",
+          warning: "hsl(var(--border-warning))",
+          error: "hsl(var(--border-error))",
+        },
+      },
+
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 4px)",
