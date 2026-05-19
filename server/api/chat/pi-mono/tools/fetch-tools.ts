@@ -27,6 +27,21 @@ export interface ConnectionStatus {
 export async function checkConnectionStatus(
   email: string,
 ): Promise<ConnectionStatus> {
+  const querySyncJob = async (
+    app: Apps,
+  ): Promise<ReturnType<typeof getAppSyncJobsByEmail>> => {
+    try {
+      return await getAppSyncJobsByEmail(
+        db,
+        app,
+        config.CurrentAuthType,
+        email,
+      )
+    } catch {
+      return []
+    }
+  }
+
   const [
     driveConnector,
     gmailConnector,
@@ -34,21 +49,11 @@ export async function checkConnectionStatus(
     contactsConnector,
     slackConnector,
   ] = await Promise.all([
-    getAppSyncJobsByEmail(db, Apps.GoogleDrive, config.CurrentAuthType, email),
-    getAppSyncJobsByEmail(db, Apps.Gmail, config.CurrentAuthType, email),
-    getAppSyncJobsByEmail(
-      db,
-      Apps.GoogleCalendar,
-      config.CurrentAuthType,
-      email,
-    ),
-    getAppSyncJobsByEmail(
-      db,
-      Apps.GoogleWorkspace,
-      config.CurrentAuthType,
-      email,
-    ),
-    getAppSyncJobsByEmail(db, Apps.Slack, config.CurrentAuthType, email),
+    querySyncJob(Apps.GoogleDrive),
+    querySyncJob(Apps.Gmail),
+    querySyncJob(Apps.GoogleCalendar),
+    querySyncJob(Apps.GoogleWorkspace),
+    querySyncJob(Apps.Slack),
   ])
 
   return {
