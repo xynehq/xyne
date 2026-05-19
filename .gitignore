@@ -220,3 +220,6 @@ data/app-assets/
 # docker-compose app file
 deployment/portable/docker-compose.app.yml
 deployment/portable/docker-compose.sync.yml
+# Helm environment overrides (contain secrets)
+deployment/helm/xyne/values-*.yaml
+!deployment/helm/xyne/values.yaml
