@@ -53,7 +53,8 @@ else
 fi
 
 
-echo "Deploying docker vespa at http://vespa:19071..."
-vespa deploy --wait 960 --target http://vespa:19071
+VESPA_DEPLOY_TARGET="http://${VESPA_HOST:-vespa}:19071"
+echo "Deploying docker vespa at ${VESPA_DEPLOY_TARGET}..."
+vespa deploy --wait 960 --target "${VESPA_DEPLOY_TARGET}"
 # vespa destroy
-vespa status --wait 75 --target http://vespa:19071
+vespa status --wait 75 --target "${VESPA_DEPLOY_TARGET}"
