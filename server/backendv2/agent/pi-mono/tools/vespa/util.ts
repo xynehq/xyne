@@ -80,26 +80,37 @@ export const titleOf = (fields: {
 export const topChunkIndex = (
   fields: Record<string, unknown>,
 ): number | null => {
+  const top = topChunkIndices(fields, 1)
+  return top[0]?.index ?? null
+}
+
+// Top-N chunks for a hit, sorted by score descending. Same data source as
+// `topChunkIndex` — `matchfeatures.chunk_scores.cells` — but returns the
+// full ranked list (capped at `n`) so callers can render multiple snippets
+// per document.
+export const topChunkIndices = (
+  fields: Record<string, unknown>,
+  n: number,
+): Array<{ index: number; score: number }> => {
   const mf = fields["matchfeatures"] as
     | { chunk_scores?: { cells?: Record<string, number> } }
     | undefined
   const cells = mf?.chunk_scores?.cells
-  if (!cells) {
-    return null
+  if (!cells || n <= 0) {
+    return []
   }
-  let bestIdx: number | null = null
-  let bestScore = -Infinity
+  const ranked: Array<{ index: number; score: number }> = []
   for (const [k, v] of Object.entries(cells)) {
     if (typeof v !== "number") {
       continue
     }
     const idx = Number(k)
-    if (Number.isFinite(idx) && v > bestScore) {
-      bestScore = v
-      bestIdx = idx
+    if (Number.isFinite(idx)) {
+      ranked.push({ index: idx, score: v })
     }
   }
-  return bestIdx
+  ranked.sort((a, b) => b.score - a.score)
+  return ranked.slice(0, n)
 }
 
 // Given a chunk_index, find the matching snippet text in chunks_summary.

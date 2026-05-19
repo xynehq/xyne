@@ -22,12 +22,19 @@ import config from "@/config"
 
 import type { AgentScope } from "../../../agent-scope"
 import type { Log } from "../../../log"
-import { formatPages, snippetForChunk, textResult, titleOf, topChunkIndex, truncate } from "./util"
+import { formatPages, snippetForChunk, textResult, titleOf, topChunkIndices, truncate } from "./util"
 
 // Max hits we return — the agent should narrow further if it gets a wide
 // result set rather than ask Vespa for a million rows.
 const DEFAULT_LIMIT = 15
 const MAX_LIMIT = 30
+
+// When the caller passes `query`, ranking is on and `matchfeatures.chunk_scores`
+// has signal — surface the top-N chunks per doc (same cap as vespaSearch) so
+// the agent gets multiple anchored passages, not just one. With no query
+// ranking is unranked and there are zero chunk scores, so no snippets render
+// regardless of this cap.
+const TOP_CHUNKS_PER_DOC = 3
 
 const DESCRIPTION = [
   "Structured metadata search across the SEBI corpus. Use when the user ",
@@ -36,7 +43,10 @@ const DESCRIPTION = [
   "matching ALL provided filters (AND semantics). No semantic ranking, no ",
   "embeddings — exact + BM25 on the metadata fields. ",
   "Prefer this over `vespaSearch` whenever the user's question pivots on a ",
-  "specific number, ID, or date rather than a topic.",
+  "specific number, ID, or date rather than a topic. ",
+  `When a topical \`query\` is passed, each hit also carries up to `,
+  `${String(TOP_CHUNKS_PER_DOC)} top-scoring \`<chunk>\` snippets from the `,
+  "document so you can see anchored passages, not just metadata.",
 ].join("")
 
 const StringOrList = Type.Union([
@@ -424,30 +434,31 @@ export const buildMetadataSearchTool = (
               )
             : []
 
-          // Best-effort snippet from the top chunk (when present) so the agent
-          // sees what the document actually says, not just metadata. With
-          // ranking=unranked there's no chunk_scores so we may not have one.
-          const chunkIndex = topChunkIndex(fields)
-          const snippet =
-            chunkIndex !== null ? snippetForChunk(fields, chunkIndex) : ""
-
-          let pages = ""
-          const chunksMap = fields["chunks_map"]
-          if (Array.isArray(chunksMap) && chunkIndex !== null) {
-            const entry = (
-              chunksMap as Array<{
-                chunk_index: number
-                page_numbers?: number[]
-              }>
-            ).find((m) => m.chunk_index === chunkIndex)
-            pages = formatPages(entry?.page_numbers)
-          }
+          // Best-effort snippets from the top chunks (when present) so the
+          // agent sees what the document actually says, not just metadata.
+          // With ranking=unranked there's no chunk_scores so `topChunks` is
+          // empty and no <chunk> blocks render.
+          const topChunks = topChunkIndices(fields, TOP_CHUNKS_PER_DOC)
+          const chunksMap = fields["chunks_map"] as
+            | Array<{ chunk_index: number; page_numbers?: number[] }>
+            | undefined
+          const renderedChunks = topChunks
+            .map((c) => {
+              const snippet = snippetForChunk(fields, c.index)
+              const pages = Array.isArray(chunksMap)
+                ? formatPages(
+                    chunksMap.find((m) => m.chunk_index === c.index)
+                      ?.page_numbers,
+                  )
+                : ""
+              return { ...c, snippet, pages }
+            })
+            .filter((c) => c.snippet)
 
           lines.push(
             `  <hit rank="${String(rank)}" docId=${JSON.stringify(docId)}` +
               (documentId ? ` document_id=${JSON.stringify(documentId)}` : "") +
               (documentDate ? ` document_date=${JSON.stringify(documentDate)}` : "") +
-              (pages ? ` pages="${pages}"` : "") +
               `>`,
           )
           lines.push(`    <title>${title}</title>`)
@@ -464,8 +475,13 @@ export const buildMetadataSearchTool = (
               `    <references>${referencedIds.join(", ")}</references>`,
             )
           }
-          if (snippet) {
-            lines.push(`    <snippet>${truncate(snippet)}</snippet>`)
+          for (const c of renderedChunks) {
+            lines.push(
+              `    <chunk chunk_index="${String(c.index)}" ` +
+                `score="${c.score.toFixed(4)}"` +
+                `${c.pages ? ` pages="${c.pages}"` : ""}>` +
+                `${truncate(c.snippet)}</chunk>`,
+            )
           }
           lines.push(`  </hit>`)
 
