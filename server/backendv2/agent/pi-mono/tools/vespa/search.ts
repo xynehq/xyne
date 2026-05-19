@@ -21,20 +21,27 @@ import {
   snippetForChunk,
   textResult,
   titleOf,
-  topChunkIndex,
+  topChunkIndices,
   truncate,
 } from "./util"
+
+// Per-hit snippet cap. Showing the agent multiple top-scoring chunks per
+// document gives a far better recall signal than just the single best one —
+// closely related passages (definitions + exceptions, header + table row,
+// etc.) often live in adjacent chunks but score differently.
+const TOP_CHUNKS_PER_DOC = 3
 
 const DESCRIPTION = [
   "Semantic search across the ingested SEBI corpus (Acts, Regulations, ",
   "Circulars, Master Circulars, Notifications, DRHPs, RHPs, Filings).",
-  "Returns the most relevant chunks with their `docId`, chunk index, ",
-  "title, page range and a snippet of the content. Use this as your ",
-  "FIRST step on any research task to discover candidate documents.",
-  "After this, drill in with `getChunks` (to read more around a specific ",
-  "chunk) or `searchWithinDoc` (to find other relevant chunks in the same ",
-  "document). Issue multiple varied queries — synonyms, regulation numbers, ",
-  "circular numbers, section names — to maximise recall. Be specific.",
+  `Each hit returns up to ${String(TOP_CHUNKS_PER_DOC)} top-scoring chunks `,
+  "from the same document (each with its own `chunk_index`, `score`, and ",
+  "snippet) so you can compare passages without an extra round-trip. Use ",
+  "this as your FIRST step on any research task to discover candidate ",
+  "documents. After this, drill in with `getChunks` (to read more around a ",
+  "specific chunk) or `searchWithinDoc` (to find other relevant chunks in ",
+  "the same document). Issue multiple varied queries — synonyms, regulation ",
+  "numbers, circular numbers, section names — to maximise recall. Be specific.",
 ].join("")
 
 const params = Type.Object({
@@ -153,6 +160,7 @@ export const buildVespaSearchTool = (
           rank: number
           docId: string
           chunkIndex: number | null
+          chunkIndices: number[]
           score: number
           title: string
         }> = []
@@ -169,38 +177,49 @@ export const buildVespaSearchTool = (
           })
           const score = typeof hit?.relevance === "number" ? hit.relevance : 0
 
-          // The top-scoring chunk index comes from `matchfeatures.chunk_scores`.
+          // Top-N chunk indices come from `matchfeatures.chunk_scores`.
           // Snippet text is fetched from `chunks_summary` at the matching
           // position (via `chunks_pos_summary` mapping).
-          const chunkIndex = topChunkIndex(fields)
-          const snippet =
-            chunkIndex !== null ? snippetForChunk(fields, chunkIndex) : ""
-
-          // Resolve page numbers for this chunk via chunks_map if available.
-          let pages = ""
-          const chunksMap = fields["chunks_map"]
-          if (Array.isArray(chunksMap) && chunkIndex !== null) {
-            const entry = (
-              chunksMap as Array<{
-                chunk_index: number
-                page_numbers?: number[]
-              }>
-            ).find((m) => m.chunk_index === chunkIndex)
-            pages = formatPages(entry?.page_numbers)
-          }
+          const topChunks = topChunkIndices(fields, TOP_CHUNKS_PER_DOC)
+          const chunksMap = fields["chunks_map"] as
+            | Array<{ chunk_index: number; page_numbers?: number[] }>
+            | undefined
+          const renderedChunks = topChunks
+            .map((c) => {
+              const snippet = snippetForChunk(fields, c.index)
+              const pages = Array.isArray(chunksMap)
+                ? formatPages(
+                    chunksMap.find((m) => m.chunk_index === c.index)
+                      ?.page_numbers,
+                  )
+                : ""
+              return { ...c, snippet, pages }
+            })
+            .filter((c) => c.snippet)
 
           lines.push(
             `  <hit rank="${String(rank)}" docId=${JSON.stringify(docId)} ` +
-              `chunk_index="${chunkIndex === null ? "" : String(chunkIndex)}" ` +
-              `score="${score.toFixed(4)}"${pages ? ` pages="${pages}"` : ""}>`,
+              `score="${score.toFixed(4)}">`,
           )
           lines.push(`    <title>${title}</title>`)
-          if (snippet) {
-            lines.push(`    <snippet>${truncate(snippet)}</snippet>`)
+          for (const c of renderedChunks) {
+            lines.push(
+              `    <chunk chunk_index="${String(c.index)}" ` +
+                `score="${c.score.toFixed(4)}"` +
+                `${c.pages ? ` pages="${c.pages}"` : ""}>` +
+                `${truncate(c.snippet)}</chunk>`,
+            )
           }
           lines.push(`  </hit>`)
 
-          details.push({ rank, docId, chunkIndex, score, title })
+          details.push({
+            rank,
+            docId,
+            chunkIndex: renderedChunks[0]?.index ?? null,
+            chunkIndices: renderedChunks.map((c) => c.index),
+            score,
+            title,
+          })
         })
 
         lines.push(`</search_results>`)
