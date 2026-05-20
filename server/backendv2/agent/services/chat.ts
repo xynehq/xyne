@@ -2,8 +2,15 @@
 // Auth checks live here, NOT in the repos.
 
 import type { AgentDeps } from "../wiring"
-import { type AgentScope, loadAgentScope } from "../agent-scope"
+import {
+  type AgentScope,
+  type DispatchableSubAgent,
+  loadAgentScope,
+  loadWorkspaceDefaultPromptInputs,
+} from "../agent-scope"
 import { runPiMonoTurn } from "../pi-mono/runner"
+import { resolveAgentSystemPrompt } from "../pi-mono/system-prompt"
+import type { NestedRunPersistence } from "../pi-mono/tools/dispatch-subagent"
 import { generateTitle } from "../title/generate"
 import { baseLogger } from "../log"
 
@@ -23,6 +30,7 @@ import {
   type UserId,
   type WorkspaceId,
   asAgentId,
+  asRunId,
   asToolCallId,
   asUserId,
   asWorkspaceId,
@@ -342,6 +350,7 @@ export class ChatService {
       inflightKey,
       input,
       viewerUserId: viewer.userId,
+      viewerWorkspaceId: viewer.workspaceId,
       runId: setup.runId,
       assistantMessage: setup.assistantMessage,
       turn: setup.turn,
@@ -371,6 +380,7 @@ export class ChatService {
       thinkingLevel?: "minimal" | "low" | "medium" | "high"
     }
     viewerUserId: UserId
+    viewerWorkspaceId: WorkspaceId
     runId: RunId
     assistantMessage: Message
     turn: Turn
@@ -383,6 +393,7 @@ export class ChatService {
       inflightKey,
       input,
       viewerUserId,
+      viewerWorkspaceId,
       runId,
       assistantMessage,
       turn,
@@ -436,6 +447,119 @@ export class ChatService {
         pendingThinking = ""
       }
 
+      // Compose the system prompt for this turn. Resolution order:
+      //   1. Custom agent selected (agentScope is set) → use its
+      //      section overrides + sub-agents.
+      //   2. No agent selected → fall back to the workspace default
+      //      agent's row (M4b). The default row's appIntegrations are
+      //      NOT applied to vespa search (we deliberately skip
+      //      AgentScope construction for this path so search stays
+      //      KB-only); only its prompt + tools + sub-agents are used.
+      //   3. No default row exists yet → omit `systemPrompt` so the
+      //      runner uses its baked DEFAULT_SYSTEM_PROMPT. Matches
+      //      pre-M4b behaviour.
+      let assembledPrompt: string | undefined
+      let resolvedToolNames: string[] = []
+      let resolvedSubAgents: DispatchableSubAgent[] = []
+      let resolvedAgentId: string = "default-agent"
+      if (agentScope) {
+        assembledPrompt = resolveAgentSystemPrompt({
+          systemPromptMain: agentScope.systemPromptMain,
+          systemPromptTools: agentScope.systemPromptTools,
+          systemPromptSubagents: agentScope.systemPromptSubagents,
+          subAgents: agentScope.subAgents,
+        })
+        resolvedToolNames = agentScope.tools
+        resolvedSubAgents = agentScope.subAgents
+        resolvedAgentId = agentScope.externalId
+      } else {
+        const defaults = await loadWorkspaceDefaultPromptInputs({
+          userId: viewerUserId,
+          workspaceId: viewerWorkspaceId,
+        })
+        if (defaults) {
+          assembledPrompt = resolveAgentSystemPrompt(defaults)
+          resolvedToolNames = defaults.tools
+          resolvedSubAgents = defaults.subAgents
+          // Workspace-default agentId is opaque to the runner here; the
+          // dispatch persistence call below sets agent_id on the nested
+          // run to the parent's run.agentId (the default agent's id is
+          // already on the parent run row from setup).
+        }
+      }
+
+      // M7 — wire the dispatch tool's persistence callbacks. Only the
+      // start/finish lifecycle: insert a nested v2_chat_runs row when
+      // dispatch begins, then close it + persist the sub-agent's
+      // tool_call / message trace when it ends. The dispatch tool
+      // itself owns the in-memory iteration; chat.ts only sees the
+      // boundaries.
+      const dispatchPersistence: NestedRunPersistence = {
+        start: async ({ subAgentExternalId, model }) => {
+          const nested = await this.deps.msgs.startRun(
+            turn.id,
+            {
+              parentRunId: runId,
+              agentId: asAgentId(resolvedAgentId),
+              subAgentId: subAgentExternalId,
+              model,
+            },
+            `${runId}:sub:${subAgentExternalId}:${Date.now()}`,
+          )
+          return String(nested.id)
+        },
+        finish: async (nestedRunIdStr, batch) => {
+          const nestedRunIdTyped = asRunId(nestedRunIdStr)
+          // 1) Open an assistant message under the nested run.
+          const nestedMsg = await this.deps.msgs.appendAssistantMessage(
+            nestedRunIdTyped,
+            { blocks: [] },
+            `${nestedRunIdStr}:msg`,
+          )
+          // 2) Persist the sub-agent's trace as blocks. Order
+          //    preserved: thinking → each tool_use + tool_result pair
+          //    by startedAt → final text. v2_chat_tool_calls rows
+          //    fall out as a side effect of the tool_use / tool_result
+          //    block writes (the postgres MessageRepo writes both).
+          if (batch.thinkingText.trim().length > 0) {
+            await this.deps.msgs.appendBlock(nestedMsg.id, {
+              kind: "thinking",
+              text: batch.thinkingText.trim(),
+            })
+          }
+          const sortedCalls = [...batch.toolCalls].sort(
+            (a, b) => a.startedAt - b.startedAt,
+          )
+          for (const c of sortedCalls) {
+            await this.deps.msgs.appendBlock(nestedMsg.id, {
+              kind: "tool_use",
+              toolCallId: asToolCallId(c.toolCallId),
+              toolName: c.toolName,
+              args: c.args,
+            })
+            await this.deps.msgs.appendBlock(nestedMsg.id, {
+              kind: "tool_result",
+              toolCallId: asToolCallId(c.toolCallId),
+              output: c.result,
+              isError: c.isError,
+            })
+          }
+          if (batch.finalText.trim().length > 0) {
+            await this.deps.msgs.appendBlock(nestedMsg.id, {
+              kind: "text",
+              text: batch.finalText.trim(),
+            })
+          }
+          // 3) Close the nested run row with status + tokens.
+          await this.deps.msgs.endRun(nestedRunIdTyped, {
+            status: batch.status,
+            tokensIn: batch.tokens.input + batch.tokens.cacheRead,
+            tokensOut: batch.tokens.output,
+            ...(batch.error ? { error: batch.error } : {}),
+          })
+        },
+      }
+
       const piResult = await runPiMonoTurn({
         conversationId: String(conv.id),
         userEmail: String(viewerUserId),
@@ -443,10 +567,23 @@ export class ChatService {
         logger: runLog,
         ...(input.model ? { modelLabel: input.model } : {}),
         ...(agentScope ? { agentScope } : {}),
-        // When the selected agent has a custom system prompt, it REPLACES the
-        // default — pi-mono only honors one system prompt per run, so this
-        // is the seam at which the agent's persona overrides Xyne SEBI's.
-        ...(agentScope?.prompt ? { systemPrompt: agentScope.prompt } : {}),
+        ...(assembledPrompt ? { systemPrompt: assembledPrompt } : {}),
+        // Pi-mono tool list — sourced literally from the agent row's
+        // `tools` column (custom agent path) or the workspace default
+        // agent's `tools` (un-scoped path). Always passed verbatim;
+        // [] means the LLM has no tools available, full registry was
+        // populated server-side at create time.
+        toolNames: resolvedToolNames,
+        // M7 — let the runner conditionally append dispatchSubagent
+        // when the agent has sub-agents AND we passed persistence
+        // callbacks. Both are required: the runner won't enable
+        // dispatch without somewhere to write the nested trace.
+        ...(resolvedSubAgents.length > 0
+          ? {
+              dispatchableSubAgents: resolvedSubAgents,
+              dispatchPersistence,
+            }
+          : {}),
         ...(input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
         signal: ctrl.signal,
         onTextDelta: async (delta) => {
@@ -648,6 +785,39 @@ export class ChatService {
   ): Promise<Page<MessageWithBlocks>> {
     await this.getConversation(viewer, conversationId)
     return this.deps.msgs.listMessages(conversationId, page)
+  }
+
+  /** M8 — fetch the full trace of every sub-agent dispatched under a
+   *  parent run. Returns nested runs in `startedAt` order, each with
+   *  the sub-agent's assistant messages (and their tool_use /
+   *  tool_result blocks the M7 storage already laid down).
+   *
+   *  The UI walks the parent's `dispatchSubagent` tool_calls in order
+   *  and matches the Nth tool_call to the Nth nested run. Permission
+   *  is the conversation's getConversation check — anyone who can see
+   *  the parent's chat can see the sub-agent's execution. */
+  public async listNestedRuns(
+    viewer: Viewer,
+    conversationId: ConversationId,
+    parentRunId: RunId,
+  ): Promise<{
+    nestedRuns: Array<{
+      run: import("../storage/types").Run
+      messages: MessageWithBlocks[]
+    }>
+  }> {
+    await this.getConversation(viewer, conversationId)
+    const runs = await this.deps.msgs.listChildRuns(
+      conversationId,
+      parentRunId,
+    )
+    const nested = await Promise.all(
+      runs.map(async (run) => {
+        const messages = await this.deps.msgs.listMessagesByRun(run.id)
+        return { run, messages }
+      }),
+    )
+    return { nestedRuns: nested }
   }
 
   public async subscribe(

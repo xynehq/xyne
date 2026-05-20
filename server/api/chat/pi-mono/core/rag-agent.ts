@@ -219,6 +219,40 @@ export async function createRAGAgent<TState = unknown>(
   }
 
   const { session: piSession } = await createAgentSession(sessionOptions)
+
+  // Apply per-model sampler params. temperature rides on
+  // StreamOptions; top_p is spliced via onPayload (chained so any
+  // existing extension handler still runs).
+  if (
+    config.streamOptions &&
+    (config.streamOptions.temperature !== undefined ||
+      config.streamOptions.topP !== undefined)
+  ) {
+    const wantedTemp = config.streamOptions.temperature
+    const wantedTopP = config.streamOptions.topP
+    const innerStreamFn = piSession.agent.streamFn
+    piSession.agent.streamFn = async (model, context, options) => {
+      const priorOnPayload = options?.onPayload
+      const onPayload =
+        wantedTopP !== undefined
+          ? async (payload: unknown, m: unknown): Promise<unknown> => {
+              const next = priorOnPayload
+                ? await priorOnPayload(payload as never, m as never)
+                : payload
+              if (next && typeof next === "object") {
+                ;(next as Record<string, unknown>)["top_p"] = wantedTopP
+              }
+              return next
+            }
+          : priorOnPayload
+      return innerStreamFn(model, context, {
+        ...options,
+        ...(wantedTemp !== undefined ? { temperature: wantedTemp } : {}),
+        ...(onPayload ? { onPayload } : {}),
+      })
+    }
+  }
+
   // --- State ---
   let userState = config.state
 

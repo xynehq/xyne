@@ -5,6 +5,9 @@ export type Preferences = {
 }
 
 const DEFAULTS: Preferences = {
+  // Nest thinking + tool calls + sub-agent dispatches inside the
+  // collapsible "Thoughts" chip. Users who want to see every chip
+  // inline can flip this off in settings.
   collapseTools: true,
 }
 

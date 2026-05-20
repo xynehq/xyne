@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { Bot, Globe, Plus, Sparkles, Star } from "lucide-react"
+import { Bot, ChevronRight, Globe, Plus, Sparkles, Star } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { Topbar } from "@/components/Topbar"
 import { SearchField } from "@/components/file-browser"
@@ -159,6 +159,35 @@ function AgentsIndexRoute(): JSX.Element {
 
       <main className="flex-1 overflow-auto px-5 py-5">
         <div className="mx-auto w-full max-w-7xl">
+          {/* Workspace-default agent (M4b). Pinned above the list so
+              every user knows there's a fallback they can edit; routes
+              to a dedicated page that hides identity / sharing because
+              they don't apply to the workspace-wide row. */}
+          <Link
+            to="/agents/default"
+            className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-border bg-surface-elevated px-4 py-3 transition hover:border-border/80 hover:bg-secondary"
+          >
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
+                <Sparkles className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[13px] font-medium text-foreground">
+                  General agent
+                </p>
+                <p className="text-[12px] text-muted-foreground">
+                  Workspace default — used when no agent is selected.
+                  Edit system prompt, tools, and sub-agents.
+                </p>
+              </div>
+            </div>
+            <ChevronRight
+              className="h-4 w-4 flex-shrink-0 text-muted-foreground"
+              aria-hidden
+              strokeWidth={1.75}
+            />
+          </Link>
+
           <p className="mb-3 text-[12px] text-muted-foreground">
             {agents === null
               ? "Loading…"

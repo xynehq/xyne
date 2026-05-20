@@ -132,6 +132,18 @@ export type Agent = {
   // with selected items / filters. The CRUD page only round-trips it.
   appIntegrations?: unknown
   docIds?: unknown[]
+  // M4a fields — three independently-editable system prompt sections plus
+  // the registry tool allowlist. NULL on a section means "use the workspace
+  // default" (the assembler does the fallback on the server). Empty `tools`
+  // array means "all tools available".
+  systemPromptMain?: string | null
+  systemPromptTools?: string | null
+  systemPromptSubagents?: string | null
+  tools?: string[]
+  // M4b — true for the per-workspace default agent. The admin form hides
+  // identity / sharing on this row because they don't apply (the default
+  // is workspace-wide and the row's name/visibility are fixed).
+  isDefault?: boolean
 }
 
 export type AgentListFilter = "all" | "madeByMe" | "sharedToMe"
@@ -158,6 +170,13 @@ export type AgentCreateInput = {
   uploadedFileNames?: string[]
   docIds?: unknown[]
   appIntegrations?: unknown
+  // M4a — section overrides + tool allowlist. Omit a field to leave the
+  // server column unchanged; send `null` (or `""`) on a section field to
+  // explicitly clear back to the workspace default.
+  systemPromptMain?: string | null
+  systemPromptTools?: string | null
+  systemPromptSubagents?: string | null
+  tools?: string[]
 }
 
 export type AgentUpdateInput = Partial<AgentCreateInput>
@@ -225,11 +244,159 @@ export const deleteAgent = (externalId: string): Promise<void> =>
     method: "DELETE",
   })
 
-/** Server-side defaults for the agent form. Today this only exposes the
- *  default system prompt; we keep the envelope generic so we can add other
- *  defaults (model, reasoning level, …) without a second round-trip. */
-export const getAgentDefaults = (): Promise<{ prompt: string }> =>
-  apiFetch<{ prompt: string }>("/v2/agents/defaults")
+// ── Workspace-wide default agent (M4b) ──────────────────────────────────────
+// The default agent is created lazily on first GET. Every workspace member
+// sees the same row; only its system-prompt sections, tools allowlist, and
+// sub-agents are user-editable from the admin UI (name + sharing are
+// fixed on the row and ignored by the PUT route).
+export const getDefaultAgent = (): Promise<Agent> =>
+  apiFetch<Agent>("/v2/agents/default")
+
+export const updateDefaultAgent = (input: AgentUpdateInput): Promise<Agent> =>
+  apiFetch<Agent>("/v2/agents/default", {
+    method: "PUT",
+    body: JSON.stringify(input),
+  })
+
+// ── Effective prompt (view page) ────────────────────────────────────────────
+// What the LLM actually sees when a turn starts under a given agent —
+// the result of running resolveAgentSystemPrompt on the agent's row +
+// its live sub-agents. The `sources` map tells the view which section
+// came from the override, the legacy `prompt`, or the workspace default.
+
+// Per-section labels for the assembled prompt. Each section is either
+// an explicit per-agent override or the workspace default; the
+// sub-agents section reads "suppressed" when the agent has zero
+// sub-agents because the block isn't emitted at all in that case.
+export type AgentEffectivePromptSources = {
+  main: "override" | "default"
+  tools: "override" | "default"
+  subagents: "override" | "default" | "suppressed"
+}
+
+export type AgentEffectivePrompt = {
+  prompt: string
+  sources: AgentEffectivePromptSources
+}
+
+export const getEffectivePrompt = (
+  externalId: string,
+): Promise<AgentEffectivePrompt> =>
+  apiFetch<AgentEffectivePrompt>(
+    `/v2/agents/${encodeURIComponent(externalId)}/effective-prompt`,
+  )
+
+export const getDefaultEffectivePrompt = (): Promise<AgentEffectivePrompt> =>
+  apiFetch<AgentEffectivePrompt>("/v2/agents/default/effective-prompt")
+
+/** Server-side defaults for the agent form. `prompt` is the assembled
+ *  default (back-compat with the older single-textarea UI); `sections` is
+ *  the three independently-editable defaults the new form binds to a
+ *  "Use default" button per section. */
+export type AgentDefaults = {
+  prompt: string
+  sections: {
+    main: string
+    tools: string
+    subagents: string
+  }
+}
+export const getAgentDefaults = (): Promise<AgentDefaults> =>
+  apiFetch<AgentDefaults>("/v2/agents/defaults")
+
+/** Catalog of pi-mono tools the agent's tool picker offers. Pure data,
+ *  cacheable for the page lifetime — fetched once on AgentForm mount. */
+export type AgentToolDescriptor = {
+  name: string
+  label: string
+  description: string
+  category: string
+}
+export const getAgentToolsCatalog = (): Promise<{
+  tools: AgentToolDescriptor[]
+}> => apiFetch<{ tools: AgentToolDescriptor[] }>("/v2/agents/tools")
+
+// ── Sub-agents CRUD ─────────────────────────────────────────────────────────
+// All scoped under a parent agent's external_id. The route layer enforces
+// that the caller has access to the parent before letting them list/edit.
+
+// Pi-ai's ThinkingLevel minus "xhigh" — same closed set the server
+// stores on sub_agents.thinking_level. Exported so the form's select
+// can pull options from one source of truth.
+export const SUB_AGENT_THINKING_LEVELS = [
+  "minimal",
+  "low",
+  "medium",
+  "high",
+] as const
+export type SubAgentThinkingLevel = (typeof SUB_AGENT_THINKING_LEVELS)[number]
+
+export type SubAgent = {
+  externalId: string
+  name: string
+  description: string
+  systemPrompt: string
+  tools: string[]
+  // Reasoning effort for the nested pi-mono session this sub-agent
+  // runs in. Set at create time on the form; not inherited from the
+  // parent agent or the chat request.
+  thinkingLevel: SubAgentThinkingLevel
+  createdAt: string
+  updatedAt: string
+}
+
+export type SubAgentCreateInput = {
+  name: string
+  description: string
+  systemPrompt: string
+  tools?: string[]
+  thinkingLevel?: SubAgentThinkingLevel
+}
+
+export type SubAgentUpdateInput = Partial<SubAgentCreateInput>
+
+const subAgentsBase = (parentExternalId: string): string =>
+  `/v2/agents/${encodeURIComponent(parentExternalId)}/sub-agents`
+
+export const listSubAgents = async (
+  parentExternalId: string,
+): Promise<SubAgent[]> => {
+  const res = await apiFetch<{ subAgents: SubAgent[] }>(
+    subAgentsBase(parentExternalId),
+  )
+  return res.subAgents ?? []
+}
+
+export const createSubAgent = (
+  parentExternalId: string,
+  input: SubAgentCreateInput,
+): Promise<SubAgent> =>
+  apiFetch<SubAgent>(subAgentsBase(parentExternalId), {
+    method: "POST",
+    body: JSON.stringify(input),
+  })
+
+export const updateSubAgent = (
+  parentExternalId: string,
+  subExternalId: string,
+  input: SubAgentUpdateInput,
+): Promise<SubAgent> =>
+  apiFetch<SubAgent>(
+    `${subAgentsBase(parentExternalId)}/${encodeURIComponent(subExternalId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  )
+
+export const deleteSubAgent = (
+  parentExternalId: string,
+  subExternalId: string,
+): Promise<void> =>
+  apiFetch<void>(
+    `${subAgentsBase(parentExternalId)}/${encodeURIComponent(subExternalId)}`,
+    { method: "DELETE" },
+  )
 
 // ── Workspace user lookup ───────────────────────────────────────────────────
 // Used by the agent form's viewer / co-owner pickers so users get autocomplete

@@ -605,15 +605,18 @@ router.get("/collections/:clId/files/:itemId/content", async (c) => {
       redirect: "follow",
     })
     const passthrough = new Headers()
-    for (const [k, v] of upstream.headers.entries()) {
-      // Drop hop-by-hop + set-cookie so we don't leak VM cookies into local
-      // dev context. Content-* and Accept-Ranges are what we want to keep.
+    // `Headers.forEach` is the spec-mandated traversal that's typed in
+    // every TS lib variant; the iterator and `.entries()` forms aren't
+    // (the @types/node Headers shim ships neither). Same drop-list as
+    // before: hop-by-hop headers and set-cookie don't get passed
+    // through.
+    upstream.headers.forEach((v, k) => {
       const lk = k.toLowerCase()
       if (lk === "set-cookie" || lk === "transfer-encoding" || lk === "connection") {
-        continue
+        return
       }
       passthrough.set(k, v)
-    }
+    })
     return new Response(upstream.body, {
       status: upstream.status,
       headers: passthrough,

@@ -110,6 +110,13 @@ export const v2ChatRuns = pgTable(
       (): AnyPgColumn => v2ChatRuns.id,
     ),
     agentId: text("agent_id").notNull(),
+    // Nested-run pointer (M3, used in M7). When this run was spawned by
+    // the parent agent's `dispatchSubagent` tool, holds the sub-agent's
+    // `external_id`; null for top-level (parent) runs. Stored as plain
+    // text without an FK constraint — mirrors how `agent_id` is held —
+    // so deleting a sub-agent row doesn't cascade-orphan historical
+    // chat traces.
+    subAgentId: text("sub_agent_id"),
     model: text("model").notNull(),
     status: v2ChatTurnStatusEnum("status").notNull(),
     startedAt: bigint("started_at", { mode: "number" }).notNull(),
@@ -125,6 +132,13 @@ export const v2ChatRuns = pgTable(
     idemUnique: uniqueIndex("v2_chat_run_idem_unique").on(table.idemKey),
     turnIndex: index("v2_chat_run_turn_index").on(table.turnId),
     convIndex: index("v2_chat_run_conv_index").on(table.conversationId),
+    // Used to walk the parent → nested-run tree when reconstructing a
+    // turn for replay (M8). Without this, the tree walk would scan all
+    // runs in a turn.
+    parentRunIndex: index("v2_chat_run_parent_index").on(table.parentRunId),
+    // Lets us filter runs by sub-agent for "what did the researcher
+    // sub-agent do?" style analytics.
+    subAgentIndex: index("v2_chat_run_subagent_index").on(table.subAgentId),
   }),
 )
 

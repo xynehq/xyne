@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react"
 import { AlertTriangle, Check, ChevronRight, Loader2 } from "lucide-react"
 import { displayName } from "./ToolCallChip"
 
+import { DispatchSubagentChip } from "./DispatchSubagentChip"
+
 export type ReasoningItem =
   | { kind: "thought"; text: string }
   | {
@@ -9,6 +11,14 @@ export type ReasoningItem =
       name: string
       args: unknown
       result?: { output: unknown; isError: boolean }
+    }
+  | {
+      kind: "dispatch"
+      args: unknown
+      result?: { output: unknown; isError: boolean }
+      conversationId: string
+      parentRunId: string
+      dispatchIndex: number
     }
 
 type Props = {
@@ -261,7 +271,7 @@ export function ThinkingChip({
   }
 
   const renderable = items.filter((it): boolean =>
-    it.kind === "tool" ? true : it.text.length > 0,
+    it.kind === "thought" ? it.text.length > 0 : true,
   )
   const hasContent = renderable.length > 0
 
@@ -311,6 +321,14 @@ export function ThinkingChip({
                 <div className="whitespace-pre-wrap leading-relaxed text-muted-foreground/90">
                   {it.text}
                 </div>
+              ) : it.kind === "dispatch" ? (
+                <DispatchSubagentChip
+                  args={it.args}
+                  {...(it.result ? { result: it.result } : {})}
+                  conversationId={it.conversationId}
+                  parentRunId={it.parentRunId}
+                  dispatchIndex={it.dispatchIndex}
+                />
               ) : (
                 <ReasoningToolRow
                   name={it.name}

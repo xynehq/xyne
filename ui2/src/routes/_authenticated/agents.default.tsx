@@ -1,33 +1,34 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { ArrowLeft, ChevronRight } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
+
 import { Topbar } from "@/components/Topbar"
 import { AgentForm } from "@/components/agents/AgentForm"
 import type {
   AgentFormHandle,
   AgentFormValues,
 } from "@/components/agents/AgentForm"
-import { type Agent, ApiError, getAgent, updateAgent } from "@/lib/api"
+import {
+  type Agent,
+  ApiError,
+  getDefaultAgent,
+  updateDefaultAgent,
+} from "@/lib/api"
 
-export const Route = createFileRoute("/_authenticated/agents/$agentId/edit")({
-  component: AgentEditRoute,
+// Dedicated route for the workspace-wide default agent. We deliberately
+// don't reuse /agents/:agentId/edit because:
+//   • The default row is identified by GET /v2/agents/default (server
+//     auto-creates on first read) — callers never need its external_id.
+//   • The PUT endpoint is /v2/agents/default, a different verb path
+//     than the per-row PUT — keeps "edit the default" idempotent.
+//   • Hiding identity / sharing for the default is cleaner as an
+//     AgentForm prop than a runtime branch on isDefault inside the
+//     existing edit route.
+export const Route = createFileRoute("/_authenticated/agents/default")({
+  component: DefaultAgentRoute,
 })
 
-const dedupeCaseInsensitive = (xs: string[]): string[] => {
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const x of xs) {
-    const k = x.toLowerCase()
-    if (seen.has(k)) continue
-    seen.add(k)
-    out.push(x)
-  }
-  return out
-}
-
-function AgentEditRoute(): JSX.Element {
-  const { agentId } = Route.useParams()
-  const { me } = Route.useRouteContext()
+function DefaultAgentRoute(): JSX.Element {
   const navigate = useNavigate()
 
   const [agent, setAgent] = useState<Agent | null>(null)
@@ -40,7 +41,7 @@ function AgentEditRoute(): JSX.Element {
     let cancelled = false
     setAgent(null)
     setLoadError(null)
-    getAgent(agentId)
+    getDefaultAgent()
       .then((a): void => {
         if (!cancelled) setAgent(a)
       })
@@ -48,7 +49,7 @@ function AgentEditRoute(): JSX.Element {
         if (!cancelled) {
           setLoadError(
             err instanceof ApiError && err.status === 404
-              ? "This agent doesn't exist, or you don't have access."
+              ? "Default agent isn't reachable. Are you signed in?"
               : err.message,
           )
         }
@@ -56,63 +57,47 @@ function AgentEditRoute(): JSX.Element {
     return (): void => {
       cancelled = true
     }
-  }, [agentId])
+  }, [])
 
   const handleSubmit = async (values: AgentFormValues): Promise<void> => {
     setSubmitting(true)
     setSubmitError(null)
     try {
-      // Always keep the current user in `ownerEmails` (and strip them from
-      // `userEmails`) — v1's syncAgentUserPermissions wipes any current Owner
-      // not present in the submitted list, which can otherwise revoke the
-      // signed-in user's own access when they're an Owner via the agent's
-      // creator row rather than an explicit Owner permission.
-      const ownerEmails = dedupeCaseInsensitive([
-        me.email,
-        ...(values.ownerEmails ?? []),
-      ])
-      const userEmails = (values.userEmails ?? []).filter(
-        (e) => e.toLowerCase() !== me.email.toLowerCase(),
-      )
-      await updateAgent(agentId, { ...values, ownerEmails, userEmails })
-      void navigate({
-        to: "/agents/$agentId",
-        params: { agentId },
-      })
+      // PUT /v2/agents/default ignores name / sharing / permissions on
+      // the server side, but the form still includes them in `values`.
+      // Sending the full bag is harmless — the server strips what it
+      // won't apply.
+      const updated = await updateDefaultAgent(values)
+      setAgent(updated)
+      void navigate({ to: "/agents" })
     } catch (err) {
       const message =
         err instanceof ApiError ? err.message : (err as Error).message
-      setSubmitError(message || "Couldn't save the agent.")
+      setSubmitError(message || "Couldn't save the default agent.")
       setSubmitting(false)
     }
   }
 
   const cancel = (): void => {
-    void navigate({
-      to: "/agents/$agentId",
-      params: { agentId },
-    })
+    void navigate({ to: "/agents" })
   }
-
-  const agentName = agent?.name ?? "Edit agent"
 
   return (
     <div className="flex h-full flex-col">
-      <Topbar title={agent ? `Edit · ${agent.name}` : "Edit agent"} />
+      <Topbar title="Default agent" />
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background/70 px-5 py-2.5 backdrop-blur-md">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <Link
-            to={agent ? "/agents/$agentId" : "/agents"}
-            {...(agent ? { params: { agentId } } : {})}
-            aria-label={agent ? "Back to agent" : "Back to agents"}
-            title={agent ? "Back to agent" : "Back to agents"}
+            to="/agents"
+            aria-label="Back to agents"
+            title="Back to agents"
             className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition hover:bg-secondary hover:text-foreground"
           >
             <ArrowLeft className="h-3.5 w-3.5" aria-hidden strokeWidth={1.75} />
           </Link>
           <nav
-            aria-label="Agent path"
+            aria-label="Default agent path"
             className="flex min-w-0 items-center gap-1 text-[13px] text-muted-foreground"
           >
             <Link
@@ -126,36 +111,12 @@ function AgentEditRoute(): JSX.Element {
               aria-hidden
               strokeWidth={1.75}
             />
-            {agent ? (
-              <>
-                <Link
-                  to="/agents/$agentId"
-                  params={{ agentId }}
-                  className="max-w-[28ch] truncate rounded-md px-1.5 py-0.5 transition hover:bg-secondary hover:text-foreground"
-                  title={agentName}
-                >
-                  {agentName}
-                </Link>
-                <ChevronRight
-                  className="h-3.5 w-3.5 text-muted-foreground/60"
-                  aria-hidden
-                  strokeWidth={1.75}
-                />
-                <span
-                  aria-current="page"
-                  className="rounded-md px-1.5 py-0.5 font-medium text-foreground"
-                >
-                  Edit
-                </span>
-              </>
-            ) : (
-              <span
-                aria-current="page"
-                className="rounded-md px-1.5 py-0.5 font-medium text-foreground"
-              >
-                Edit
-              </span>
-            )}
+            <span
+              aria-current="page"
+              className="rounded-md px-1.5 py-0.5 font-medium text-foreground"
+            >
+              Default agent
+            </span>
           </nav>
         </div>
 
@@ -183,6 +144,15 @@ function AgentEditRoute(): JSX.Element {
 
       <main className="min-h-0 flex-1 overflow-auto px-5 py-5">
         <div className="mx-auto w-full max-w-3xl">
+          <div className="mb-4 rounded-md border border-border bg-surface-muted px-3 py-2 text-[12.5px] text-muted-foreground">
+            <strong className="font-medium text-foreground">
+              Workspace default —
+            </strong>{" "}
+            this is the agent every chat falls back to when no specific
+            agent is selected. Edits apply to everyone in your workspace.
+            Identity and sharing are fixed and hidden here.
+          </div>
+
           {loadError ? (
             <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-4 text-[13.5px] text-destructive">
               {loadError}
@@ -201,6 +171,10 @@ function AgentEditRoute(): JSX.Element {
               submitting={submitting}
               submitError={submitError}
               hideSubmitRow
+              hideIdentity
+              hideSharing
+              hideKnowledge
+              prefillSectionsFromDefaults
               onCancel={cancel}
               onSubmit={handleSubmit}
             />

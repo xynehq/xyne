@@ -12,6 +12,7 @@ import {
 import { agentDeps } from "../wiring"
 import {
   asConversationId,
+  asRunId,
   type Cursor,
   type StreamEvent,
 } from "../storage/types"
@@ -173,6 +174,21 @@ router.get("/conversations/:id/messages", (c) =>
       viewer(c),
       asConversationId(c.req.param("id")),
       readCursor(c),
+    ),
+  ),
+)
+
+// GET /v2/chat/conversations/:id/runs/:parentRunId/nested  (M8)
+// Returns every sub-agent run spawned under the given parent run plus
+// the sub-agent's assistant messages (with blocks). Ordered by
+// startedAt — the UI matches the Nth dispatchSubagent tool_call to
+// the Nth entry in `nestedRuns`.
+router.get("/conversations/:id/runs/:parentRunId/nested", (c) =>
+  handle(c, async () =>
+    service.listNestedRuns(
+      viewer(c),
+      asConversationId(c.req.param("id")),
+      asRunId(c.req.param("parentRunId")),
     ),
   ),
 )

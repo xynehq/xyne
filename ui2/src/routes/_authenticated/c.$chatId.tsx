@@ -169,6 +169,7 @@ function ChatThreadRoute(): JSX.Element {
         pending: isStreaming,
         promptText,
         stats: conv.statsByMessageId[m.id],
+        runId: m.runId,
       }
     })
   }, [
@@ -253,6 +254,8 @@ function ChatThreadRoute(): JSX.Element {
                 role={m.role === "user" ? "user" : "assistant"}
                 blocks={m.blocks}
                 pending={m.pending}
+                conversationId={chatId}
+                {...(m.runId ? { runId: m.runId } : {})}
                 {...(m.stats ? { stats: m.stats } : {})}
                 {...(m.role === "assistant" && m.promptText
                   ? { onRetry: () => onRetry(m.promptText ?? "") }

@@ -134,6 +134,14 @@ export const getUserAccessibleAgents = async (
       docIds: agents.docIds,
       createdAt: agents.createdAt,
       updatedAt: agents.updatedAt,
+      // M3-era columns. Must be in the projection or
+      // selectPublicAgentSchema.parse() trips with "expected …, received
+      // undefined" for every row.
+      systemPromptMain: agents.systemPromptMain,
+      systemPromptTools: agents.systemPromptTools,
+      systemPromptSubagents: agents.systemPromptSubagents,
+      tools: agents.tools,
+      isDefault: agents.isDefault,
     })
     .from(agents)
     .leftJoin(userAgentPermissions, eq(agents.id, userAgentPermissions.agentId))
@@ -141,6 +149,7 @@ export const getUserAccessibleAgents = async (
       and(
         eq(agents.workspaceId, workspaceId),
         eq(agents.creation_source, AgentCreationSource.DIRECT),
+        eq(agents.isDefault, false),
         isNull(agents.deletedAt),
         or(
           // User has explicit permission to the agent
@@ -181,6 +190,11 @@ export const getAgentsMadeByMe = async (
       docIds: agents.docIds,
       createdAt: agents.createdAt,
       updatedAt: agents.updatedAt,
+      systemPromptMain: agents.systemPromptMain,
+      systemPromptTools: agents.systemPromptTools,
+      systemPromptSubagents: agents.systemPromptSubagents,
+      tools: agents.tools,
+      isDefault: agents.isDefault,
     })
     .from(agents)
     .innerJoin(
@@ -191,6 +205,7 @@ export const getAgentsMadeByMe = async (
       and(
         eq(agents.workspaceId, workspaceId),
         eq(agents.creation_source, AgentCreationSource.DIRECT),
+        eq(agents.isDefault, false),
         isNull(agents.deletedAt),
         eq(userAgentPermissions.userId, userId),
         eq(userAgentPermissions.role, UserAgentRole.Owner),
@@ -227,6 +242,11 @@ export const getAgentsSharedToMe = async (
       docIds: agents.docIds,
       createdAt: agents.createdAt,
       updatedAt: agents.updatedAt,
+      systemPromptMain: agents.systemPromptMain,
+      systemPromptTools: agents.systemPromptTools,
+      systemPromptSubagents: agents.systemPromptSubagents,
+      tools: agents.tools,
+      isDefault: agents.isDefault,
     })
     .from(agents)
     .innerJoin(
@@ -238,6 +258,7 @@ export const getAgentsSharedToMe = async (
         eq(agents.workspaceId, workspaceId),
         isNull(agents.deletedAt),
         eq(agents.creation_source, AgentCreationSource.DIRECT),
+        eq(agents.isDefault, false),
         eq(userAgentPermissions.userId, userId),
         eq(userAgentPermissions.role, UserAgentRole.Shared),
       ),
@@ -311,13 +332,29 @@ export const grantUserAgentPermission = async (
 ): Promise<SelectUserAgentPermission> => {
   const validatedData = insertUserAgentPermissionSchema.parse(permissionData)
 
+  // Upsert against the (user_id, agent_id) unique index. The previous
+  // blind INSERT broke any update flow that promoted an existing
+  // viewer/editor to Owner (or vice versa) — the sync helper
+  // upstream computes a "needs to be added" set from the diff of
+  // current vs. desired role, which can land on a (user, agent) pair
+  // that already exists with a different role. Drizzle's
+  // onConflictDoUpdate keeps the same RETURNING contract so the
+  // selectUserAgentPermissionSchema.parse below still sees the
+  // refreshed row.
   const permissionArr = await trx
     .insert(userAgentPermissions)
     .values(validatedData)
+    .onConflictDoUpdate({
+      target: [userAgentPermissions.userId, userAgentPermissions.agentId],
+      set: {
+        role: validatedData.role,
+        updatedAt: new Date(),
+      },
+    })
     .returning()
 
   if (!permissionArr || !permissionArr.length) {
-    throw new Error('Error in insert of user agent permission "returning"')
+    throw new Error('Error in upsert of user agent permission "returning"')
   }
 
   return selectUserAgentPermissionSchema.parse(permissionArr[0])

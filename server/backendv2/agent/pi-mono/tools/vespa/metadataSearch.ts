@@ -22,7 +22,7 @@ import config from "@/config"
 
 import type { AgentScope } from "../../../agent-scope"
 import type { Log } from "../../../log"
-import { formatPages, snippetForChunk, textResult, titleOf, topChunkIndices, truncate } from "./util"
+import { formatPages, snippetForChunk, textResult, titleOf, topChunkIndices } from "./util"
 
 // Max hits we return — the agent should narrow further if it gets a wide
 // result set rather than ask Vespa for a million rows.
@@ -442,6 +442,12 @@ export const buildMetadataSearchTool = (
           const chunksMap = fields["chunks_map"] as
             | Array<{ chunk_index: number; page_numbers?: number[] }>
             | undefined
+          // See vespa/search.ts: chunks_map.length is the doc's total
+          // chunk count, surfaced so the model can decide whether to
+          // paginate via getChunks.
+          const totalChunks = Array.isArray(chunksMap)
+            ? chunksMap.length
+            : undefined
           const renderedChunks = topChunks
             .map((c) => {
               const snippet = snippetForChunk(fields, c.index)
@@ -459,6 +465,9 @@ export const buildMetadataSearchTool = (
             `  <hit rank="${String(rank)}" docId=${JSON.stringify(docId)}` +
               (documentId ? ` document_id=${JSON.stringify(documentId)}` : "") +
               (documentDate ? ` document_date=${JSON.stringify(documentDate)}` : "") +
+              (typeof totalChunks === "number"
+                ? ` total_chunks="${String(totalChunks)}"`
+                : "") +
               `>`,
           )
           lines.push(`    <title>${title}</title>`)
@@ -476,11 +485,15 @@ export const buildMetadataSearchTool = (
             )
           }
           for (const c of renderedChunks) {
+            // See vespa/search.ts: emit a ready-made `cite` attribute
+            // matching the system prompt's "copy, don't construct" rule
+            // for citations.
             lines.push(
               `    <chunk chunk_index="${String(c.index)}" ` +
                 `score="${c.score.toFixed(4)}"` +
-                `${c.pages ? ` pages="${c.pages}"` : ""}>` +
-                `${truncate(c.snippet)}</chunk>`,
+                `${c.pages ? ` pages="${c.pages}"` : ""}` +
+                ` cite="[${docId}#${String(c.index)}]">` +
+                `${c.snippet}</chunk>`,
             )
           }
           lines.push(`  </hit>`)

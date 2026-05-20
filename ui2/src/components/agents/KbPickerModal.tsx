@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import {
+  CheckSquare,
   ChevronRight,
   File,
   Folder,
@@ -409,9 +410,23 @@ export function KbPickerModal({
             <CollectionsView
               collections={collections}
               error={collectionsError}
+              selected={selected}
               onPick={(c) => {
                 setActiveCollection(c)
                 setCrumbs([])
+              }}
+              onToggle={(c) => {
+                // Scope the agent to the WHOLE collection. The backend
+                // honors `cl-<uuid>` in collectionIds and pulls every
+                // file inside; saves the user from drilling and picking
+                // every folder.
+                toggleItemSelection({
+                  docId: itemDocId({ id: c.id, type: "collection" }),
+                  name: c.name,
+                  app: KB_APP,
+                  entity: "collection",
+                  pathLabel: c.name,
+                })
               }}
             />
           ) : (
@@ -499,11 +514,21 @@ export function KbPickerModal({
 function CollectionsView({
   collections,
   error,
+  selected,
   onPick,
+  onToggle,
 }: {
   collections: KbCollection[] | null
   error: string | null
+  // Live selection map keyed by docId (`cl-<uuid>` for collections).
+  // Used to render the check state on each card so the user knows
+  // whether the whole collection is already scoped.
+  selected: Map<string, KbSelection>
+  // Drill into the collection's contents (file/folder picker).
   onPick: (c: KbCollection) => void
+  // Toggle "scope the agent to this whole collection" — independent of
+  // the drill action so the user can do either from the card.
+  onToggle: (c: KbCollection) => void
 }): JSX.Element {
   if (error) {
     return (
@@ -535,39 +560,71 @@ function CollectionsView({
   }
   return (
     <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-      {collections.map((c) => (
-        <li key={c.id}>
-          <button
-            type="button"
-            onClick={() => {
-              onPick(c)
-            }}
-            className="group flex w-full items-center gap-3 rounded-xl border border-border bg-surface px-3.5 py-3 text-left transition hover:-translate-y-0.5 hover:border-ring hover:bg-surface-elevated"
+      {collections.map((c) => {
+        const docId = `cl-${c.id}`
+        const isWholeSelected = selected.has(docId)
+        return (
+          <li
+            key={c.id}
+            className={
+              "group flex items-center gap-3 rounded-xl border bg-surface px-3.5 py-3 text-left transition hover:-translate-y-0.5 hover:border-ring hover:bg-surface-elevated " +
+              (isWholeSelected ? "border-ring" : "border-border")
+            }
           >
-            <span
-              aria-hidden
-              className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-xl bg-secondary text-foreground"
+            {/* Toggle the whole-collection scope. Separate from the
+                drill-into button so the user can pick either path. */}
+            <label
+              className="grid h-9 w-9 flex-shrink-0 cursor-pointer place-items-center rounded-xl bg-secondary text-foreground"
+              title="Scope agent to this entire collection"
             >
-              <FolderOpen className="h-4 w-4" strokeWidth={1.6} />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13.5px] font-medium text-foreground">
-                {c.name}
-              </span>
-              {c.description && (
-                <span className="line-clamp-1 text-[11.5px] text-muted-foreground">
-                  {c.description}
+              <input
+                type="checkbox"
+                className="peer sr-only"
+                checked={isWholeSelected}
+                onChange={() => onToggle(c)}
+              />
+              <FolderOpen
+                className="h-4 w-4 peer-checked:hidden"
+                strokeWidth={1.6}
+                aria-hidden
+              />
+              <CheckSquare
+                className="hidden h-4 w-4 text-primary peer-checked:block"
+                strokeWidth={1.8}
+                aria-hidden
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                onPick(c)
+              }}
+              className="flex min-w-0 flex-1 items-center gap-2 text-left"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13.5px] font-medium text-foreground">
+                  {c.name}
                 </span>
-              )}
-            </span>
-            <ChevronRight
-              className="h-3.5 w-3.5 text-muted-foreground transition group-hover:translate-x-0.5"
-              aria-hidden
-              strokeWidth={1.75}
-            />
-          </button>
-        </li>
-      ))}
+                {c.description && (
+                  <span className="line-clamp-1 text-[11.5px] text-muted-foreground">
+                    {c.description}
+                  </span>
+                )}
+                {isWholeSelected && (
+                  <span className="mt-0.5 block text-[11px] font-medium text-primary">
+                    Whole collection scoped
+                  </span>
+                )}
+              </span>
+              <ChevronRight
+                className="h-3.5 w-3.5 text-muted-foreground transition group-hover:translate-x-0.5"
+                aria-hidden
+                strokeWidth={1.75}
+              />
+            </button>
+          </li>
+        )
+      })}
     </ul>
   )
 }

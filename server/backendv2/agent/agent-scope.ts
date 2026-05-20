@@ -11,10 +11,52 @@
 // docIds, channels, KB collections) drives visibility, bypassing the
 // per-user `createdBy == email` filter that ships with the KB profile.
 
+import { and, eq, isNull } from "drizzle-orm"
+
 import { db } from "@/db/client"
+import { agents, subAgents } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getAgentByExternalIdWithPermissionCheck } from "@/db/agent"
 import { Apps, SlackEntity } from "@xyne/vespa-ts/types"
+import type { SubAgentSummary } from "./pi-mono/system-prompt"
+
+/** A sub-agent row projected with enough fields to be dispatched at run
+ *  time. Extends the assembler-facing SubAgentSummary (name +
+ *  description) with the columns the dispatchSubagent tool actually
+ *  needs to spin a nested pi-mono session: stable identity
+ *  (externalId), the sub-agent's own systemPrompt, and its tool name
+ *  subset. The assembler still only reads name + description from this
+ *  shape; the extras are inert until the dispatch tool picks them up. */
+export type DispatchableSubAgent = SubAgentSummary & {
+  externalId: string
+  systemPrompt: string
+  tools: string[]
+  // Reasoning effort to use for the nested pi-mono session at dispatch
+  // time. Pulled off the sub_agents row directly — the parent agent's
+  // configured level (or the chat request's level) doesn't override it.
+  // The runner already enforced "thinkingLevel is something the model
+  // operator picks for that model"; storing it on the sub-agent makes
+  // each leaf independently tunable.
+  thinkingLevel: "minimal" | "low" | "medium" | "high"
+}
+
+// Coerce a raw column value into the closed thinking-level set. Same
+// defensive shape SubAgentsService.normaliseThinkingLevel uses — kept
+// local to agent-scope so loadAgentScope doesn't take a dependency on
+// the service layer.
+const VALID_THINKING_LEVELS: ReadonlyArray<"minimal" | "low" | "medium" | "high"> = [
+  "minimal",
+  "low",
+  "medium",
+  "high",
+]
+const normaliseThinkingLevel = (
+  raw: unknown,
+): DispatchableSubAgent["thinkingLevel"] =>
+  typeof raw === "string" &&
+  (VALID_THINKING_LEVELS as readonly string[]).includes(raw)
+    ? (raw as DispatchableSubAgent["thinkingLevel"])
+    : "medium"
 import type { UserId, WorkspaceId } from "./storage/types"
 
 // ─── Public types ───────────────────────────────────────────────────────────
@@ -60,8 +102,25 @@ export type AgentScope = {
     collectionFolderIds?: string[]
     collectionFileIds?: string[]
   }>
-  /** Agent-supplied system prompt, when set. */
+  /** Legacy agent-supplied system prompt (single field, pre-M2). When set
+   *  and the new per-section fields are all NULL, the chat service treats
+   *  it as a verbatim REPLACE for the entire assembled prompt — preserves
+   *  v1 behaviour for agents created before the 3-section split. */
   prompt?: string
+  /** Three independently editable system-prompt sections (M2). NULL on a
+   *  field means "fall back to the hard-coded default" — the assembler
+   *  resolves this. An agent with all three NULL and no legacy `prompt`
+   *  uses the full default prompt. */
+  systemPromptMain?: string | null
+  systemPromptTools?: string | null
+  systemPromptSubagents?: string | null
+  /** Tool names from the pi-mono registry this agent is allowed to call.
+   *  Empty = all tools (matches `buildToolsForRun(undefined, ctx)`). */
+  tools: string[]
+  /** Sub-agents linked to this parent. Each carries `name` + `description`
+   *  for the assembler's `<subagents>` catalog. Empty array = the
+   *  sub-agents section is suppressed entirely from the prompt. */
+  subAgents: DispatchableSubAgent[]
 }
 
 // ─── Internal helpers ───────────────────────────────────────────────────────
@@ -378,6 +437,48 @@ export const loadAgentScope = async (
   const kbItems = acc.selectedItems[Apps.KnowledgeBase] ?? []
   const collectionSelections = collectionSelectionsFromKb(kbItems)
 
+  // Sub-agents linked to this parent. Soft-deleted rows are excluded;
+  // the dispatchable catalog the LLM sees (and the assembler renders)
+  // only contains live sub-agents. Projects the full M7 shape:
+  // externalId, name, description, systemPrompt, tools — the assembler
+  // only reads name + description, dispatch reads the rest.
+  const subAgentRows: DispatchableSubAgent[] = (
+    await db
+      .select({
+        externalId: subAgents.externalId,
+        name: subAgents.name,
+        description: subAgents.description,
+        systemPrompt: subAgents.systemPrompt,
+        tools: subAgents.tools,
+        thinkingLevel: subAgents.thinkingLevel,
+      })
+      .from(subAgents)
+      .where(
+        and(
+          eq(subAgents.parentAgentId, agent.id),
+          isNull(subAgents.deletedAt),
+        ),
+      )
+  ).map((r) => ({
+    externalId: r.externalId,
+    name: r.name,
+    description: r.description,
+    systemPrompt: r.systemPrompt,
+    tools: Array.isArray(r.tools)
+      ? (r.tools as unknown[]).filter((t): t is string => typeof t === "string")
+      : [],
+    thinkingLevel: normaliseThinkingLevel(r.thinkingLevel),
+  }))
+
+  // Tool name list from the agent row — M7-pre made this strictly literal
+  // (`[]` = no tools at run time). The cast filter keeps us safe against
+  // legacy rows that somehow stored non-string elements.
+  const toolNames: string[] = Array.isArray(agent.tools)
+    ? (agent.tools as unknown[]).filter(
+        (t): t is string => typeof t === "string",
+      )
+    : []
+
   return {
     externalId: agent.externalId,
     ownerUserId: user.id,
@@ -389,5 +490,104 @@ export const loadAgentScope = async (
     appFilters: acc.appFilters,
     collectionSelections,
     ...(agent.prompt ? { prompt: agent.prompt } : {}),
+    systemPromptMain: agent.systemPromptMain ?? null,
+    systemPromptTools: agent.systemPromptTools ?? null,
+    systemPromptSubagents: agent.systemPromptSubagents ?? null,
+    tools: toolNames,
+    subAgents: subAgentRows,
+  }
+}
+
+// ─── Workspace-default prompt inputs (M4b) ──────────────────────────────────
+//
+// What chat needs when a turn has NO agent scope: the system-prompt section
+// overrides, tool allowlist, and sub-agents list that come from the
+// workspace's per-row default agent (the `is_default = true` row). NOT an
+// AgentScope — we deliberately don't apply the default row's
+// appIntegrations to vespa search, so search visibility for un-scoped
+// chats stays KB-only (the user's own items). This is just the prompt
+// config.
+//
+// Returns the workspace's default-agent inputs, or null if no default
+// row exists yet (the chat service then falls back to the hard-coded
+// DEFAULT_SYSTEM_PROMPT, matching today's behaviour pre-M4b). The
+// default row is created lazily by AgentsService.getOrCreateDefault on
+// any GET /v2/agents/default request, so once an admin opens the admin
+// UI once, every chat picks it up.
+
+export type WorkspaceDefaultPromptInputs = {
+  systemPromptMain: string | null
+  systemPromptTools: string | null
+  systemPromptSubagents: string | null
+  tools: string[]
+  subAgents: DispatchableSubAgent[]
+}
+
+export const loadWorkspaceDefaultPromptInputs = async (viewer: {
+  userId: UserId
+  workspaceId: WorkspaceId
+}): Promise<WorkspaceDefaultPromptInputs | null> => {
+  const { workspace } = await getUserAndWorkspaceByEmail(
+    db,
+    String(viewer.workspaceId),
+    String(viewer.userId),
+  )
+  const rows = await db
+    .select()
+    .from(agents)
+    .where(
+      and(
+        eq(agents.workspaceId, workspace.id),
+        eq(agents.isDefault, true),
+        isNull(agents.deletedAt),
+      ),
+    )
+    .limit(1)
+  const defaultAgent = rows[0]
+  if (!defaultAgent) return null
+
+  // Same dispatchable projection as loadAgentScope — gives the chat
+  // service the bits the dispatch tool needs (M7), and the assembler
+  // still only reads name + description from each row.
+  const subAgentRows: DispatchableSubAgent[] = (
+    await db
+      .select({
+        externalId: subAgents.externalId,
+        name: subAgents.name,
+        description: subAgents.description,
+        systemPrompt: subAgents.systemPrompt,
+        tools: subAgents.tools,
+        thinkingLevel: subAgents.thinkingLevel,
+      })
+      .from(subAgents)
+      .where(
+        and(
+          eq(subAgents.parentAgentId, defaultAgent.id),
+          isNull(subAgents.deletedAt),
+        ),
+      )
+  ).map((r) => ({
+    externalId: r.externalId,
+    name: r.name,
+    description: r.description,
+    systemPrompt: r.systemPrompt,
+    tools: Array.isArray(r.tools)
+      ? (r.tools as unknown[]).filter((t): t is string => typeof t === "string")
+      : [],
+    thinkingLevel: normaliseThinkingLevel(r.thinkingLevel),
+  }))
+
+  const toolNames: string[] = Array.isArray(defaultAgent.tools)
+    ? (defaultAgent.tools as unknown[]).filter(
+        (t): t is string => typeof t === "string",
+      )
+    : []
+
+  return {
+    systemPromptMain: defaultAgent.systemPromptMain ?? null,
+    systemPromptTools: defaultAgent.systemPromptTools ?? null,
+    systemPromptSubagents: defaultAgent.systemPromptSubagents ?? null,
+    tools: toolNames,
+    subAgents: subAgentRows,
   }
 }

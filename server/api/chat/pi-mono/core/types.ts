@@ -58,6 +58,12 @@ export interface RAGAgentConfig<TState = unknown> {
       cacheWrite: number
     }
   }
+  /** Per-model sampler params. `temperature` goes via StreamOptions;
+   *  `topP` is injected onto the final request via onPayload. */
+  streamOptions?: {
+    temperature?: number
+    topP?: number
+  }
 
   // --- Auth & Model Registry ---
   /** Auth storage for credentials */

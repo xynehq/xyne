@@ -852,6 +852,11 @@ export interface ModelConfiguration {
   websearch: boolean
   deepResearch: boolean
   description: string
+  /** Per-model sampler params applied at the LLM-call boundary. */
+  streamOptions?: {
+    temperature?: number
+    topP?: number
+  }
 }
 export const getDocumentSchema = z.object({
   docId: z.string().min(1),

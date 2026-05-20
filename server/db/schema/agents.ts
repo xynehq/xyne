@@ -55,6 +55,30 @@ export const agents = pgTable(
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     via_apiKey: boolean("via_apiKey").notNull().default(false),
     creation_source: creationSourceEnum("creation_source").default(AgentCreationSource.DIRECT).notNull(),
+
+    // Three independently editable system-prompt sections (M2 split into
+    // main / tools / subagents). NULL → assembler falls back to the
+    // hard-coded default from
+    // server/backendv2/agent/pi-mono/system-prompt/defaults/. Existing
+    // rows with the legacy `prompt` column populated retain that text on
+    // read until they're edited via the new form; the chat service
+    // prefers the per-section columns when any are set, otherwise falls
+    // back to legacy `prompt`, otherwise defaults.
+    systemPromptMain: text("system_prompt_main"),
+    systemPromptTools: text("system_prompt_tools"),
+    systemPromptSubagents: text("system_prompt_subagents"),
+
+    // Pi-mono tool names this agent is allowed to call (subset of the
+    // registry in server/backendv2/agent/pi-mono/tools/registry.ts).
+    // Empty array preserves today's "all tools" behaviour for back-compat
+    // — the runner treats an empty list the same as `undefined`. Edited
+    // by the agent form's tool picker (M5).
+    tools: jsonb("tools").notNull().default(sql`'[]'::jsonb`),
+
+    // True for the per-workspace default agent — the row chat falls back
+    // to when a turn has no agent scope. Enforced as "at most one per
+    // workspace" via the partial unique index below.
+    isDefault: boolean("is_default").notNull().default(false),
   },
   (table) => ({
     agentWorkspaceIdIndex: index("agent_workspace_id_index").on(
@@ -64,6 +88,11 @@ export const agents = pgTable(
     agentExternalIdIndex: uniqueIndex("agent_external_id_unique_index").on(
       table.externalId,
     ),
+    // Partial unique index: only one default agent per workspace. NULL/
+    // false rows are exempt, so this never collides with normal agents.
+    defaultPerWorkspace: uniqueIndex("agents_default_per_workspace_unique")
+      .on(table.workspaceId)
+      .where(sql`${table.isDefault} = true`),
   }),
 )
 

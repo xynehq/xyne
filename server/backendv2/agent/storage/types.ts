@@ -103,6 +103,9 @@ export type Run = {
   conversationId: ConversationId // denormalized for fast filtering / analytics
   turnId: TurnId
   parentRunId?: RunId
+  /** M7 — populated on nested runs spawned by `dispatchSubagent`.
+   *  Holds the sub-agent's `external_id` as plain text (no FK). */
+  subAgentId?: string
   agentId: AgentId
   model: string
   status: RunStatus
@@ -118,6 +121,10 @@ export type RunInit = {
   parentRunId?: RunId
   agentId: AgentId
   model: string
+  /** M7 — set on nested runs spawned by `dispatchSubagent`. Stores the
+   *  sub-agent's external_id as plain text (no FK). NULL / omitted on
+   *  top-level (parent) runs. */
+  subAgentId?: string
 }
 
 export type RunStats = {
@@ -372,6 +379,25 @@ export interface MessageRepo {
     page: Cursor,
     tx?: Tx,
   ): Promise<Page<Run>>
+
+  // M8 — nested-run replay surface.
+  //
+  // listChildRuns: every run whose `parent_run_id = parentRunId`,
+  // ordered by `started_at` ASC. Matches the order in which the parent
+  // dispatched sub-agents within a single turn.
+  //
+  // listMessagesByRun: every message whose `run_id = runId`, ordered
+  // by ordinal ASC. Bypasses the nested-message filter in
+  // listMessages — we WANT the sub-agent's messages here.
+  listChildRuns(
+    conversationId: ConversationId,
+    parentRunId: RunId,
+    tx?: Tx,
+  ): Promise<Run[]>
+  listMessagesByRun(
+    runId: RunId,
+    tx?: Tx,
+  ): Promise<MessageWithBlocks[]>
 
   // Reads — tool call projection (analytics surface)
   getToolCall(id: ToolCallId, tx?: Tx): Promise<ToolCall | null>

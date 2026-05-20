@@ -5,8 +5,9 @@
 //
 // Returns the top-N matching chunks with enough metadata for the agent to
 // decide which document to drill into next (via `getChunks` or
-// `searchWithinDoc`). Snippet text is truncated to keep the response cheap;
-// the agent calls `getChunks` for full text.
+// `searchWithinDoc`). Chunks are returned in full (no per-chunk
+// truncation) so the agent gets the same text the document was chunked
+// into at ingest time.
 
 import { defineTool } from "@mariozechner/pi-coding-agent"
 import { Type } from "@sinclair/typebox"
@@ -22,7 +23,6 @@ import {
   textResult,
   titleOf,
   topChunkIndices,
-  truncate,
 } from "./util"
 
 // Per-hit snippet cap. Showing the agent multiple top-scoring chunks per
@@ -184,6 +184,14 @@ export const buildVespaSearchTool = (
           const chunksMap = fields["chunks_map"] as
             | Array<{ chunk_index: number; page_numbers?: number[] }>
             | undefined
+          // `chunks_map` has one entry per chunk in the doc, so its length
+          // is the total chunk count we surface on the hit. The model uses
+          // this to decide whether to call `getChunks` for more context or
+          // stop here. When the field is missing we omit the attribute
+          // rather than guess.
+          const totalChunks = Array.isArray(chunksMap)
+            ? chunksMap.length
+            : undefined
           const renderedChunks = topChunks
             .map((c) => {
               const snippet = snippetForChunk(fields, c.index)
@@ -199,15 +207,22 @@ export const buildVespaSearchTool = (
 
           lines.push(
             `  <hit rank="${String(rank)}" docId=${JSON.stringify(docId)} ` +
-              `score="${score.toFixed(4)}">`,
+              `score="${score.toFixed(4)}"` +
+              `${typeof totalChunks === "number" ? ` total_chunks="${String(totalChunks)}"` : ""}>`,
           )
           lines.push(`    <title>${title}</title>`)
           for (const c of renderedChunks) {
+            // `cite` is the exact string the system prompt instructs the
+            // model to copy verbatim into its answer. Emitting it as a
+            // ready-made attribute removes the assembly step (and the
+            // associated bracket/character errors) the model used to make
+            // when it constructed `[docId#chunk]` itself.
             lines.push(
               `    <chunk chunk_index="${String(c.index)}" ` +
                 `score="${c.score.toFixed(4)}"` +
-                `${c.pages ? ` pages="${c.pages}"` : ""}>` +
-                `${truncate(c.snippet)}</chunk>`,
+                `${c.pages ? ` pages="${c.pages}"` : ""}` +
+                ` cite="[${docId}#${String(c.index)}]">` +
+                `${c.snippet}</chunk>`,
             )
           }
           lines.push(`  </hit>`)

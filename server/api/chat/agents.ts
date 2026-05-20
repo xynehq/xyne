@@ -153,6 +153,16 @@ const createMockAgentFromFormData = (
       workspaceId: workspace.id,
       allowWebSearch: formData.allowWebSearch || null,
       creation_source: AgentCreationSource.DIRECT,
+      // v2 fields the schema gained for per-section prompts, tool
+      // allowlist, and default-agent flag. This mock object is only
+      // used by the test/preview endpoint and never persisted, so
+      // sensible nulls / empties keep the type satisfied without
+      // touching runtime behavior.
+      systemPromptMain: formData.systemPromptMain ?? null,
+      systemPromptTools: formData.systemPromptTools ?? null,
+      systemPromptSubagents: formData.systemPromptSubagents ?? null,
+      tools: formData.tools ?? [],
+      isDefault: false,
     }
 
     const agentPromptForLLM = JSON.stringify(agentForDb)

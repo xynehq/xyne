@@ -8,6 +8,7 @@ import remarkGfm from "remark-gfm"
 const passthroughCiteUrl = (url: string): string =>
   url.startsWith("cite:") ? url : defaultUrlTransform(url)
 import { ToolCallChip } from "./ToolCallChip"
+import { DispatchSubagentChip } from "./DispatchSubagentChip"
 import { ThinkingChip, type ReasoningItem } from "./ThinkingChip"
 import { CitationChip, CitationNumberProvider } from "./CitationChip"
 import { remarkCitations } from "@/lib/remark-citations"
@@ -55,6 +56,14 @@ type Props = {
    *  under the action icons when present. Absent for in-flight messages and
    *  for historical messages from before backendv2 started emitting stats. */
   stats?: MessageStats
+  /** M8 — needed to fetch the sub-agent's nested trace when a
+   *  dispatchSubagent tool chip is expanded. The chip queries
+   *  /v2/chat/conversations/:convId/runs/:runId/nested and matches
+   *  the Nth dispatch block to the Nth nested run. Both are
+   *  required for dispatch chips to render with their nested
+   *  timeline; otherwise the chip degrades to the plain ToolCallChip. */
+  conversationId?: string
+  runId?: string
 }
 
 const formatDuration = (ms: number): string => {
@@ -89,6 +98,8 @@ export function MessageBubble({
   onCopy,
   onRetry,
   stats,
+  conversationId,
+  runId,
 }: Props): JSX.Element {
   const { collapseTools } = usePreferences()
   if (role === "user") {
@@ -111,6 +122,21 @@ export function MessageBubble({
     }
   }
 
+  // Pre-compute the dispatch index for each dispatchSubagent tool_use
+  // block: each one gets a 0-based position among the message's
+  // dispatchSubagent blocks. The Nth dispatch block matches the Nth
+  // nested run on the backend (server sorts by startedAt ASC). This
+  // ordering is stable per message.
+  const dispatchIndexByCallId = new Map<string, number>()
+  {
+    let n = 0
+    for (const b of blocks) {
+      if (b.kind === "tool_use" && b.toolName === "dispatchSubagent") {
+        dispatchIndexByCallId.set(b.toolCallId, n++)
+      }
+    }
+  }
+
   const reasoningItems: ReasoningItem[] = []
   const renderBlocks: Array<{ block: Block; key: number; isLastBlock: boolean }> = []
   let isReasoningActive = false
@@ -124,12 +150,30 @@ export function MessageBubble({
       if (pending && isLast) isReasoningActive = true
     } else if (collapseTools && b.kind === "tool_use") {
       const result = resultById.get(b.toolCallId)
-      reasoningItems.push({
-        kind: "tool",
-        name: b.toolName,
-        args: b.args,
-        ...(result ? { result } : {}),
-      })
+      // dispatchSubagent gets the rich nested-trace chip even inside
+      // the Thoughts accordion — the user expects the expand-to-see-
+      // sub-agent UX wherever the dispatch lands.
+      if (
+        b.toolName === "dispatchSubagent" &&
+        conversationId &&
+        runId
+      ) {
+        reasoningItems.push({
+          kind: "dispatch",
+          args: b.args,
+          ...(result ? { result } : {}),
+          conversationId,
+          parentRunId: runId,
+          dispatchIndex: dispatchIndexByCallId.get(b.toolCallId) ?? 0,
+        })
+      } else {
+        reasoningItems.push({
+          kind: "tool",
+          name: b.toolName,
+          args: b.args,
+          ...(result ? { result } : {}),
+        })
+      }
       if (pending && isLast) isReasoningActive = true
     } else {
       renderBlocks.push({ block: b, key: i, isLastBlock: isLast })
@@ -190,19 +234,40 @@ export function MessageBubble({
                 )
               }
               if (b.kind === "tool_use") {
+                const result = resultById.get(b.toolCallId)
+                // M8 — dispatchSubagent blocks render with the
+                // specialised chip that loads the nested trace on
+                // expand. Plain tools (vespaSearch etc.) keep using
+                // ToolCallChip. The dispatch chip degrades to the
+                // plain chip if MessageBubble wasn't given the
+                // (conversationId, runId) pair needed to fetch the
+                // trace — that happens for historical messages from
+                // before M7 / messages rendered outside the chat
+                // view.
+                if (
+                  b.toolName === "dispatchSubagent" &&
+                  conversationId &&
+                  runId
+                ) {
+                  const dispatchIndex =
+                    dispatchIndexByCallId.get(b.toolCallId) ?? 0
+                  return (
+                    <DispatchSubagentChip
+                      key={key}
+                      args={b.args}
+                      {...(result ? { result } : {})}
+                      conversationId={conversationId}
+                      parentRunId={runId}
+                      dispatchIndex={dispatchIndex}
+                    />
+                  )
+                }
                 return (
                   <ToolCallChip
                     key={key}
                     name={b.toolName}
                     args={b.args}
-                    {...(resultById.has(b.toolCallId)
-                      ? {
-                          result: resultById.get(b.toolCallId) as {
-                            output: unknown
-                            isError: boolean
-                          },
-                        }
-                      : {})}
+                    {...(result ? { result } : {})}
                   />
                 )
               }

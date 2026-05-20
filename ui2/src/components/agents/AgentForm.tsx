@@ -15,10 +15,23 @@ import {
   Lock,
   X,
 } from "lucide-react"
-import type { Agent, AgentCreateInput } from "@/lib/api"
-import { getAgentDefaults } from "@/lib/api"
+import type {
+  Agent,
+  AgentCreateInput,
+  AgentDefaults,
+  AgentToolDescriptor,
+  SubAgent,
+} from "@/lib/api"
+import {
+  getAgentDefaults,
+  getAgentToolsCatalog,
+  listKbCollections,
+  listSubAgents,
+} from "@/lib/api"
 import { EmailMultiInput } from "./EmailMultiInput"
 import { KbPickerModal, type KbSelection } from "./KbPickerModal"
+import { SubAgentsSection } from "./SubAgentsSection"
+import { ToolPicker } from "./ToolPicker"
 
 export type AgentFormValues = AgentCreateInput
 
@@ -39,6 +52,28 @@ type Props = {
   /** When true, the form's own sticky submit bar is suppressed — useful
    *  when the page's toolbar already provides Save / Cancel buttons. */
   hideSubmitRow?: boolean
+  /** When true, the Identity section (name + description) is hidden.
+   *  Used by the workspace-default-agent screen (M4b) where the name
+   *  isn't editable. */
+  hideIdentity?: boolean
+  /** When true, the Sharing section (public/private + viewers/owners) is
+   *  hidden. Same M4b use case — the default agent is workspace-wide,
+   *  there is no per-user sharing to configure. */
+  hideSharing?: boolean
+  /** When true, NULL prompt sections are prefilled with the workspace
+   *  default text so the user sees exactly what the LLM would receive.
+   *  Used by the default-agent edit route — for the General agent there
+   *  is no "upstream default" above it, so showing empty textareas with
+   *  a placeholder is misleading. Custom agents leave this off because
+   *  NULL there genuinely means "inherit from the workspace default". */
+  prefillSectionsFromDefaults?: boolean
+  /** When true, the "Knowledge sources" section is hidden. Used by the
+   *  default-agent edit route: the workspace default is the fallback
+   *  every untargeted chat lands on, and scoping it to a subset of KB
+   *  would silently restrict everyone's default conversations to that
+   *  slice. KB scoping is a custom-agent concept; the General agent
+   *  intentionally has no docId allowlist. */
+  hideKnowledge?: boolean
 }
 
 // `model` is intentionally not exposed in the form — v1's UI hardcodes
@@ -53,6 +88,12 @@ const emptyValues = (): AgentFormValues => ({
   allowWebSearch: false,
   userEmails: [],
   ownerEmails: [],
+  // null on each section = "use the workspace default"; empty tools = all
+  // tools available. The form treats null and "" the same on submit.
+  systemPromptMain: null,
+  systemPromptTools: null,
+  systemPromptSubagents: null,
+  tools: [],
 })
 
 const fromAgent = (a: Agent): AgentFormValues => ({
@@ -70,6 +111,13 @@ const fromAgent = (a: Agent): AgentFormValues => ({
   ...(a.appIntegrations !== undefined
     ? { appIntegrations: a.appIntegrations }
     : {}),
+  // Pull per-section overrides through. `null`/undefined both mean "use
+  // the default" — the form renders the default text as a faded
+  // placeholder until the user types into the textarea.
+  systemPromptMain: a.systemPromptMain ?? null,
+  systemPromptTools: a.systemPromptTools ?? null,
+  systemPromptSubagents: a.systemPromptSubagents ?? null,
+  tools: a.tools ?? [],
 })
 
 export const AgentForm = forwardRef<AgentFormHandle, Props>(function AgentForm(
@@ -81,6 +129,10 @@ export const AgentForm = forwardRef<AgentFormHandle, Props>(function AgentForm(
     onCancel,
     onSubmit,
     hideSubmitRow = false,
+    hideIdentity = false,
+    hideSharing = false,
+    prefillSectionsFromDefaults = false,
+    hideKnowledge = false,
   },
   ref,
 ): JSX.Element {
@@ -94,25 +146,147 @@ export const AgentForm = forwardRef<AgentFormHandle, Props>(function AgentForm(
   )
   const [kbPickerOpen, setKbPickerOpen] = useState(false)
 
-  // Lazy-fetched default system prompt for the "Use default" button. We
-  // fetch once on mount so the click is instant; failures degrade silently
-  // (button just no-ops with a console warning).
-  const [defaultPrompt, setDefaultPrompt] = useState<string | null>(null)
+  // Lazy-fetched defaults + tool catalog. Both are pure data the form
+  // needs once; fetched in parallel on mount so subsequent renders are
+  // instant. Failures degrade silently — "Use default" buttons disable
+  // and the tool picker just shows nothing instead of blocking save.
+  const [defaults, setDefaults] = useState<AgentDefaults | null>(null)
+  const [toolCatalog, setToolCatalog] = useState<AgentToolDescriptor[]>([])
   useEffect(() => {
     let cancelled = false
     void (async (): Promise<void> => {
       try {
-        const { prompt } = await getAgentDefaults()
-        if (!cancelled) setDefaultPrompt(prompt)
+        const [d, c] = await Promise.all([
+          getAgentDefaults(),
+          getAgentToolsCatalog(),
+        ])
+        if (cancelled) return
+        setDefaults(d)
+        setToolCatalog(c.tools)
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.warn("agent defaults fetch failed", err)
+        console.warn("agent defaults / tools fetch failed", err)
       }
     })()
     return () => {
       cancelled = true
     }
   }, [])
+
+  // On create mode, once the tool catalog arrives, pre-select every
+  // tool so the user starts with the full registry checked rather than
+  // a blank "no tools — agent can't call anything" warning. Edit mode
+  // mirrors the DB exactly, no auto-fill (the user's tool subset is
+  // canonical).
+  const createPrefilledTools = useRef(false)
+  useEffect(() => {
+    if (mode !== "create") return
+    if (createPrefilledTools.current) return
+    if (toolCatalog.length === 0) return
+    createPrefilledTools.current = true
+    setValues((prev) => {
+      if ((prev.tools?.length ?? 0) > 0) return prev
+      return { ...prev, tools: toolCatalog.map((t) => t.name) }
+    })
+  }, [mode, toolCatalog])
+
+  // Workspace-default agent only: prefill empty prompt sections with the
+  // resolved defaults so the editor sees the exact text the LLM will
+  // receive. There is no "upstream default" above the General agent —
+  // its rows ARE the workspace defaults — so a placeholder-only view is
+  // misleading there. Custom agents skip this branch (NULL on them
+  // really means "inherit"). Runs once: when defaults first arrive and
+  // the relevant section is still null in `values`, we splice the
+  // default text in. Subsequent edits aren't overwritten.
+  const defaultsPrefilled = useRef(false)
+  useEffect(() => {
+    if (!prefillSectionsFromDefaults) return
+    if (defaultsPrefilled.current) return
+    if (!defaults) return
+    defaultsPrefilled.current = true
+    setValues((prev) => {
+      const next = { ...prev }
+      if (prev.systemPromptMain == null || prev.systemPromptMain === "") {
+        next.systemPromptMain = defaults.sections.main
+      }
+      if (prev.systemPromptTools == null || prev.systemPromptTools === "") {
+        next.systemPromptTools = defaults.sections.tools
+      }
+      // Sub-agents instructions only reach the LLM when at least one
+      // sub-agent exists (the assembler suppresses the whole block
+      // otherwise). Prefilling it when there are zero sub-agents would
+      // mislead the editor — the textarea would show text that never
+      // gets sent. We wait for the sub-agents list to load and only
+      // prefill if any are present. A later, separate effect handles
+      // this once `subAgents` arrives.
+      return next
+    })
+  }, [prefillSectionsFromDefaults, defaults])
+
+  // Section textareas mirror the DB values verbatim — NO auto pre-fill
+  // from workspace defaults or legacy `prompt`. NULL renders as empty,
+  // explicit '' renders as empty, any non-empty override renders as-is.
+  // The placeholder still shows the workspace default so the editor
+  // can see what they'd inherit by leaving the box blank, and the
+  // per-section "Use default" button copies that default into the
+  // textarea on click for explicit editing.
+
+  // Sub-agents under this parent — lifted up so a single fetch drives
+  // both the embedded CRUD list (SubAgentsSection) and any future
+  // gating decisions that need the count.
+  const [subAgents, setSubAgents] = useState<SubAgent[] | null>(null)
+  useEffect(() => {
+    if (mode !== "edit" || !initial?.externalId) {
+      setSubAgents([])
+      return
+    }
+    let cancelled = false
+    void listSubAgents(initial.externalId)
+      .then((rows) => {
+        if (!cancelled) setSubAgents(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setSubAgents([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [mode, initial?.externalId])
+  // Companion to the main/tools prefill (see prefillSectionsFromDefaults
+  // above): fill the sub-agents textarea with the default text only
+  // once we know the parent actually has at least one sub-agent. The
+  // assembler suppresses the whole sub-agents block when there are
+  // none, so prefilling an empty parent would show text that never
+  // reaches the LLM.
+  const subagentsPrefilled = useRef(false)
+  useEffect(() => {
+    if (!prefillSectionsFromDefaults) return
+    if (subagentsPrefilled.current) return
+    if (!defaults) return
+    if (!subAgents || subAgents.length === 0) return
+    subagentsPrefilled.current = true
+    setValues((prev) => {
+      if (
+        prev.systemPromptSubagents != null &&
+        prev.systemPromptSubagents !== ""
+      ) {
+        return prev
+      }
+      return {
+        ...prev,
+        systemPromptSubagents: defaults.sections.subagents,
+      }
+    })
+  }, [prefillSectionsFromDefaults, defaults, subAgents])
+
+  const reloadSubAgents = async (): Promise<void> => {
+    if (!initial?.externalId) return
+    try {
+      setSubAgents(await listSubAgents(initial.externalId))
+    } catch {
+      // best-effort — keep current list on failure
+    }
+  }
 
   useImperativeHandle(
     ref,
@@ -133,6 +307,53 @@ export const AgentForm = forwardRef<AgentFormHandle, Props>(function AgentForm(
       setKbSources(kbFromAgent(initial))
     }
   }, [initial])
+
+  // Legacy / "Use whole collection" rows arrive from the server with
+  // `name = docId` because nothing wrote a real name into agent.docIds
+  // when those rows were added. Resolve them once by mapping the bare
+  // UUID (after the `cl-` prefix) to the live collection's display
+  // name. Fire-and-forget — if the call fails (or the collection no
+  // longer exists) the chips just keep showing the docId. Gated by a
+  // ref so a single fetch covers the whole edit session even if a
+  // collection lookup misses (otherwise the effect re-fires every time
+  // setKbSources runs and the "needs" predicate stays true).
+  const kbNamesResolved = useRef(false)
+  useEffect(() => {
+    if (kbNamesResolved.current) return
+    const needs = kbSources.some(
+      (s) => s.docId.startsWith("cl-") && s.name === s.docId,
+    )
+    if (!needs) return
+    // Mark resolved before the fetch starts. The ref alone guarantees
+    // we only ever fire ONE listKbCollections call per form mount, so
+    // we deliberately do NOT use a `cancelled` closure here — the
+    // effect cleanup runs on the very next kbSources change (e.g.
+    // React strict-mode double-mount or the [initial] effect setting
+    // kbSources twice), and a cancelled flag would race the fetch and
+    // throw away the result we wanted.
+    kbNamesResolved.current = true
+    void listKbCollections()
+      .then((collections) => {
+        const byId = new Map(collections.map((c) => [c.id, c.name]))
+        setKbSources((prev) =>
+          prev.map((s) => {
+            if (!s.docId.startsWith("cl-") || s.name !== s.docId) return s
+            const id = s.docId.replace(/^cl-/, "")
+            const name = byId.get(id)
+            if (!name) return s
+            return {
+              ...s,
+              entity: "collection",
+              name,
+              pathLabel: name,
+            }
+          }),
+        )
+      })
+      .catch(() => {
+        // best-effort; leave chips as-is
+      })
+  }, [kbSources])
 
   const setField = <K extends keyof AgentFormValues>(
     key: K,
@@ -157,11 +378,31 @@ export const AgentForm = forwardRef<AgentFormHandle, Props>(function AgentForm(
     if (!canSubmit) return
     const trimmedName = values.name?.trim()
     if (!trimmedName) return
+    // Section field semantics on save:
+    //   • The textareas mirror the DB verbatim — NULL and '' both
+    //     render empty (see PromptSection rendering above). No
+    //     pre-fill, so what the user sees in the box is what they
+    //     intended.
+    //   • Trim each value. Empty (after trim) is sent as null so the
+    //     server treats it as "no override" — the assembler's
+    //     resolveAgentSystemPrompt then falls back to defaults or
+    //     legacy prompt as appropriate.
+    //   • Anything non-empty is sent verbatim. No "matches default →
+    //     auto-null" magic; without pre-fill there's no phantom
+    //     override path that needs canceling.
+    const normaliseSection = (v: string | null | undefined): string | null => {
+      const trimmed = (v ?? "").trim()
+      return trimmed.length > 0 ? trimmed : null
+    }
     await onSubmit({
       ...values,
       name: trimmedName,
       description: values.description?.trim() ?? "",
       prompt: values.prompt?.trim() ?? "",
+      systemPromptMain: normaliseSection(values.systemPromptMain),
+      systemPromptTools: normaliseSection(values.systemPromptTools),
+      systemPromptSubagents: normaliseSection(values.systemPromptSubagents),
+      tools: values.tools ?? [],
       // KB picks have to land in BOTH fields. `docIds` carries display
       // metadata (name/entity) so the form can rehydrate chips on edit;
       // `appIntegrations.knowledge_base.itemIds` is the canonical list
@@ -189,7 +430,9 @@ export const AgentForm = forwardRef<AgentFormHandle, Props>(function AgentForm(
       onSubmit={handleSubmit}
       className="flex flex-col gap-6 animate-fade-up"
     >
-      {/* Identity */}
+      {/* Identity — hidden for the workspace default agent (M4b),
+          which has a fixed name/description. */}
+      {!hideIdentity && (
       <Section
         title="Identity"
         hint="How this agent shows up in the picker."
@@ -231,54 +474,55 @@ export const AgentForm = forwardRef<AgentFormHandle, Props>(function AgentForm(
           />
         </Field>
       </Section>
+      )}
 
-      {/* Behaviour */}
+      {/* Behaviour — three independently-editable prompt sections plus
+          the per-agent tool allowlist. Each section's textarea shows the
+          workspace default as a faded placeholder when blank, so an
+          editor sees what they're inheriting without an extra click; the
+          "Use default" button copies that text into the textarea so they
+          can tweak it. */}
       <Section
         title="Behaviour"
-        hint="System prompt and the boundaries the agent operates within."
+        hint="System prompt sections and which tools this agent can call."
       >
-        {/* Inlined instead of using <Field> because the label row carries
-            an action button ("Use default") — putting a clickable button
-            inside a <label> conflicts with the implicit focus handling. */}
-        <div className="flex flex-col gap-1.5">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[12.5px] font-medium text-muted-foreground">
-              System prompt
-            </span>
-            <button
-              type="button"
-              disabled={!defaultPrompt}
-              onClick={() => {
-                if (defaultPrompt) setField("prompt", defaultPrompt)
-              }}
-              title={
-                defaultPrompt
-                  ? "Fill with the workspace default prompt"
-                  : "Loading…"
-              }
-              className="text-[11.5px] font-medium text-muted-foreground transition hover:text-foreground disabled:opacity-50"
-            >
-              Use default
-            </button>
-          </div>
-          <textarea
-            value={values.prompt ?? ""}
-            onChange={(e) => {
-              setField("prompt", e.target.value)
-            }}
-            rows={10}
-            placeholder="You are the engineering wiki copilot. Answer with citations. If a question falls outside the docs, say so plainly."
-            // Fixed height with internal scroll — large agent prompts can be
-            // thousands of lines (e.g. SEBI), and we don't want the form to
-            // grow unbounded.
-            className="h-64 w-full resize-none overflow-y-auto rounded-md border border-border bg-surface-elevated px-2.5 py-2 text-[13px] leading-relaxed text-foreground placeholder:text-muted-foreground/80 transition focus:border-ring focus:outline-none"
-          />
-          <span className="text-[11.5px] text-muted-foreground/80">
-            Pinned to every turn — tone, scope, and rules. Click{" "}
-            <em>Use default</em> to start from the workspace prompt and edit
-            from there.
-          </span>
-        </div>
+        <PromptSection
+          label="Main"
+          description="Role, methodology, citation rules — the bulk of the system prompt."
+          value={values.systemPromptMain ?? ""}
+          defaultText={defaults?.sections.main ?? null}
+          rows={10}
+          onChange={(v) => setField("systemPromptMain", v.length ? v : null)}
+        />
+        <PromptSection
+          label="Tools"
+          description="Extra guidance on how and when to call each tool. Leave blank to use the workspace default phrasing — the catalog the agent has access to is selectable below regardless."
+          value={values.systemPromptTools ?? ""}
+          defaultText={defaults?.sections.tools ?? null}
+          rows={6}
+          onChange={(v) => setField("systemPromptTools", v.length ? v : null)}
+        />
+        <PromptSection
+          label="Sub-agents"
+          description="Dispatch instructions appended above the sub-agents catalog at run time. Only takes effect when this agent has at least one sub-agent — otherwise the entire block is suppressed in the LLM prompt regardless of this text."
+          value={values.systemPromptSubagents ?? ""}
+          defaultText={defaults?.sections.subagents ?? null}
+          rows={4}
+          onChange={(v) =>
+            setField("systemPromptSubagents", v.length ? v : null)
+          }
+        />
+
+        {/* Tool picker — empty selection means "all tools available", which
+            matches the runner's back-compat path. Showing every tool as
+            checked-by-default would imply a hard set, but we want the
+            agent to inherit new tools added to the registry without
+            edits; the "All tools" pill makes that policy explicit. */}
+        <ToolPicker
+          tools={toolCatalog}
+          selected={values.tools ?? []}
+          onChange={(next) => setField("tools", next)}
+        />
 
         {/* "Use workspace knowledge" and "Allow web search" toggles are
             intentionally hidden — the team treats them as default-on for v2
@@ -288,21 +532,48 @@ export const AgentForm = forwardRef<AgentFormHandle, Props>(function AgentForm(
             keep their setting until those defaults move. */}
       </Section>
 
-      {/* Knowledge sources */}
-      <Section
-        title="Knowledge sources"
-        hint="Pick the specific documents and folders this agent can reach. Leave empty to use the workspace knowledge default."
-      >
-        <KbSourcesField
-          sources={kbSources}
-          onOpenPicker={() => {
-            setKbPickerOpen(true)
-          }}
-          onRemove={removeKbSource}
-        />
-      </Section>
+      {/* Knowledge sources. Hidden on the workspace-default agent — the
+          General agent's job is to be the unconstrained fallback for
+          every untargeted chat in the workspace; surfacing this control
+          would let one editor silently narrow everyone's default
+          conversations to a slice of KB. KB scoping is a custom-agent
+          concept. */}
+      {!hideKnowledge && (
+        <Section
+          title="Knowledge sources"
+          hint="Pick the specific documents and folders this agent can reach. Leave empty to use the workspace knowledge default."
+        >
+          <KbSourcesField
+            sources={kbSources}
+            onOpenPicker={() => {
+              setKbPickerOpen(true)
+            }}
+            onRemove={removeKbSource}
+          />
+        </Section>
+      )}
 
-      {/* Sharing */}
+      {/* Sub-agents — only available once the parent exists (we need
+          parentExternalId to scope the CRUD endpoints). On create, the
+          section is hidden; saving the parent first unlocks it. */}
+      {mode === "edit" && initial && (
+        <Section
+          title="Sub-agents"
+          hint="Specialist delegates this agent can dispatch to for deep, focused work."
+        >
+          <SubAgentsSection
+            parentExternalId={initial.externalId}
+            subAgents={subAgents}
+            onMutate={reloadSubAgents}
+            toolCatalog={toolCatalog}
+          />
+        </Section>
+      )}
+
+      {/* Sharing — hidden for the workspace default agent (M4b): it's
+          implicitly visible to every workspace member, no per-user
+          viewers/owners to configure. */}
+      {!hideSharing && (
       <Section
         title="Sharing"
         hint="Who can see and use this agent."
@@ -350,6 +621,7 @@ export const AgentForm = forwardRef<AgentFormHandle, Props>(function AgentForm(
           </>
         )}
       </Section>
+      )}
 
       {/* Submit feedback. Always rendered (even when the page's toolbar
           owns the action buttons) so server errors from toolbar-driven
@@ -607,6 +879,76 @@ function KbSourcesField({
       )}
     </div>
   )
+}
+
+// ── Behaviour helpers ───────────────────────────────────────────────────────
+
+/** A single system-prompt section editor — labelled textarea with a
+ *  per-section "Use default" button. Empty string is the canonical "no
+ *  override" state; the form's submit handler normalises it to `null` on
+ *  the wire. The default text shows as a faded placeholder so the editor
+ *  sees what they're inheriting without clicking. */
+function PromptSection({
+  label,
+  description,
+  value,
+  defaultText,
+  rows,
+  onChange,
+}: {
+  label: string
+  description: string
+  value: string
+  defaultText: string | null
+  rows: number
+  onChange: (v: string) => void
+}): JSX.Element {
+  const placeholder = defaultText
+    ? `Workspace default — leave blank to use as-is. Click “Use default” to start editing from this text.\n\n${truncatePlaceholder(defaultText)}`
+    : "Workspace default — leave blank to use as-is."
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[12.5px] font-medium text-muted-foreground">
+          {label}
+        </span>
+        <button
+          type="button"
+          disabled={!defaultText}
+          onClick={() => {
+            if (defaultText) onChange(defaultText)
+          }}
+          title={
+            defaultText
+              ? "Copy the workspace default into this field so you can edit it"
+              : "Loading…"
+          }
+          className="text-[11.5px] font-medium text-muted-foreground transition hover:text-foreground disabled:opacity-50"
+        >
+          Use default
+        </button>
+      </div>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={rows}
+        placeholder={placeholder}
+        className="w-full resize-y rounded-md border border-border bg-surface-elevated px-2.5 py-2 text-[13px] leading-relaxed text-foreground placeholder:text-muted-foreground/60 transition focus:border-ring focus:outline-none"
+      />
+      <span className="text-[11.5px] text-muted-foreground/80">
+        {description}
+      </span>
+    </div>
+  )
+}
+
+// Keep the placeholder readable — show just the head of the default so
+// the textarea isn't a wall of grey text. The "Use default" button
+// gives access to the full thing.
+const PLACEHOLDER_PREVIEW = 220
+function truncatePlaceholder(s: string): string {
+  if (s.length <= PLACEHOLDER_PREVIEW) return s
+  return `${s.slice(0, PLACEHOLDER_PREVIEW - 1).trimEnd()}…`
 }
 
 // ── Form primitives ─────────────────────────────────────────────────────────

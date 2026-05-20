@@ -25,11 +25,14 @@ import {
   insertAgent,
   getAgentByExternalIdWithPermissionCheck,
   updateAgentByExternalIdWithPermissionCheck,
+  updateAgentByExternalId,
   deleteAgentByExternalIdWithPermissionCheck,
   getAgentsAccessibleToUser,
   getAgentsMadeByMe,
   getAgentsSharedToMe,
 } from "@/db/agent"
+import { agents, selectAgentSchema } from "@/db/schema/agents"
+import { subAgents as dbSubAgents } from "@/db/schema/subAgents"
 import {
   syncAgentUserPermissions,
   getAgentUsers,
@@ -42,6 +45,9 @@ import { fetchedDataSourceSchema } from "@/db/schema/agents"
 import { UserAgentRole } from "@/shared/types"
 import { type SelectAgent } from "@/db/agent"
 import { type SelectPublicAgent } from "@/db/schema"
+
+import { resolveAgentSystemPrompt } from "../agent/pi-mono/system-prompt"
+import { allRegisteredToolNames } from "../agent/pi-mono/tools/registry"
 
 // ─── Input shapes ───────────────────────────────────────────────────────────
 
@@ -103,6 +109,24 @@ export const createAgentSchema = z.object({
   userEmails: z.array(z.string().email()).optional().default([]),
   ownerEmails: z.array(z.string().email()).optional().default([]),
   docIds: z.array(fetchedDataSourceSchema).optional().default([]),
+
+  // ── M4a: per-section system prompt + tool allowlist ─────────────────────
+  // Each of the three section fields is optional and nullable:
+  //   • omit (key absent)  → leave the column unchanged on update
+  //   • set to a non-empty string → use that section verbatim
+  //   • set to "" or null  → clear the override, fall back to the default
+  // The route layer never invents defaults; the assembler does so at run time.
+  systemPromptMain: z.string().nullable().optional(),
+  systemPromptTools: z.string().nullable().optional(),
+  systemPromptSubagents: z.string().nullable().optional(),
+  // Pi-mono registry tool name allowlist. Empty array = all tools (matches
+  // the runner's `undefined` path). The route layer validates that every
+  // name exists in the registry in M5.
+  tools: z.array(z.string()).optional(),
+  // Note: `isDefault` is intentionally NOT exposed on this schema. The
+  // per-workspace default agent is created/maintained by M4b's
+  // ensureDefaultAgent path; flipping the flag via PATCH would let a user
+  // claim or duplicate the workspace default.
 })
 export type CreateAgentPayload = z.infer<typeof createAgentSchema>
 
@@ -241,6 +265,26 @@ export class AgentsService {
       docIds: payload.docIds,
       userEmails: payload.userEmails,
       ownerEmails: payload.ownerEmails,
+      // M4a section fields. Forwarded as-is — when undefined the DB-layer
+      // insert leaves them NULL (matches the schema defaults).
+      ...(payload.systemPromptMain !== undefined
+        ? { systemPromptMain: payload.systemPromptMain }
+        : {}),
+      ...(payload.systemPromptTools !== undefined
+        ? { systemPromptTools: payload.systemPromptTools }
+        : {}),
+      ...(payload.systemPromptSubagents !== undefined
+        ? { systemPromptSubagents: payload.systemPromptSubagents }
+        : {}),
+      // M7-pre: `tools = []` now means "literally no tools" at run time
+      // (no more "[] → all" wildcard). To keep new agents usable by
+      // default, materialise the full registry server-side whenever the
+      // create payload omits tools or sends an empty list. The user can
+      // then deselect tiles in the form.
+      tools:
+        payload.tools && payload.tools.length > 0
+          ? payload.tools
+          : allRegisteredToolNames(),
     }
 
     const created = await db.transaction(async (tx) => {
@@ -389,7 +433,207 @@ export class AgentsService {
     }
     return selectPublicAgentSchema.parse(deleted)
   }
+
+  // ── Effective prompt (view page) ─────────────────────────────────────────
+  //
+  // Compute and return the system prompt the LLM would actually see if
+  // a turn started right now under this agent — i.e. resolveAgentSystem
+  // Prompt applied to the agent's row + its live sub-agents. The view
+  // page calls this so editors see the bytes the model receives rather
+  // than guessing from the per-section overrides + workspace defaults.
+  //
+  // Permission gate is the same as `get` — any access role passes (a
+  // public viewer can see the agent and its effective prompt).
+  public async getEffectivePrompt(
+    auth: Auth,
+    externalId: string,
+  ): Promise<{
+    prompt: string
+    sources: {
+      main: "override" | "default"
+      tools: "override" | "default"
+      subagents: "override" | "default" | "suppressed"
+    }
+  }> {
+    const { userId, workspaceId } = await this.resolveAuth(auth)
+    const agent = await getAgentByExternalIdWithPermissionCheck(
+      db,
+      externalId,
+      workspaceId,
+      userId,
+    )
+    if (!agent) throw new AgentNotFoundOrForbiddenError(externalId)
+
+    const subAgentRows = await db
+      .select({
+        name: dbSubAgents.name,
+        description: dbSubAgents.description,
+      })
+      .from(dbSubAgents)
+      .where(
+        and(
+          eq(dbSubAgents.parentAgentId, agent.id),
+          isNull(dbSubAgents.deletedAt),
+        ),
+      )
+
+    // After the legacy `prompt` migration there is only one path:
+    // assemble main + tools + sub-agents from per-section overrides,
+    // filling nulls with the workspace defaults. The per-section
+    // sources just say whether each came from an override or the
+    // default; sub-agents reports "suppressed" when the agent has
+    // zero sub-agents (the block isn't emitted at all).
+    const has = (v: string | null | undefined): boolean =>
+      typeof v === "string" && v.length > 0
+    const sources = {
+      main: has(agent.systemPromptMain)
+        ? ("override" as const)
+        : ("default" as const),
+      tools: has(agent.systemPromptTools)
+        ? ("override" as const)
+        : ("default" as const),
+      subagents:
+        subAgentRows.length === 0
+          ? ("suppressed" as const)
+          : has(agent.systemPromptSubagents)
+            ? ("override" as const)
+            : ("default" as const),
+    }
+
+    const prompt = resolveAgentSystemPrompt({
+      systemPromptMain: agent.systemPromptMain,
+      systemPromptTools: agent.systemPromptTools,
+      systemPromptSubagents: agent.systemPromptSubagents,
+      subAgents: subAgentRows,
+    })
+
+    return { prompt, sources }
+  }
+
+  // ── M4b: workspace-wide default agent ────────────────────────────────────
+  //
+  // The default agent is the row used when a chat turn carries no agent
+  // scope (the "General agent" path). One per workspace, enforced by the
+  // unique partial index `agents_default_per_workspace_unique`. Created
+  // lazily on first access — the unique index doubles as a race-safety
+  // belt if two requests try to insert simultaneously.
+
+  /** Return the default agent for the caller's workspace, creating it on
+   *  the fly if it doesn't exist yet. Idempotent. Permission-free — every
+   *  user in the workspace shares the same default and the read returns
+   *  it for everyone; only PUT is restricted (see updateDefault). */
+  public async getOrCreateDefault(auth: Auth): Promise<SelectAgent> {
+    const { userId, workspaceId } = await this.resolveAuth(auth)
+    const existing = await db
+      .select()
+      .from(agents)
+      .where(
+        and(
+          eq(agents.workspaceId, workspaceId),
+          eq(agents.isDefault, true),
+          isNull(agents.deletedAt),
+        ),
+      )
+      .limit(1)
+    if (existing[0]) return selectAgentSchema.parse(existing[0])
+
+    // Lazy insert. `userId` is the caller's id — the user_id column is
+    // NOT NULL on agents, so it has to be SOMEONE; using the caller
+    // keeps it traceable. This is purely audit, not permission: the
+    // default agent isn't owned in the editorial sense, any workspace
+    // admin can edit it (M4b's update path uses an admin gate, not
+    // owner-of-row).
+    try {
+      const inserted = await db
+        .insert(agents)
+        .values({
+          workspaceId,
+          userId,
+          externalId: `agent-default-${createDefaultAgentExternalIdSuffix(workspaceId)}`,
+          name: "General agent",
+          description:
+            "Workspace default — used when a chat turn doesn't pick a specific agent.",
+          model: "Auto",
+          isPublic: true,
+          isDefault: true,
+          // Materialise the full registry so the default agent has every
+          // tool available out of the box. [] is "no tools" under the
+          // M7-pre uniform semantic, which would silently disable
+          // retrieval on un-scoped chats — definitely not what we want
+          // for the workspace fallback.
+          tools: allRegisteredToolNames(),
+        })
+        .returning()
+      if (!inserted[0]) {
+        throw new Error("ensure default agent: insert returned no row")
+      }
+      return selectAgentSchema.parse(inserted[0])
+    } catch (err) {
+      // Lost the unique-index race against a parallel insert — re-read.
+      if (
+        err instanceof Error &&
+        /agents_default_per_workspace_unique/.test(err.message)
+      ) {
+        const retry = await db
+          .select()
+          .from(agents)
+          .where(
+            and(
+              eq(agents.workspaceId, workspaceId),
+              eq(agents.isDefault, true),
+              isNull(agents.deletedAt),
+            ),
+          )
+          .limit(1)
+        if (retry[0]) return selectAgentSchema.parse(retry[0])
+      }
+      throw err
+    }
+  }
+
+  /** Patch the workspace default agent. Reuses the regular update DB
+   *  helper (which itself takes a Partial of the InsertAgent shape) but
+   *  bypasses the owner/editor permission check — every workspace
+   *  member can read the default, but write access is gated at the
+   *  route layer by a TODO admin-role check. For now we accept any
+   *  authenticated user from the workspace (matches v1's effective
+   *  policy where there's no formal admin role yet). */
+  public async updateDefault(
+    auth: Auth,
+    payload: UpdateAgentPayload,
+  ): Promise<SelectAgent> {
+    if (Object.keys(payload).length === 0) {
+      throw new UpdateHasNoFieldsError()
+    }
+    const { workspaceId } = await this.resolveAuth(auth)
+    const current = await this.getOrCreateDefault(auth)
+
+    // Defensive: never let the default row's `isDefault` flag get
+    // flipped via PATCH, and never let its name/visibility be cleared
+    // out from under us.
+    const { isDefault: _drop, ...rest } = payload as UpdateAgentPayload & {
+      isDefault?: boolean
+    }
+
+    const updated = await updateAgentByExternalId(
+      db,
+      current.externalId,
+      workspaceId,
+      rest,
+    )
+    if (!updated) {
+      throw new AgentNotFoundOrForbiddenError(current.externalId)
+    }
+    return selectAgentSchema.parse(updated)
+  }
 }
+
+// Stable-ish externalId suffix for the workspace default row. We don't
+// strictly need uniqueness across workspaces (the row's external_id is
+// already unique), but keeping the workspace id in the suffix makes
+// it grep-able in logs and DB inspections.
+const createDefaultAgentExternalIdSuffix = (workspaceId: number): string =>
+  `w${String(workspaceId)}-${Math.random().toString(36).slice(2, 10)}`
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 

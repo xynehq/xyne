@@ -5,7 +5,19 @@
 // one statement run inside a transaction — either an explicit Tx passed by
 // the caller (via UnitOfWork.run) or one we open ourselves.
 
-import { and, asc, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm"
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  isNotNull,
+  isNull,
+  lt,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm"
 import { db } from "@/db/client"
 import type { TxnOrClient } from "@/types"
 import {
@@ -131,6 +143,7 @@ const rowToRun = (row: RunRow): Run => {
     startedAt: row.startedAt,
   }
   if (row.parentRunId) r.parentRunId = asRunId(row.parentRunId)
+  if (row.subAgentId) r.subAgentId = row.subAgentId
   if (row.endedAt !== null) r.endedAt = row.endedAt
   if (row.tokensIn !== null) r.tokensIn = row.tokensIn
   if (row.tokensOut !== null) r.tokensOut = row.tokensOut
@@ -479,6 +492,7 @@ export class PostgresMessageRepo implements MessageRepo {
           status: "running",
           startedAt: now(),
           idemKey,
+          ...(init.subAgentId ? { subAgentId: init.subAgentId } : {}),
         })
         .returning()
       const row = rows[0]
@@ -716,6 +730,33 @@ export class PostgresMessageRepo implements MessageRepo {
       conditions.push(gt(v2ChatMessages.ordinal, cursorOrdinal))
     }
 
+    // Hide messages produced by nested runs (sub-agents dispatched via
+    // dispatchSubagent — M7). The parent's view of a turn is its own
+    // assistant message; the sub-agent's persisted trace lives under
+    // the nested run row and is reachable separately for the M8 replay
+    // tree. Without this filter the nested assistant message bubbles
+    // up to the conversation list (1) showing the sub-agent's text
+    // twice (once inside the dispatch tool_result, once standalone)
+    // and (2) defeating the UI's "is the turn in flight?" heuristic,
+    // which keys off the absence of `stats` on the last message — the
+    // nested message has no stats by design (only the parent run
+    // carries them).
+    const nestedRunIds = client
+      .select({ id: v2ChatRuns.id })
+      .from(v2ChatRuns)
+      .where(
+        and(
+          eq(v2ChatRuns.conversationId, conversationId),
+          isNotNull(v2ChatRuns.parentRunId),
+        ),
+      )
+    conditions.push(
+      or(
+        isNull(v2ChatMessages.runId),
+        notInArray(v2ChatMessages.runId, nestedRunIds),
+      )!,
+    )
+
     const rows = await client
       .select()
       .from(v2ChatMessages)
@@ -751,6 +792,41 @@ export class PostgresMessageRepo implements MessageRepo {
       .where(eq(v2ChatRuns.turnId, turnId))
       .orderBy(asc(v2ChatRuns.startedAt), asc(v2ChatRuns.id))
     return rows.map(rowToRun)
+  }
+
+  public async listChildRuns(
+    conversationId: ConversationId,
+    parentRunId: RunId,
+    tx?: Tx,
+  ): Promise<Run[]> {
+    const client = clientOf(tx)
+    // conversation_id is required (cheap defensive scope) AND
+    // parent_run_id matches the dispatcher. Order by startedAt so the
+    // UI can match the Nth dispatch tool_call to the Nth nested run.
+    const rows = await client
+      .select()
+      .from(v2ChatRuns)
+      .where(
+        and(
+          eq(v2ChatRuns.conversationId, conversationId),
+          eq(v2ChatRuns.parentRunId, parentRunId),
+        ),
+      )
+      .orderBy(asc(v2ChatRuns.startedAt), asc(v2ChatRuns.id))
+    return rows.map(rowToRun)
+  }
+
+  public async listMessagesByRun(
+    runId: RunId,
+    tx?: Tx,
+  ): Promise<MessageWithBlocks[]> {
+    const client = clientOf(tx)
+    const rows = await client
+      .select()
+      .from(v2ChatMessages)
+      .where(eq(v2ChatMessages.runId, runId))
+      .orderBy(asc(v2ChatMessages.ordinal))
+    return rows.map(rowToMessageWithBlocks)
   }
 
   public async listRunsForConversation(

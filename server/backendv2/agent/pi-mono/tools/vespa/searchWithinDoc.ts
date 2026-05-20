@@ -23,7 +23,6 @@ import {
   textResult,
   titleOf,
   topChunkIndex,
-  truncate,
 } from "./util"
 
 const DESCRIPTION = [
@@ -94,9 +93,25 @@ export const buildSearchWithinDocTool = (
           )
         }
 
+        // Total chunk count for THIS document, surfaced on the parent
+        // <doc_search> element. All hits inside come from the same
+        // docId so we can pull it off the first hit's fields. The model
+        // uses this to gauge how much of the doc it has and decide
+        // whether to call getChunks for more.
+        let docTotalChunks: number | undefined
+        {
+          const firstFields =
+            ((children[0]?.fields ?? {}) as Record<string, unknown>)["chunks_map"]
+          if (Array.isArray(firstFields)) docTotalChunks = firstFields.length
+        }
+
         const lines: string[] = []
         lines.push(
-          `<doc_search docId=${JSON.stringify(p.docId)} query=${JSON.stringify(p.query)} hits="${String(children.length)}">`,
+          `<doc_search docId=${JSON.stringify(p.docId)} query=${JSON.stringify(p.query)} hits="${String(children.length)}"` +
+            (typeof docTotalChunks === "number"
+              ? ` total_chunks="${String(docTotalChunks)}"`
+              : "") +
+            `>`,
         )
         const details: Array<{
           rank: number
@@ -131,12 +146,20 @@ export const buildSearchWithinDocTool = (
           if (i === 0) {
             lines.push(`  <title>${title}</title>`)
           }
+          // `cite` mirrors the ready-made citation string emitted by the
+          // other vespa tools so the model can copy it verbatim per the
+          // system prompt's "copy, don't construct" rule. When the
+          // chunk_index couldn't be resolved we omit the attribute — the
+          // prompt explicitly says "if a chunk has no cite, don't cite
+          // that chunk".
+          const cite =
+            chunkIndex === null ? "" : ` cite="[${p.docId}#${String(chunkIndex)}]"`
           lines.push(
             `  <hit rank="${String(rank)}" chunk_index="${chunkIndex === null ? "" : String(chunkIndex)}" ` +
-              `score="${score.toFixed(4)}"${pages ? ` pages="${pages}"` : ""}>`,
+              `score="${score.toFixed(4)}"${pages ? ` pages="${pages}"` : ""}${cite}>`,
           )
           if (snippet) {
-            lines.push(`    <snippet>${truncate(snippet)}</snippet>`)
+            lines.push(`    <snippet>${snippet}</snippet>`)
           }
           lines.push(`  </hit>`)
           details.push({ rank, chunkIndex, score })

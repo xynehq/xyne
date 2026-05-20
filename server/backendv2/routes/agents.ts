@@ -20,7 +20,14 @@ import {
   updateAgentSchema,
   type Auth,
 } from "../services/agents"
-import { DEFAULT_SYSTEM_PROMPT } from "../agent/pi-mono/system-prompt"
+import {
+  DEFAULT_SYSTEM_PROMPT,
+  DEFAULT_SYSTEM_PROMPT_MAIN,
+  DEFAULT_SYSTEM_PROMPT_SUBAGENTS,
+  DEFAULT_SYSTEM_PROMPT_TOOLS,
+} from "../agent/pi-mono/system-prompt"
+import { TOOL_REGISTRY } from "../agent/pi-mono/tools/registry"
+import subAgentsRouter from "./subAgents"
 
 type Vars = {
   jwtPayload: { sub: string; workspaceId: string }
@@ -79,12 +86,62 @@ const handle = async (
   }
 }
 
-// GET /v2/agents/defaults — exposes the server's default system prompt so the
-// agent form's "Use default" button can pre-fill the textarea without
-// duplicating the prompt on the client. Registered before /:agentExternalId
-// to avoid path collision.
+// GET /v2/agents/defaults — exposes the server's default system prompt to
+// the agent form. Returns the three independently editable sections (M2
+// split) so each "Use default" button in the form can pre-fill its own
+// textarea. `prompt` is kept on the response for back-compat with the v1
+// AgentForm that hasn't been updated yet — equal to the assembled prompt
+// with no overrides and no sub-agents, so it matches what the LLM sees
+// today. Registered before /:agentExternalId to avoid path collision.
 router.get("/defaults", (c) =>
-  c.json({ prompt: DEFAULT_SYSTEM_PROMPT }),
+  c.json({
+    prompt: DEFAULT_SYSTEM_PROMPT,
+    sections: {
+      main: DEFAULT_SYSTEM_PROMPT_MAIN,
+      tools: DEFAULT_SYSTEM_PROMPT_TOOLS,
+      subagents: DEFAULT_SYSTEM_PROMPT_SUBAGENTS,
+    },
+  }),
+)
+
+// GET /v2/agents/tools — registry catalog the agent form's tool picker
+// renders. Returns name + label + short description + category for each
+// tool. Pure data — no per-agent state — so this is safely cacheable on
+// the client for the page lifetime. Mounted before /:agentExternalId to
+// avoid path collision.
+router.get("/tools", (c) =>
+  c.json({
+    tools: TOOL_REGISTRY.map((t) => ({
+      name: t.name,
+      label: t.label,
+      description: t.description,
+      category: t.category,
+    })),
+  }),
+)
+
+// GET /v2/agents/default — workspace-wide default agent. Auto-created
+// on first read (the unique partial index handles concurrent inserts).
+// Returns the same shape as a regular GET /v2/agents/:id so the agent
+// form can drive both paths from one code branch.
+router.get("/default", (c) =>
+  handle(c, async () => {
+    const agent = await service.getOrCreateDefault(authOf(c))
+    return agent
+  }),
+)
+
+// PUT /v2/agents/default — patch the workspace default agent (system
+// prompt sections, tools allowlist). Name / sharing / permissions stay
+// fixed for this row and the route layer strips them out of the
+// payload server-side as a belt + braces guard against UI bugs.
+router.put("/default", (c) =>
+  handle(c, async () => {
+    const body = await c.req.json().catch(() => ({}))
+    const payload = updateAgentSchema.parse(body)
+    const updated = await service.updateDefault(authOf(c), payload)
+    return updated
+  }),
 )
 
 // GET /v2/agents?limit=&offset=&filter=
@@ -101,6 +158,32 @@ router.get("/", (c) =>
     // destructures `{ agents }`. We pick the envelope form because it's the
     // shape backendv2 uses everywhere else and is easier to extend.
     return { agents }
+  }),
+)
+
+// GET /v2/agents/default/effective-prompt — the assembled prompt the
+// LLM sees when no agent scope is selected (= the default agent's
+// effective prompt). Used by any view surface that wants to preview
+// what the General agent actually emits. Registered before the param
+// route so /default doesn't get captured as :agentExternalId.
+router.get("/default/effective-prompt", (c) =>
+  handle(c, async () => {
+    const agent = await service.getOrCreateDefault(authOf(c))
+    const result = await service.getEffectivePrompt(authOf(c), agent.externalId)
+    return result
+  }),
+)
+
+// GET /v2/agents/:agentExternalId/effective-prompt — the assembled
+// prompt the LLM would see if a turn started right now under this
+// agent. View page calls this so editors see the bytes the model
+// receives rather than guessing from per-section overrides + the
+// workspace defaults.
+router.get("/:agentExternalId/effective-prompt", (c) =>
+  handle(c, async () => {
+    const id = c.req.param("agentExternalId")
+    const result = await service.getEffectivePrompt(authOf(c), id)
+    return result
   }),
 )
 
@@ -154,6 +237,11 @@ router.delete("/:agentExternalId", (c) =>
     return { message: "Agent deleted successfully", agent: deleted }
   }),
 )
+
+// Sub-agents CRUD lives under each parent agent. Mounting at
+// /:agentExternalId/sub-agents so the parent id is implicit in the URL
+// and the sub-router can pull it from c.req.param("agentExternalId").
+router.route("/:agentExternalId/sub-agents", subAgentsRouter)
 
 // ─── Workspace user search ──────────────────────────────────────────────────
 // Lives at /v2/users/search so the agent form's viewer/owner pickers have a

@@ -685,6 +685,11 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     websearch: false,
     deepResearch: false,
     description: "The Nemotron, a general-purpose AI model.",
+    // NVIDIA's Nemotron-3-Super-120B card: temp 1.0, top_p 0.95.
+    streamOptions: {
+      temperature: 1.0,
+      topP: 0.95,
+    },
   },
   [Models.GEMMA_4]: {
     actualName: "gemma-4",

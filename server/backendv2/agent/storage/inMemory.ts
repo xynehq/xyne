@@ -258,6 +258,7 @@ export class InMemoryMessageRepo implements MessageRepo {
       conversationId: turn.conversationId,
       turnId,
       ...(init.parentRunId ? { parentRunId: init.parentRunId } : {}),
+      ...(init.subAgentId ? { subAgentId: init.subAgentId } : {}),
       agentId: init.agentId,
       model: init.model,
       status: "running",
@@ -458,6 +459,26 @@ export class InMemoryMessageRepo implements MessageRepo {
   public async listRunsForTurn(turnId: TurnId): Promise<Run[]> {
     const ids = this.runIdsByTurn.get(turnId) ?? []
     return ids.map((id) => this.runsById.get(id)).filter((r): r is Run => !!r)
+  }
+
+  public async listChildRuns(
+    conversationId: ConversationId,
+    parentRunId: RunId,
+  ): Promise<Run[]> {
+    const ids = this.runIdsByConv.get(conversationId) ?? []
+    return ids
+      .map((id) => this.runsById.get(id))
+      .filter((r): r is Run => !!r && r.parentRunId === parentRunId)
+      .sort((a, b) => a.startedAt - b.startedAt || a.id.localeCompare(b.id))
+  }
+
+  public async listMessagesByRun(
+    runId: RunId,
+  ): Promise<MessageWithBlocks[]> {
+    // StoredMessage already carries `blocks` inline; just filter and sort.
+    return [...this.msgsById.values()]
+      .filter((m) => m.runId === runId)
+      .sort((a, b) => a.ordinal - b.ordinal)
   }
 
   public async listRunsForConversation(

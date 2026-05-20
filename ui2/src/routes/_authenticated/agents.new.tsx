@@ -124,7 +124,7 @@ function AgentsNewRoute(): JSX.Element {
               formRef.current?.requestSubmit()
             }}
             disabled={submitting}
-            className="inline-flex h-7 items-center rounded-md bg-foreground px-2.5 text-[12px] font-medium text-background transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-7 items-center rounded-md border border-border bg-surface-elevated px-2.5 text-[12px] font-medium text-foreground transition hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting ? "Creating…" : "Create agent"}
           </button>

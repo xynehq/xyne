@@ -201,7 +201,10 @@ const delegateToWriter = defineTool({
           maxTokens: 2000,
           reasoning: false,
         },
-        thinkingLevel: "off",
+        // pi-ai's ThinkingLevel is "minimal" | "low" | "medium" | "high" |
+        // "xhigh" — no "off". "minimal" is the lightest tier and matches
+        // what this dev/test tool wants: a quick non-reasoning response.
+        thinkingLevel: "minimal",
         extensions: [],
         timeoutMs: 60_000,
       })

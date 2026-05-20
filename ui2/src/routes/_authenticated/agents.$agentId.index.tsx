@@ -19,7 +19,18 @@ import {
   X,
 } from "lucide-react"
 import { Topbar } from "@/components/Topbar"
-import { type Agent, ApiError, deleteAgent, getAgent } from "@/lib/api"
+import {
+  type Agent,
+  type AgentEffectivePrompt,
+  type AgentToolDescriptor,
+  ApiError,
+  type SubAgent,
+  deleteAgent,
+  getAgent,
+  getAgentToolsCatalog,
+  getEffectivePrompt,
+  listSubAgents,
+} from "@/lib/api"
 import { useAgents } from "@/lib/agents"
 import { getStarredAgents, toggleAgentStar } from "@/lib/agentStars"
 
@@ -34,6 +45,9 @@ function AgentDetailRoute(): JSX.Element {
   const { setSelected: setSelectedAgent } = useAgents()
 
   const [agent, setAgent] = useState<Agent | null>(null)
+  const [subAgents, setSubAgents] = useState<SubAgent[]>([])
+  const [toolCatalog, setToolCatalog] = useState<AgentToolDescriptor[]>([])
+  const [effective, setEffective] = useState<AgentEffectivePrompt | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [starred, setStarred] = useState<Set<string>>(() =>
     getStarredAgents(me.email),
@@ -45,20 +59,40 @@ function AgentDetailRoute(): JSX.Element {
   useEffect((): (() => void) => {
     let cancelled = false
     setAgent(null)
+    setSubAgents([])
     setError(null)
-    getAgent(agentId)
-      .then((a): void => {
-        if (!cancelled) setAgent(a)
-      })
-      .catch((err: Error): void => {
-        if (!cancelled) {
-          setError(
-            err instanceof ApiError && err.status === 404
-              ? "This agent doesn't exist, or you don't have access."
-              : err.message,
-          )
-        }
-      })
+    // Four-way parallel fetch:
+    //   • the agent itself (authoritative — sets `error` if it fails)
+    //   • sub-agents under it (best-effort — empty list on failure)
+    //   • tools catalog (best-effort — needed to map the agent's
+    //     `tools` name list into friendly labels)
+    //   • effective prompt (the assembled bytes the LLM sees — server
+    //     runs resolveAgentSystemPrompt and returns the resolved text +
+    //     per-section sources)
+    void Promise.allSettled([
+      getAgent(agentId),
+      listSubAgents(agentId),
+      getAgentToolsCatalog(),
+      getEffectivePrompt(agentId),
+    ]).then((results) => {
+      if (cancelled) return
+      const [agentR, subR, catR, effR] = results
+      if (agentR.status === "fulfilled") {
+        setAgent(agentR.value)
+      } else {
+        const err = agentR.reason
+        setError(
+          err instanceof ApiError && err.status === 404
+            ? "This agent doesn't exist, or you don't have access."
+            : err instanceof Error
+              ? err.message
+              : "Failed to load agent",
+        )
+      }
+      if (subR.status === "fulfilled") setSubAgents(subR.value)
+      if (catR.status === "fulfilled") setToolCatalog(catR.value.tools)
+      if (effR.status === "fulfilled") setEffective(effR.value)
+    })
     return (): void => {
       cancelled = true
     }
@@ -124,7 +158,7 @@ function AgentDetailRoute(): JSX.Element {
                 setSelectedAgent(agent.externalId)
                 void navigate({ to: "/" })
               }}
-              className="inline-flex h-7 items-center gap-1 rounded-md bg-foreground px-2 text-[12px] font-medium text-background transition hover:opacity-90"
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-surface-elevated px-2 text-[12px] font-medium text-foreground transition hover:bg-secondary"
             >
               <MessageSquarePlus
                 className="h-3.5 w-3.5"
@@ -168,7 +202,12 @@ function AgentDetailRoute(): JSX.Element {
           ) : !agent ? (
             <SkeletonBody />
           ) : (
-            <Body agent={agent} />
+            <Body
+              agent={agent}
+              subAgents={subAgents}
+              toolCatalog={toolCatalog}
+              effective={effective}
+            />
           )}
         </div>
       </main>
@@ -233,7 +272,24 @@ function SkeletonBody(): JSX.Element {
   )
 }
 
-function Body({ agent }: { agent: Agent }): JSX.Element {
+function Body({
+  agent,
+  subAgents,
+  toolCatalog,
+  effective,
+}: {
+  agent: Agent
+  subAgents: SubAgent[]
+  toolCatalog: AgentToolDescriptor[]
+  effective: AgentEffectivePrompt | null
+}): JSX.Element {
+  // Resolve which tool tiles to show on the view. The agent's `tools`
+  // column carries an array of registry names; empty = "all tools".
+  // We render the registry annotated with a checked/unchecked badge
+  // so the viewer immediately sees the allowlist without context.
+  const agentToolSet = new Set(agent.tools ?? [])
+  // Empty `tools` now means "no tools registered" (post M7-pre).
+  const noTools = agentToolSet.size === 0
   return (
     <div className="flex flex-col gap-6 animate-fade-up">
       {/* Hero */}
@@ -286,17 +342,121 @@ function Body({ agent }: { agent: Agent }): JSX.Element {
         />
       </Section>
 
-      {/* Prompt */}
-      {agent.prompt ? (
-        <Section
-          title="System prompt"
-          icon={<Sparkles className="h-3.5 w-3.5" strokeWidth={1.75} />}
+      {/* System prompt — the assembled bytes the LLM actually sees on
+          a turn. Computed server-side by resolveAgentSystemPrompt so
+          we never drift from the runtime behaviour. */}
+      <Section
+        title="System prompt"
+        icon={<Sparkles className="h-3.5 w-3.5" strokeWidth={1.75} />}
+      >
+        {effective ? (
+          <>
+            <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[11.5px] text-muted-foreground/90">
+              <SourcePill label="Main" value={effective.sources.main} />
+              <SourcePill label="Tools" value={effective.sources.tools} />
+              <SourcePill
+                label="Sub-agents"
+                value={effective.sources.subagents}
+              />
+            </div>
+            <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-2xl border border-border bg-surface-elevated p-4 font-mono text-[12.5px] leading-relaxed text-foreground">
+              {effective.prompt}
+            </pre>
+          </>
+        ) : (
+          <div className="h-32 w-full animate-breathe rounded-2xl bg-surface-elevated" />
+        )}
+      </Section>
+
+      {/* Tools — registry annotated with this agent's allowlist. */}
+      <Section
+        title="Tools"
+        icon={<Sparkles className="h-3.5 w-3.5" strokeWidth={1.75} />}
+      >
+        <div
+          className={`mb-2 text-[11.5px] ${noTools ? "text-destructive" : "text-muted-foreground"}`}
         >
-          <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-2xl border border-border bg-surface-elevated p-4 font-mono text-[12.5px] leading-relaxed text-foreground">
-            {agent.prompt}
-          </pre>
-        </Section>
-      ) : null}
+          {noTools
+            ? "No tools — this agent cannot call any tool at run time."
+            : `${String(agentToolSet.size)} of ${String(toolCatalog.length)} tools selected.`}
+        </div>
+        {toolCatalog.length > 0 ? (
+          <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+            {toolCatalog.map((t) => {
+              const on = agentToolSet.has(t.name)
+              return (
+                <li
+                  key={t.name}
+                  className={`flex flex-col gap-0.5 rounded-md border px-2.5 py-2 ${
+                    on
+                      ? "border-primary/60 bg-primary/5"
+                      : "border-border bg-surface-elevated opacity-60"
+                  }`}
+                >
+                  <span className="flex w-full items-center justify-between gap-2">
+                    <span className="font-mono text-[12px] font-medium text-foreground">
+                      {t.name}
+                    </span>
+                    <span
+                      aria-hidden
+                      className={`grid h-3.5 w-3.5 place-items-center rounded-sm border ${
+                        on
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-background"
+                      }`}
+                    >
+                      {on ? "✓" : ""}
+                    </span>
+                  </span>
+                  <span className="text-[11.5px] text-muted-foreground/90">
+                    {t.label}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        ) : (
+          <p className="text-[12px] italic text-muted-foreground/80">
+            Tool catalog unavailable.
+          </p>
+        )}
+      </Section>
+
+      {/* Sub-agents — read-only catalog of delegates this agent can
+          dispatch to (M6 CRUD lives on the edit page). */}
+      <Section
+        title="Sub-agents"
+        icon={<Sparkles className="h-3.5 w-3.5" strokeWidth={1.75} />}
+      >
+        {subAgents.length === 0 ? (
+          <p className="text-[12px] italic text-muted-foreground/80">
+            No sub-agents.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {subAgents.map((s) => (
+              <li
+                key={s.externalId}
+                className="rounded-md border border-border bg-surface-elevated px-3 py-2"
+              >
+                <div className="flex items-baseline gap-2">
+                  <span className="font-mono text-[13px] font-medium text-foreground">
+                    {s.name}
+                  </span>
+                  <span className="text-[11.5px] text-muted-foreground/80">
+                    {s.tools.length === 0
+                      ? "All tools"
+                      : `${String(s.tools.length)} tools`}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[11.5px] leading-snug text-muted-foreground/90">
+                  {s.description}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
 
       {/* KB sources */}
       <Section
@@ -346,6 +506,34 @@ function Pill({
     <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
       {icon}
       {children}
+    </span>
+  )
+}
+
+/** Source badge for the assembled system prompt — tells the viewer at
+ *  a glance which sections came from a per-agent override, the workspace
+ *  default, or were suppressed entirely (sub-agents block when no
+ *  sub-agents exist). */
+function SourcePill({
+  label,
+  value,
+}: {
+  label: string
+  value: "override" | "default" | "suppressed"
+}): JSX.Element {
+  const valueClass: Record<typeof value, string> = {
+    override: "bg-primary/10 text-primary",
+    default: "bg-secondary text-muted-foreground",
+    suppressed: "bg-surface-muted text-muted-foreground/60",
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground">
+      <span className="uppercase tracking-[0.08em]">{label}</span>
+      <span
+        className={`rounded-full px-1.5 py-0 text-[10px] font-medium ${valueClass[value]}`}
+      >
+        {value}
+      </span>
     </span>
   )
 }

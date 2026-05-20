@@ -20,13 +20,9 @@ import {
   newSpan,
   textResult,
   titleOf,
-  truncate,
 } from "./util"
 
 const MAX_LIMIT = 30
-// Slightly smaller per-chunk truncation than search snippets — we're returning
-// many chunks at once, so keep each one digestible.
-const CHUNK_MAX_CHARS = 1200
 
 const DESCRIPTION = [
   "Read a contiguous range of chunks from a specific SEBI document, given ",
@@ -155,10 +151,13 @@ export const buildGetChunksTool = (
           // Strip the "[Page N]" prefix the ingestion adds — it's redundant
           // with the explicit `pages` attribute.
           const cleaned = String(raw).replace(/^\[Page \d+(-\d+)?\]\s*/, "")
+          // `cite` is the ready-made citation string the system prompt's
+          // "copy, don't construct" rule tells the model to emit verbatim.
+          // Mirror the same attribute on search / metadataSearch chunks.
           lines.push(
-            `  <chunk index="${String(idx)}"${pages ? ` pages="${pages}"` : ""}${labels ? ` labels=${JSON.stringify(labels)}` : ""}>`,
+            `  <chunk index="${String(idx)}"${pages ? ` pages="${pages}"` : ""}${labels ? ` labels=${JSON.stringify(labels)}` : ""} cite="[${p.docId}#${String(idx)}]">`,
           )
-          lines.push(`    ${truncate(cleaned, CHUNK_MAX_CHARS)}`)
+          lines.push(`    ${cleaned}`)
           lines.push(`  </chunk>`)
         })
         const hasMore = end < total

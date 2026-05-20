@@ -12,10 +12,18 @@
 import { SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent"
 
 import { createRAGAgent, type RAGAgent } from "@/api/chat/pi-mono/core"
-import type { AgentScope } from "../agent-scope"
-import { buildVespaTools } from "./tools/vespa"
+import type { AgentScope, DispatchableSubAgent } from "../agent-scope"
+import { buildToolsForRun } from "./tools/registry"
+import {
+  buildDispatchSubagentTool,
+  type NestedRunPersistence,
+} from "./tools/dispatch-subagent"
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt"
-import { getActualNameFromEnum, getModelValueFromLabel } from "@/ai/modelConfig"
+import {
+  getActualNameFromEnum,
+  getModelConfiguration,
+  getModelValueFromLabel,
+} from "@/ai/modelConfig"
 import { Models } from "@/ai/types"
 import config from "@/config"
 import { baseLogger, type Log } from "../log"
@@ -86,6 +94,21 @@ export type RunPiMonoTurnArgs = {
   /** Reasoning effort for the turn. Maps directly to pi-ai's ThinkingLevel.
    *  Defaults to "medium" if unset. */
   thinkingLevel?: "minimal" | "low" | "medium" | "high"
+  /** Pi-mono registry tool names this turn may call. Taken literally —
+   *  `undefined` (default) and `[]` both mean "no tools registered".
+   *  Callers (chat service) sourced from the agent row's `tools` column.
+   *  Validated by the caller before reaching the runner. */
+  toolNames?: ReadonlyArray<string>
+  /** M7 — sub-agents the parent can dispatch to via the dispatchSubagent
+   *  tool. When non-empty AND `dispatchPersistence` is supplied, the
+   *  runner appends dispatchSubagent to the toolset; otherwise the
+   *  parent cannot dispatch. Sub-agents themselves never receive
+   *  dispatchSubagent (flat hierarchy enforced at the runner). */
+  dispatchableSubAgents?: ReadonlyArray<DispatchableSubAgent>
+  /** Callbacks the dispatch tool uses to persist nested-run rows +
+   *  the sub-agent's tool_call / message trace. Implemented by the
+   *  chat service. Required for dispatch to be enabled. */
+  dispatchPersistence?: NestedRunPersistence
   /**
    * Logger bound to the turn (conversationId, userId, turnId, runId, …).
    * If omitted, falls back to the module-level logger — useful for tests.
@@ -171,11 +194,45 @@ export async function runPiMonoTurn(
     model: llmModelName,
     baseUrl,
     apiKey,
-    tools: buildVespaTools({
-      userEmail: args.userEmail,
-      logger: log,
-      ...(args.agentScope ? { agentScope: args.agentScope } : {}),
-    }),
+    // Per-turn tool list comes from the agent row's `tools` column. The
+    // builder takes the names literally — [] means "no tools". Callers
+    // that need the full registry (e.g. create-time defaulting) use
+    // `allRegisteredToolNames()` to materialise it explicitly.
+    tools: (() => {
+      const buildCtx = {
+        userEmail: args.userEmail,
+        logger: log,
+        ...(args.agentScope ? { agentScope: args.agentScope } : {}),
+      }
+      const base = buildToolsForRun(args.toolNames ?? [], buildCtx)
+      // M7: append the dispatch tool when the parent has ≥1 sub-agent
+      // AND the chat service handed us the persistence callbacks. Both
+      // are required — without persistence the nested run can't be
+      // recorded and we'd silently lose the trace.
+      const subs = args.dispatchableSubAgents ?? []
+      if (subs.length > 0 && args.dispatchPersistence) {
+        base.push(
+          buildDispatchSubagentTool({
+            userEmail: args.userEmail,
+            logger: log,
+            ...(args.agentScope ? { agentScope: args.agentScope } : {}),
+            subAgents: subs,
+            llm: { model: llmModelName, baseUrl, apiKey },
+            // `thinkingLevel` is no longer threaded through here —
+            // each sub-agent carries its own value on the
+            // DispatchableSubAgent record (sub_agents.thinking_level)
+            // and dispatch reads it off the resolved sub-agent.
+            maxTokens: 64000,
+            contextWindow,
+            reserveTokens,
+            keepRecentTokens,
+            timeoutMs: 10 * 60 * 1000,
+            persistence: args.dispatchPersistence,
+          }),
+        )
+      }
+      return base
+    })(),
     systemPrompt: args.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     sessionManager,
     settingsManager: SettingsManager.inMemory({
@@ -191,6 +248,14 @@ export async function runPiMonoTurn(
       maxTokens: 64000,
       reasoning: true,
     },
+    // Per-model sampler params from modelConfig (e.g. Nemotron-120B
+    // gets temp 1.0 / top_p 0.95 per NVIDIA's card).
+    ...(() => {
+      const cfg = getModelConfiguration(modelId)
+      return cfg?.streamOptions
+        ? { streamOptions: cfg.streamOptions }
+        : {}
+    })(),
     thinkingLevel: args.thinkingLevel ?? "medium",
     extensions: [],
     timeoutMs: 10 * 60 * 1000,
