@@ -24,7 +24,6 @@ import {
   useNestedTrace,
   type NestedRunEntry,
 } from "@/lib/nested-trace"
-import type { Block } from "@/lib/chat-store"
 
 type Props = {
   /** Tool call args from the parent's dispatchSubagent call. */
@@ -171,7 +170,9 @@ function NestedTracePanel({
 }: {
   trace: ReturnType<typeof useNestedTrace>
   dispatchIndex: number
-  fallbackResult?: { output: unknown; isError: boolean }
+  // `| undefined` is explicit so the caller can do
+  // `fallbackResult={result}` under exactOptionalPropertyTypes.
+  fallbackResult?: { output: unknown; isError: boolean } | undefined
 }): JSX.Element {
   if (!trace || trace.status === "loading") {
     return (
@@ -414,6 +415,3 @@ const formatDuration = (ms: number): string => {
   const rem = Math.round(s - m * 60)
   return `${m}m ${rem}s`
 }
-
-// Re-used for the args section.
-const _ = stringify
