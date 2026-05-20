@@ -14,6 +14,9 @@ let paddleStatusEndpoint =
 let doclingServiceUrl =
   process.env.DOCLING_SERVICE_URL || "http://localhost:8000"
 const doclingEnabled = process.env.DOCLING_ENABLED === "true"
+const doclingAsyncEnabled = process.env.DOCLING_ASYNC_ENABLED === "true"
+const doclingAsyncSchedulerEnabled =
+  process.env.DOCLING_ASYNC_SCHEDULER_ENABLED === "true"
 const pdfProcessingDisableFallbacks =
   process.env.PDF_PROCESSING_DISABLE_FALLBACKS === "true"
 const parsePositiveInteger = (
@@ -35,6 +38,128 @@ const doclingStreamingMinPages = parsePositiveInteger(
   process.env.DOCLING_STREAMING_MIN_PAGES,
   doclingPageChunkSize + 1,
 )
+const doclingTempResultsDir =
+  process.env.DOCLING_TEMP_RESULTS_DIR || "storage/tempDoclingResults"
+const doclingKeepTempResults = process.env.DOCLING_KEEP_TEMP_RESULTS === "true"
+const doclingSchedulerStorageRoot =
+  process.env.DOCLING_ASYNC_STORAGE_ROOT ||
+  process.env.DOCLING_TEMP_RESULTS_DIR ||
+  "storage/doclingAsync"
+const knowledgeBaseStorageRoot =
+  process.env.KB_STORAGE_ROOT ||
+  process.env.XYNE_KB_STORAGE_ROOT ||
+  "storage/kb_files"
+const doclingSchedulerPollMs = parsePositiveInteger(
+  process.env.DOCLING_SCHEDULER_POLL_MS,
+  1000,
+)
+const doclingSchedulerLeaseMs = parsePositiveInteger(
+  process.env.DOCLING_SCHEDULER_LEASE_MS,
+  10 * 60 * 1000,
+)
+const doclingSchedulerSplitConcurrency = parsePositiveInteger(
+  process.env.DOCLING_SCHEDULER_SPLIT_CONCURRENCY,
+  1,
+)
+const doclingSchedulerActiveOcrFiles = parsePositiveInteger(
+  process.env.DOCLING_SCHEDULER_ACTIVE_OCR_FILES,
+  4,
+)
+const doclingSchedulerPerFileInflightParts = parsePositiveInteger(
+  process.env.DOCLING_SCHEDULER_PER_FILE_INFLIGHT_PARTS,
+  2,
+)
+const doclingSchedulerMaxPartAttempts = parsePositiveInteger(
+  process.env.DOCLING_SCHEDULER_MAX_PART_ATTEMPTS,
+  3,
+)
+const doclingSchedulerMaxWriteAttempts = parsePositiveInteger(
+  process.env.DOCLING_SCHEDULER_MAX_WRITE_ATTEMPTS,
+  5,
+)
+const doclingSchedulerRetryBaseMs = parsePositiveInteger(
+  process.env.DOCLING_SCHEDULER_RETRY_BASE_MS,
+  30 * 1000,
+)
+const doclingSchedulerRetryMaxMs = parsePositiveInteger(
+  process.env.DOCLING_SCHEDULER_RETRY_MAX_MS,
+  10 * 60 * 1000,
+)
+const doclingSchedulerVespaWritePermits = parsePositiveInteger(
+  process.env.DOCLING_SCHEDULER_VESPA_WRITE_PERMITS,
+  1,
+)
+const doclingSchedulerVespaWritePermitTtlMs = parsePositiveInteger(
+  process.env.DOCLING_SCHEDULER_VESPA_WRITE_PERMIT_TTL_MS,
+  30 * 60 * 1000,
+)
+const doclingSchedulerVespaWriteTimeoutMs = parsePositiveInteger(
+  process.env.DOCLING_SCHEDULER_VESPA_WRITE_TIMEOUT_MS,
+  5 * 60 * 1000,
+)
+const doclingSchedulerMaxVespaPayloadBytes = parsePositiveInteger(
+  process.env.DOCLING_SCHEDULER_MAX_VESPA_PAYLOAD_BYTES,
+  9 * 1024 * 1024,
+)
+const doclingAsyncPartSubmitConcurrency = parsePositiveInteger(
+  process.env.DOCLING_ASYNC_PART_SUBMIT_CONCURRENCY,
+  2,
+)
+const doclingResultConcurrency = parsePositiveInteger(
+  process.env.DOCLING_RESULT_CONCURRENCY,
+  2,
+)
+const doclingResultReadCount = parsePositiveInteger(
+  process.env.DOCLING_RESULT_READ_COUNT,
+  doclingResultConcurrency,
+)
+const doclingResultBlockMs = parsePositiveInteger(
+  process.env.DOCLING_RESULT_BLOCK_MS,
+  5000,
+)
+const doclingResultMinIdleMs = parsePositiveInteger(
+  process.env.DOCLING_RESULT_MIN_IDLE_MS,
+  600000,
+)
+const doclingAsyncStateTtlSeconds = parsePositiveInteger(
+  process.env.DOCLING_ASYNC_STATE_TTL_SECONDS,
+  7 * 24 * 60 * 60,
+)
+const doclingAsyncApplyLockTtlMs = parsePositiveInteger(
+  process.env.DOCLING_ASYNC_APPLY_LOCK_TTL_MS,
+  10 * 60 * 1000,
+)
+const doclingAsyncSubmitPermits = parsePositiveInteger(
+  process.env.DOCLING_ASYNC_SUBMIT_PERMITS,
+  16,
+)
+const doclingAsyncSubmitPermitsEnabled =
+  process.env.DOCLING_ASYNC_SUBMIT_PERMITS_ENABLED === "true"
+const doclingAsyncSubmitPermitLeaseTtlMs = parsePositiveInteger(
+  process.env.DOCLING_ASYNC_SUBMIT_PERMIT_LEASE_TTL_MS,
+  6 * 60 * 60 * 1000,
+)
+const doclingAsyncSubmitPermitPollMs = parsePositiveInteger(
+  process.env.DOCLING_ASYNC_SUBMIT_PERMIT_POLL_MS,
+  3 * 60 * 1000,
+)
+const doclingAsyncSubmitPermitMaxWaitMs = Math.max(
+  0,
+  Number.parseInt(
+    process.env.DOCLING_ASYNC_SUBMIT_PERMIT_MAX_WAIT_MS || "0",
+    10,
+  ) || 0,
+)
+const doclingActiveFileLimit = Math.max(
+  0,
+  Number.parseInt(process.env.DOCLING_ACTIVE_FILE_LIMIT || "0", 10) || 0,
+)
+const redisUrl = process.env.REDIS_URL || "redis://redis:6379/0"
+const doclingResultsStream =
+  process.env.DOCLING_RESULTS_STREAM || "docling:results"
+const doclingResultGroup = process.env.DOCLING_RESULT_GROUP || "app-sync"
+const doclingSchedulerResultGroup =
+  process.env.DOCLING_SCHEDULER_RESULT_GROUP || "app-sync-scheduler"
 let syncServerHost = process.env.SYNC_SERVER_HOST || "localhost"
 
 export const parseOCRProviders = (providers?: string): string[] => {
@@ -133,6 +258,8 @@ const useAgenticFiltering = process.env.USE_AGENTIC_FILTERING === "true"
 const enableJaf = process.env.ENABLE_JAF === "true"
 const modelList = process.env.MODELS_LIST
 const enableImages = process.env.ENABLE_IMAGES === "true"
+const disableIntegrationSyncWorkers =
+  process.env.DISABLE_INTEGRATION_SYNC_WORKERS === "true"
 
 // Pi-mono sessions directory
 const piMonoSessionsDir =
@@ -399,10 +526,46 @@ export default {
   paddleStatusEndpoint,
   doclingServiceUrl,
   doclingEnabled,
+  doclingAsyncEnabled,
+  doclingAsyncSchedulerEnabled,
   pdfProcessingDisableFallbacks,
   maxPdfPageCount,
   doclingPageChunkSize,
   doclingStreamingMinPages,
+  doclingTempResultsDir,
+  doclingKeepTempResults,
+  doclingSchedulerStorageRoot,
+  knowledgeBaseStorageRoot,
+  doclingSchedulerPollMs,
+  doclingSchedulerLeaseMs,
+  doclingSchedulerSplitConcurrency,
+  doclingSchedulerActiveOcrFiles,
+  doclingSchedulerPerFileInflightParts,
+  doclingSchedulerMaxPartAttempts,
+  doclingSchedulerMaxWriteAttempts,
+  doclingSchedulerRetryBaseMs,
+  doclingSchedulerRetryMaxMs,
+  doclingSchedulerVespaWritePermits,
+  doclingSchedulerVespaWritePermitTtlMs,
+  doclingSchedulerVespaWriteTimeoutMs,
+  doclingSchedulerMaxVespaPayloadBytes,
+  doclingAsyncPartSubmitConcurrency,
+  doclingResultConcurrency,
+  doclingResultReadCount,
+  doclingResultBlockMs,
+  doclingResultMinIdleMs,
+  doclingAsyncStateTtlSeconds,
+  doclingAsyncApplyLockTtlMs,
+  doclingAsyncSubmitPermits,
+  doclingAsyncSubmitPermitsEnabled,
+  doclingAsyncSubmitPermitLeaseTtlMs,
+  doclingAsyncSubmitPermitPollMs,
+  doclingAsyncSubmitPermitMaxWaitMs,
+  doclingActiveFileLimit,
+  redisUrl,
+  doclingResultsStream,
+  doclingResultGroup,
+  doclingSchedulerResultGroup,
   ocrProviders,
   appleBundleId,
   // update user query session time
@@ -418,6 +581,12 @@ export default {
     10,
   ),
   vespaRetryDelay: parseInt(process.env.VESPA_RETRY_DELAY_MS || "1000", 10),
+  vespaDocumentUpdateTimeout:
+    process.env.VESPA_DOCUMENT_UPDATE_TIMEOUT || "900s",
+  vespaDocumentUpdateFetchTimeoutMs: parseInt(
+    process.env.VESPA_DOCUMENT_UPDATE_FETCH_TIMEOUT_MS || "960000",
+    10,
+  ),
   chatHistoryPageSize: 21,
   maxDefaultSummary: 6, // Reduced from 15 to limit context per document
   maxChunksPerTool: 50,
@@ -456,6 +625,7 @@ export default {
   fileProcessingTeamSize,
   pdfFileProcessingWorkerThreads,
   pdfFileProcessingTeamSize,
+  disableIntegrationSyncWorkers,
   useLegacyServiceAccountSync,
   useLegacySlackSync,
   // LangFuse configuration

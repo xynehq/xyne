@@ -1,0 +1,23 @@
+FROM oven/bun:1 AS base
+
+WORKDIR /usr/src/app/server
+
+COPY server/package.json server/bun.lock* /usr/src/app/server/
+RUN bun install --production
+
+WORKDIR /usr/src/app
+COPY --chown=bun:bun server/ /usr/src/app/server/
+
+USER root
+RUN apt-get update && apt-get install -y \
+    curl \
+    qpdf \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /usr/src/app/server
+RUN mkdir -p storage downloads && chown -R bun:bun storage downloads
+
+USER bun
+
+ENV NODE_ENV=production
+CMD ["bun", "doclingSchedulerWorker.ts"]

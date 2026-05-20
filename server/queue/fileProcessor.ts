@@ -1,12 +1,40 @@
+import { createHash } from "node:crypto"
 import { readFile } from "node:fs/promises"
+import path from "node:path"
 import config, { IMAGE_CONTEXT_CONFIG } from "@/config"
 import { db } from "@/db/client"
 import { updateParentStatus } from "@/db/knowledgeBase"
 import { collectionItems, collections } from "@/db/schema"
 import { getBaseMimeType } from "@/integrations/dataSource/config"
+import { recordWorkerPhase } from "@/lib/appSyncDiagnostics"
 import {
-  PDF_PROCESSING_METHOD,
+  inferDoclingSourcePriority,
+  upsertDoclingAsyncFileForSplit,
+} from "@/lib/doclingSchedulerStore"
+import { buildDoclingSchedulerSourceReference } from "@/lib/doclingSchedulerStorage"
+import {
+  acquireDoclingActiveFile,
+  releaseDoclingActiveFile,
+} from "@/lib/doclingAsyncActiveFiles"
+import { submitDoclingAsyncJob } from "@/lib/doclingAsyncClient"
+import {
+  type DoclingAsyncFileState,
+  type DoclingAsyncPartState,
+  deleteDoclingAsyncPartState,
+  expireDoclingAsyncKeys,
+  getDoclingAsyncFileState,
+  getDoclingAsyncPartState,
+  listDoclingAsyncPartIndexes,
+  numberFromRedis,
+  patchDoclingAsyncFileState,
+  patchDoclingAsyncPartState,
+  setDoclingAsyncFileState,
+} from "@/lib/doclingAsyncState"
+import {
+  type DoclingStagedPart,
+  type DoclingStagedParts,
   type LoadedPdfDocument,
+  PDF_PROCESSING_METHOD,
   type ProcessingResult as PdfProcessingResult,
   PdfProcessor,
 } from "@/lib/pdfProcessor"
@@ -23,6 +51,33 @@ import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
 import { and, eq, isNull } from "drizzle-orm"
 
 const Logger = getLogger(Subsystem.Queue)
+
+function resolveRuntimeStoragePath(storagePath: string): string {
+  const runtimeServerRoot =
+    process.env.XYNE_CONTAINER_SERVER_ROOT || process.cwd()
+  const hostServerRoot = process.env.XYNE_HOST_SERVER_ROOT
+
+  if (hostServerRoot && storagePath.startsWith(hostServerRoot + path.sep)) {
+    return path.join(
+      runtimeServerRoot,
+      path.relative(hostServerRoot, storagePath),
+    )
+  }
+
+  const marker = "/server/storage/"
+  const markerIndex = storagePath.indexOf(marker)
+  if (
+    markerIndex >= 0 &&
+    !storagePath.startsWith(runtimeServerRoot + path.sep)
+  ) {
+    return path.join(
+      runtimeServerRoot,
+      storagePath.slice(markerIndex + "/server/".length),
+    )
+  }
+
+  return storagePath
+}
 
 export function mergeCollectionItemMetadata(
   existingMetadata: unknown,
@@ -170,19 +225,41 @@ export async function processJob(job: { data: ProcessingJob }) {
 
   const jobData = job.data
   const jobType = jobData.type || ProcessingJobType.FILE // Default to file for backward compatibility
+  const entityId =
+    "fileId" in jobData
+      ? jobData.fileId
+      : "collectionId" in jobData
+        ? jobData.collectionId
+        : "folderId" in jobData
+          ? jobData.folderId
+          : null
 
-  switch (jobType) {
-    case ProcessingJobType.FILE:
-      return await processFileJob(jobData as FileProcessingJob, startTime)
-    case ProcessingJobType.COLLECTION:
-      return await processCollectionJob(
-        jobData as CollectionProcessingJob,
-        startTime,
-      )
-    case ProcessingJobType.FOLDER:
-      return await processFolderJob(jobData as FolderProcessingJob, startTime)
-    default:
-      throw new Error(`Unknown job type: ${jobType}`)
+  recordWorkerPhase("process_job_dispatch", {
+    jobType,
+    entityId,
+    jobData,
+  })
+
+  try {
+    switch (jobType) {
+      case ProcessingJobType.FILE:
+        return await processFileJob(jobData as FileProcessingJob, startTime)
+      case ProcessingJobType.COLLECTION:
+        return await processCollectionJob(
+          jobData as CollectionProcessingJob,
+          startTime,
+        )
+      case ProcessingJobType.FOLDER:
+        return await processFolderJob(jobData as FolderProcessingJob, startTime)
+      default:
+        throw new Error(`Unknown job type: ${jobType}`)
+    }
+  } finally {
+    recordWorkerPhase("process_job_finished", {
+      jobType,
+      entityId,
+      elapsedMs: Date.now() - startTime,
+    })
   }
 }
 
@@ -245,7 +322,7 @@ const mapChunkMeta = (
   return result
 }
 
-function buildVespaFileName(file: {
+export function buildVespaFileName(file: {
   path: string
   fileName: string
   collectionName: string
@@ -276,7 +353,7 @@ function offsetChunkMetadata(
   }
 }
 
-async function appendDoclingPartToKbItem(
+export async function appendDoclingPartToKbItem(
   docId: string,
   result: PdfProcessingResult,
   metadata: Record<string, unknown>,
@@ -349,12 +426,12 @@ async function processPdfWithStreamingDocling(
     collectionName: string
     metadata: unknown
   },
-  pdfSource: Buffer | LoadedPdfDocument,
+  stagedParts: DoclingStagedParts,
   pageTitle: string,
-  totalPages: number,
 ) {
   const baseMimeType = getBaseMimeType(file.mimeType || "text/plain")
   const vespaFileName = buildVespaFileName(file)
+  const totalPages = stagedParts.totalPages
   let chunksCount = 0
   let imageChunksCount = 0
   let tocChunksCount = 0
@@ -401,49 +478,122 @@ async function processPdfWithStreamingDocling(
     clFd: file.parentId,
   }
 
+  Logger.info(
+    {
+      fileId: file.id,
+      vespaDocId: file.vespaDocId,
+      fileName: file.fileName,
+      totalPages,
+      pageChunkSize: config.doclingPageChunkSize,
+    },
+    "Streaming Docling initial Vespa document insert starting",
+  )
   await insert(vespaDoc, KbItemsSchema)
+  Logger.info(
+    {
+      fileId: file.id,
+      vespaDocId: file.vespaDocId,
+      fileName: file.fileName,
+    },
+    "Streaming Docling initial Vespa document insert completed",
+  )
 
-  for await (const part of PdfProcessor.processWithDoclingPageChunks(
-    pdfSource,
-    file.fileName,
-    file.vespaDocId,
-    config.doclingPageChunkSize,
-    totalPages,
-  )) {
-    const nextTextChunksCount = chunksCount + part.result.chunks.length
-    const nextImageChunksCount =
-      imageChunksCount + part.result.image_chunks.length
-    const partMetadata = mergeCollectionItemMetadata(file.metadata, {
-      originalFileName: file.originalName || file.fileName,
-      uploadedBy: file.uploadedByEmail || "system",
-      chunksCount: nextTextChunksCount + nextImageChunksCount,
-      imageChunksCount: nextImageChunksCount,
-      tocChunksCount: tocChunksCount + part.result.toc_chunks.length,
-      processingMethod: baseMimeType,
-      pdfProcessingMethod: PDF_PROCESSING_METHOD.DOCLING,
-      doclingStreaming: true,
-      doclingPageChunkSize: config.doclingPageChunkSize,
-      doclingPartsProcessed: part.partIndex + 1,
-      doclingTotalPages: part.totalPages,
-      doclingLastPageProcessed: part.endPage,
-      ...(pageTitle && { pageTitle }),
-      lastModified: Date.now(),
-    })
+  Logger.info(
+    {
+      fileId: file.id,
+      fileName: file.fileName,
+      totalPages,
+      pageChunkSize: config.doclingPageChunkSize,
+    },
+    "Streaming Docling page part processing starting",
+  )
+  try {
+    for (const stagedPart of stagedParts.parts) {
+      const part = await PdfProcessor.processStagedDoclingPart(stagedPart)
+      Logger.info(
+        {
+          fileId: file.id,
+          vespaDocId: file.vespaDocId,
+          fileName: file.fileName,
+          partIndex: part.partIndex,
+          startPage: part.startPage,
+          endPage: part.endPage,
+          totalPages: part.totalPages,
+          textChunks: part.result.chunks.length,
+          imageChunks: part.result.image_chunks.length,
+          tocChunks: part.result.toc_chunks.length,
+          chunksOffset: chunksCount,
+          imageChunksOffset: imageChunksCount,
+          pageOffset: part.startPage,
+        },
+        "Streaming Docling part result received; appending to Vespa",
+      )
 
-    await appendDoclingPartToKbItem(
-      file.vespaDocId,
-      part.result,
-      partMetadata,
+      const nextTextChunksCount = chunksCount + part.result.chunks.length
+      const nextImageChunksCount =
+        imageChunksCount + part.result.image_chunks.length
+      const partMetadata = mergeCollectionItemMetadata(file.metadata, {
+        originalFileName: file.originalName || file.fileName,
+        uploadedBy: file.uploadedByEmail || "system",
+        chunksCount: nextTextChunksCount + nextImageChunksCount,
+        imageChunksCount: nextImageChunksCount,
+        tocChunksCount: tocChunksCount + part.result.toc_chunks.length,
+        processingMethod: baseMimeType,
+        pdfProcessingMethod: PDF_PROCESSING_METHOD.DOCLING,
+        doclingStreaming: true,
+        doclingPageChunkSize: config.doclingPageChunkSize,
+        doclingPartsProcessed: part.partIndex + 1,
+        doclingTotalPages: part.totalPages,
+        doclingLastPageProcessed: part.endPage,
+        ...(pageTitle && { pageTitle }),
+        lastModified: Date.now(),
+      })
+
+      await appendDoclingPartToKbItem(
+        file.vespaDocId,
+        part.result,
+        partMetadata,
+        chunksCount,
+        imageChunksCount,
+        part.startPage,
+      )
+      await PdfProcessor.deleteStagedPart(stagedPart)
+
+      chunksCount += part.result.chunks.length
+      imageChunksCount += part.result.image_chunks.length
+      tocChunksCount += part.result.toc_chunks.length
+      partCount = part.partIndex + 1
+
+      Logger.info(
+        {
+          fileId: file.id,
+          vespaDocId: file.vespaDocId,
+          fileName: file.fileName,
+          partIndex: part.partIndex,
+          partsProcessed: partCount,
+          chunksCount,
+          imageChunksCount,
+          tocChunksCount,
+        },
+        "Streaming Docling part appended to Vespa",
+      )
+    }
+  } finally {
+    await PdfProcessor.cleanupStagedDoclingParts(stagedParts)
+  }
+
+  Logger.info(
+    {
+      fileId: file.id,
+      vespaDocId: file.vespaDocId,
+      fileName: file.fileName,
+      partCount,
       chunksCount,
       imageChunksCount,
-      part.startPage,
-    )
-
-    chunksCount += part.result.chunks.length
-    imageChunksCount += part.result.image_chunks.length
-    tocChunksCount += part.result.toc_chunks.length
-    partCount = part.partIndex + 1
-  }
+      tocChunksCount,
+    },
+    "Streaming Docling page part processing completed",
+  )
 
   return {
     chunksCount: chunksCount + imageChunksCount,
@@ -451,6 +601,497 @@ async function processPdfWithStreamingDocling(
     tocChunksCount,
     partCount,
   }
+}
+
+async function insertInitialAsyncDoclingVespaDocument(
+  file: {
+    id: string
+    storagePath: string
+    vespaDocId: string
+    fileName: string
+    path: string
+    parentId: string | null
+    mimeType: string | null
+    fileSize: number | null
+    originalName: string | null
+    collectionId: string
+    uploadedByEmail: string | null
+    collectionName: string
+    metadata: unknown
+  },
+  pageTitle: string,
+  totalPages: number,
+  totalParts: number,
+) {
+  const baseMimeType = getBaseMimeType(file.mimeType || "text/plain")
+  const initialMetadata = mergeCollectionItemMetadata(file.metadata, {
+    originalFileName: file.originalName || file.fileName,
+    uploadedBy: file.uploadedByEmail || "system",
+    chunksCount: 0,
+    imageChunksCount: 0,
+    tocChunksCount: 0,
+    processingMethod: baseMimeType,
+    pdfProcessingMethod: PDF_PROCESSING_METHOD.DOCLING,
+    doclingStreaming: true,
+    doclingAsync: true,
+    doclingPageChunkSize: config.doclingPageChunkSize,
+    doclingTotalPages: totalPages,
+    doclingTotalParts: totalParts,
+    ...(pageTitle && { pageTitle }),
+    lastModified: Date.now(),
+  })
+
+  const vespaDoc = {
+    docId: file.vespaDocId,
+    clId: file.collectionId,
+    itemId: file.id,
+    fileName: buildVespaFileName(file),
+    app: Apps.KnowledgeBase as const,
+    entity: KnowledgeBaseEntity.File,
+    description: "",
+    storagePath: file.storagePath,
+    chunks: [],
+    chunks_pos: [],
+    image_chunks: [],
+    image_chunks_pos: [],
+    toc_chunks: [],
+    chunks_map: [],
+    image_chunks_map: [],
+    pageTitle,
+    metadata: JSON.stringify(initialMetadata),
+    createdBy: file.uploadedByEmail || "system",
+    duration: 0,
+    mimeType: baseMimeType,
+    fileSize: file.fileSize || 0,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    clFd: file.parentId,
+  }
+
+  await insert(vespaDoc, KbItemsSchema)
+}
+
+const isAsyncPartDone = (status?: string) =>
+  status === "applied" || status === "completed"
+
+const shouldSkipAsyncPartSubmit = (status?: string) =>
+  status === "pending" ||
+  status === "submitted" ||
+  status === "ready" ||
+  status === "applying" ||
+  isAsyncPartDone(status)
+
+const hashDoclingAsyncIdentity = (value: unknown): string =>
+  createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 24)
+
+export const buildDoclingAsyncRunId = (
+  file: {
+    id: string
+    storagePath: string
+    vespaDocId: string
+    fileSize: number | null
+  },
+  stagedParts: DoclingStagedParts,
+): string =>
+  hashDoclingAsyncIdentity({
+    fileId: file.id,
+    vespaDocId: file.vespaDocId,
+    storagePath: file.storagePath,
+    fileSize: file.fileSize ?? stagedParts.sourceSize ?? null,
+    sourceSize: stagedParts.sourceSize,
+    totalPages: stagedParts.totalPages,
+    pageChunkSize: stagedParts.pageChunkSize,
+    partsTotal: stagedParts.partsTotal,
+    parts: stagedParts.parts.map((part) => ({
+      partIndex: part.partIndex,
+      startPage: part.startPage,
+      endPage: part.endPage,
+      totalPages: part.totalPages,
+      partSizeBytes: part.partSizeBytes,
+    })),
+  })
+
+export const buildDoclingAsyncPartFingerprint = (
+  runId: string,
+  part: DoclingStagedPart,
+): string =>
+  hashDoclingAsyncIdentity({
+    runId,
+    partIndex: part.partIndex,
+    startPage: part.startPage,
+    endPage: part.endPage,
+    totalPages: part.totalPages,
+    partSizeBytes: part.partSizeBytes,
+  })
+
+const partStateMatchesCurrentSplit = (
+  partState: Partial<DoclingAsyncPartState> | null,
+  runId: string,
+  splitFingerprint: string,
+) =>
+  partState?.runId === runId &&
+  partState?.splitFingerprint === splitFingerprint
+
+const stagedPartFromState = (
+  state: Partial<DoclingAsyncFileState>,
+  partState: Partial<DoclingAsyncPartState>,
+  partIndex: number,
+): DoclingStagedPart => {
+  const partPath = partState.partPath
+  if (!partPath) {
+    throw new Error(
+      `Missing staged part path for file=${state.fileId} part=${partIndex}`,
+    )
+  }
+
+  const vespaDocId = state.vespaDocId || partState.vespaDocId
+  if (!vespaDocId) {
+    throw new Error(
+      `Missing vespaDocId for file=${state.fileId} part=${partIndex}`,
+    )
+  }
+
+  return {
+    partIndex,
+    startPage: numberFromRedis(partState.startPage),
+    endPage: numberFromRedis(partState.endPage),
+    totalPages: numberFromRedis(
+      partState.totalPages,
+      numberFromRedis(state.totalPages),
+    ),
+    partDocId: partState.docId || `${vespaDocId}__docling_part_${partIndex}`,
+    partFileName:
+      partState.fileName ||
+      `${state.fileName || state.fileId}.part-${partIndex}.pdf`,
+    partPath,
+    partSizeBytes: numberFromRedis(partState.partSizeBytes),
+  }
+}
+
+export async function submitNextDoclingAsyncPart(
+  fileId: string,
+): Promise<boolean> {
+  const state = await getDoclingAsyncFileState(fileId)
+  if (!state) {
+    throw new Error(`Missing Docling async file state for ${fileId}`)
+  }
+
+  const totalParts = numberFromRedis(state.totalParts)
+  const nextPartToSubmit = numberFromRedis(
+    state.nextPartToSubmit,
+    numberFromRedis(state.nextPartToApply),
+  )
+
+  if (nextPartToSubmit >= totalParts) {
+    return false
+  }
+
+  if (nextPartToSubmit > 0) {
+    const previousPart = await getDoclingAsyncPartState(
+      fileId,
+      nextPartToSubmit - 1,
+    )
+    if (!isAsyncPartDone(previousPart?.status)) {
+      Logger.info(
+        {
+          fileId,
+          nextPartToSubmit,
+          previousPartStatus: previousPart?.status,
+        },
+        "Skipping async Docling part submit until previous part is completed",
+      )
+      return false
+    }
+  }
+
+  const partState = await getDoclingAsyncPartState(fileId, nextPartToSubmit)
+  if (!partState) {
+    throw new Error(
+      `Missing Docling async part state for file=${fileId} part=${nextPartToSubmit}`,
+    )
+  }
+
+  if (shouldSkipAsyncPartSubmit(partState.status)) {
+    Logger.info(
+      {
+        fileId,
+        partIndex: nextPartToSubmit,
+        status: partState.status,
+      },
+      "Skipping async Docling part submit because part is already active or done",
+    )
+    return false
+  }
+
+  const stagedPart = stagedPartFromState(state, partState, nextPartToSubmit)
+  const submitCount = numberFromRedis(partState.submitCount) + 1
+  const vespaDocId = stagedPart.partDocId.split("__docling_part_")[0]
+  const jobId =
+    partState.jobId ||
+    (state.runId
+      ? `docling:${fileId}:${vespaDocId}:run:${state.runId}:part:${nextPartToSubmit}:v2`
+      : `docling:${fileId}:${vespaDocId}:part:${nextPartToSubmit}:v1`)
+
+  const isInitialPart = nextPartToSubmit === 0
+  let activeFileSlotAcquired = false
+
+  try {
+    if (isInitialPart) {
+      await acquireDoclingActiveFile({
+        fileId,
+        fileName: state.fileName || stagedPart.partFileName,
+      })
+      activeFileSlotAcquired = true
+    }
+
+    await patchDoclingAsyncPartState(fileId, nextPartToSubmit, {
+      status: "pending",
+      submitCount: String(submitCount),
+      jobId,
+      error: "",
+    })
+
+    const partBuffer = await PdfProcessor.readStagedPartBuffer(stagedPart)
+    await submitDoclingAsyncJob({
+      buffer: partBuffer,
+      fileName: stagedPart.partFileName,
+      jobId,
+      fileId,
+      docId: stagedPart.partDocId,
+      vespaDocId: state.vespaDocId || partState.vespaDocId || "",
+    })
+
+    await patchDoclingAsyncPartState(fileId, nextPartToSubmit, {
+      status: "submitted",
+      submitCount: String(submitCount),
+      error: "",
+    })
+    await patchDoclingAsyncFileState(fileId, {
+      status: "submitted",
+      nextPartToSubmit: String(nextPartToSubmit + 1),
+    })
+
+    recordWorkerPhase("async_docling_part_submitted", {
+      fileId,
+      fileName: state.fileName,
+      jobId,
+      partIndex: nextPartToSubmit,
+      startPage: stagedPart.startPage,
+      endPage: stagedPart.endPage,
+      totalParts,
+    })
+
+    return true
+  } catch (error) {
+    const errorMessage = getErrorMessage(error)
+    await patchDoclingAsyncPartState(fileId, nextPartToSubmit, {
+      status: "queued",
+      submitCount: String(submitCount),
+      jobId,
+      error: errorMessage,
+    }).catch((patchError) => {
+      Logger.error(
+        {
+          fileId,
+          partIndex: nextPartToSubmit,
+          error: getErrorMessage(patchError),
+        },
+        "Failed to reset async Docling part after submit failure",
+      )
+    })
+
+    if (activeFileSlotAcquired) {
+      await releaseDoclingActiveFile(fileId).catch((releaseError) => {
+        Logger.error(
+          {
+            fileId,
+            error: getErrorMessage(releaseError),
+          },
+          "Failed to release async Docling active-file slot after submit failure",
+        )
+      })
+    }
+
+    throw error
+  }
+}
+
+async function processPdfWithAsyncSplitDocling(
+  file: {
+    id: string
+    storagePath: string
+    vespaDocId: string
+    fileName: string
+    path: string
+    parentId: string | null
+    mimeType: string | null
+    fileSize: number | null
+    originalName: string | null
+    collectionId: string
+    uploadedByEmail: string | null
+    collectionName: string
+    metadata: unknown
+  },
+  stagedParts: DoclingStagedParts,
+  pageTitle: string,
+) {
+  const totalPages = stagedParts.totalPages
+  const totalParts = stagedParts.partsTotal
+  const now = new Date().toISOString()
+  const existingState = await getDoclingAsyncFileState(file.id)
+  const runId = buildDoclingAsyncRunId(file, stagedParts)
+  const splitFingerprint = hashDoclingAsyncIdentity({
+    runId,
+    totalPages,
+    totalParts,
+    pageChunkSize: stagedParts.pageChunkSize,
+  })
+  const isSameRun =
+    existingState?.runId === runId &&
+    existingState?.splitFingerprint === splitFingerprint
+  const fileState: DoclingAsyncFileState = {
+    fileId: file.id,
+    vespaDocId: file.vespaDocId,
+    runId,
+    splitFingerprint,
+    fileName: file.fileName,
+    collectionId: file.collectionId,
+    collectionName: file.collectionName,
+    parentId: file.parentId || "",
+    path: file.path,
+    storagePath: file.storagePath,
+    mimeType: file.mimeType || "",
+    baseMimeType: getBaseMimeType(file.mimeType || "text/plain"),
+    fileSize: String(file.fileSize || 0),
+    originalName: file.originalName || "",
+    uploadedByEmail: file.uploadedByEmail || "",
+    metadataJson: JSON.stringify(file.metadata || {}),
+    pageTitle,
+    totalPages: String(totalPages),
+    totalParts: String(totalParts),
+    pageChunkSize: String(stagedParts.pageChunkSize),
+    stageDir: stagedParts.stageDir,
+    partsDir: stagedParts.partsDir,
+    nextPartToApply: isSameRun ? existingState?.nextPartToApply || "0" : "0",
+    nextPartToSubmit: isSameRun
+      ? existingState?.nextPartToSubmit || existingState?.nextPartToApply || "0"
+      : "0",
+    textChunksCount: isSameRun ? existingState?.textChunksCount || "0" : "0",
+    imageChunksCount: isSameRun ? existingState?.imageChunksCount || "0" : "0",
+    tocChunksCount: isSameRun ? existingState?.tocChunksCount || "0" : "0",
+    status: "submitting",
+    initialVespaInserted: isSameRun
+      ? existingState?.initialVespaInserted || "false"
+      : "false",
+    createdAt: existingState?.createdAt || now,
+    updatedAt: now,
+  }
+
+  await setDoclingAsyncFileState(fileState)
+
+  if (fileState.initialVespaInserted !== "true") {
+    recordWorkerPhase("async_docling_initial_vespa_insert_start", {
+      fileId: file.id,
+      fileName: file.fileName,
+      vespaDocId: file.vespaDocId,
+      totalPages,
+      totalParts,
+    })
+    await insertInitialAsyncDoclingVespaDocument(
+      file,
+      pageTitle,
+      totalPages,
+      totalParts,
+    )
+    await patchDoclingAsyncFileState(file.id, {
+      initialVespaInserted: "true",
+    })
+    recordWorkerPhase("async_docling_initial_vespa_insert_done", {
+      fileId: file.id,
+      fileName: file.fileName,
+      vespaDocId: file.vespaDocId,
+    })
+  }
+
+  const currentPartIndexes = new Set(
+    stagedParts.parts.map((part) => part.partIndex),
+  )
+  for (const partIndex of await listDoclingAsyncPartIndexes(file.id)) {
+    if (!currentPartIndexes.has(partIndex)) {
+      await deleteDoclingAsyncPartState(file.id, partIndex)
+    }
+  }
+
+  for (const part of stagedParts.parts) {
+    const existingPart = await getDoclingAsyncPartState(file.id, part.partIndex)
+    const partFingerprint = buildDoclingAsyncPartFingerprint(runId, part)
+    const canReusePart = partStateMatchesCurrentSplit(
+      existingPart,
+      runId,
+      partFingerprint,
+    )
+    const jobId = canReusePart
+      ? existingPart?.jobId ||
+        `docling:${file.id}:${file.vespaDocId}:run:${runId}:part:${part.partIndex}:v2`
+      : `docling:${file.id}:${file.vespaDocId}:run:${runId}:part:${part.partIndex}:v2`
+    if (!canReusePart) {
+      await deleteDoclingAsyncPartState(file.id, part.partIndex)
+    }
+    await patchDoclingAsyncPartState(file.id, part.partIndex, {
+      fileId: file.id,
+      vespaDocId: file.vespaDocId,
+      runId,
+      splitFingerprint: partFingerprint,
+      jobId,
+      docId: part.partDocId,
+      partIndex: String(part.partIndex),
+      startPage: String(part.startPage),
+      endPage: String(part.endPage),
+      totalPages: String(part.totalPages),
+      totalParts: String(totalParts),
+      fileName: part.partFileName,
+      partPath: part.partPath,
+      partSizeBytes: String(part.partSizeBytes),
+      status: canReusePart ? existingPart?.status || "queued" : "queued",
+      resultKey: canReusePart ? existingPart?.resultKey || "" : "",
+      eventId: canReusePart ? existingPart?.eventId || "" : "",
+      error: canReusePart ? existingPart?.error || "" : "",
+      submitCount: canReusePart ? existingPart?.submitCount || "0" : "0",
+      createdAt: canReusePart
+        ? existingPart?.createdAt || new Date().toISOString()
+        : new Date().toISOString(),
+      appliedAt: canReusePart ? existingPart?.appliedAt || "" : "",
+    })
+  }
+
+  let submittedNextPart = false
+  try {
+    submittedNextPart = await submitNextDoclingAsyncPart(file.id)
+  } catch (error) {
+    await PdfProcessor.cleanupStagedDoclingParts(stagedParts)
+    throw error
+  }
+  await expireDoclingAsyncKeys(file.id, totalParts)
+
+  const dbMetadata = mergeCollectionItemMetadata(file.metadata, {
+    pdfProcessingMethod: PDF_PROCESSING_METHOD.DOCLING,
+    doclingStreaming: true,
+    doclingAsync: true,
+    doclingPageChunkSize: stagedParts.pageChunkSize,
+    doclingTotalPages: totalPages,
+    doclingTotalParts: totalParts,
+    doclingSubmittedParts: submittedNextPart ? 1 : 0,
+  })
+
+  await db
+    .update(collectionItems)
+    .set({
+      uploadStatus: UploadStatus.PROCESSING,
+      statusMessage: `Submitted next PDF part to Docling async for ${file.fileName}`,
+      metadata: dbMetadata,
+      updatedAt: new Date(),
+    })
+    .where(eq(collectionItems.id, file.id))
 }
 
 async function processFileJob(jobData: FileProcessingJob, startTime: number) {
@@ -488,6 +1129,15 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
   }
 
   const file = fileDetails[0]
+  recordWorkerPhase("file_details_loaded", {
+    fileId,
+    fileName: file.fileName,
+    storagePath: file.storagePath,
+    mimeType: file.mimeType,
+    fileSize: file.fileSize,
+    uploadStatus: file.uploadStatus,
+    vespaDocId: file.vespaDocId,
+  })
 
   // Guard: only process real files
   if (file.type !== "file") {
@@ -501,9 +1151,17 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
     // Skip if already processed
     if (file.uploadStatus === UploadStatus.COMPLETED) {
       Logger.info(`File already processed: ${fileId}`)
+      recordWorkerPhase("file_already_completed", {
+        fileId,
+        fileName: file.fileName,
+      })
       return
     }
 
+    recordWorkerPhase("file_status_update_start", {
+      fileId,
+      fileName: file.fileName,
+    })
     // Update status to processing
     await db
       .update(collectionItems)
@@ -513,7 +1171,19 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         updatedAt: new Date(),
       })
       .where(eq(collectionItems.id, fileId))
+    recordWorkerPhase("file_status_update_done", {
+      fileId,
+      fileName: file.fileName,
+    })
 
+    Logger.info(
+      {
+        fileId,
+        fileName: file.fileName,
+        storagePath: file.storagePath,
+      },
+      "File job status set to PROCESSING",
+    )
     Logger.info(`Processing file: ${file.fileName} at ${file.storagePath}`)
 
     // Check required fields
@@ -525,12 +1195,83 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       throw new Error(`No vespaDocId for file: ${fileId}`)
     }
 
-    let fileBuffer: Buffer | null = await readFile(file.storagePath)
+    const runtimeStoragePath = resolveRuntimeStoragePath(file.storagePath)
+    if (runtimeStoragePath !== file.storagePath) {
+      Logger.warn(
+        {
+          fileId,
+          fileName: file.fileName,
+          storagePath: file.storagePath,
+          runtimeStoragePath,
+        },
+        "Remapped storage path for container runtime",
+      )
+    }
     const baseMimeType = getBaseMimeType(file.mimeType || "text/plain")
+    const useOCR = jobData.useOCR !== false
+    const asyncDoclingPdfPath =
+      baseMimeType === "application/pdf" &&
+      useOCR &&
+      config.doclingEnabled &&
+      config.doclingAsyncEnabled
+
+    let fileBuffer: Buffer | null = null
+    if (asyncDoclingPdfPath) {
+      recordWorkerPhase("read_file_skipped", {
+        fileId,
+        fileName: file.fileName,
+        runtimeStoragePath,
+        reason: "async_docling_qpdf_staging_uses_file_path",
+      })
+      Logger.info(
+        {
+          fileId,
+          fileName: file.fileName,
+          storagePath: file.storagePath,
+          runtimeStoragePath,
+          expectedSizeBytes: file.fileSize,
+        },
+        "Skipping full PDF read before async Docling qpdf staging",
+      )
+    } else {
+      Logger.info(
+        {
+          fileId,
+          fileName: file.fileName,
+          storagePath: file.storagePath,
+          expectedSizeBytes: file.fileSize,
+        },
+        "Reading file from disk for processing",
+      )
+      recordWorkerPhase("read_file_start", {
+        fileId,
+        fileName: file.fileName,
+        storagePath: file.storagePath,
+        runtimeStoragePath,
+        expectedSizeBytes: file.fileSize,
+      })
+      fileBuffer = await readFile(runtimeStoragePath)
+      recordWorkerPhase("read_file_done", {
+        fileId,
+        fileName: file.fileName,
+        runtimeStoragePath,
+        fileBufferBytes: fileBuffer.length,
+      })
+      Logger.info(
+        {
+          fileId,
+          fileName: file.fileName,
+          storagePath: file.storagePath,
+          runtimeStoragePath,
+          fileBufferBytes: fileBuffer.length,
+        },
+        "File read completed",
+      )
+    }
 
     // Extract title for markdown files
     let pageTitle: string = ""
-    if (baseMimeType === "text/markdown") {
+    if (baseMimeType === "text/markdown" && fileBuffer) {
       try {
         const fileContent = fileBuffer.toString("utf-8")
         pageTitle = extractMarkdownTitle(fileContent)
@@ -551,16 +1292,231 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
 
     // Process file to extract content
     // Get useOCR from job data (default to true for backward compatibility)
-    const useOCR = jobData.useOCR !== false
     let fallbackUseOCR = useOCR
+    Logger.info(
+      {
+        fileId,
+        fileName: file.fileName,
+        mimeType: file.mimeType,
+        baseMimeType,
+        useOCR,
+        doclingEnabled: config.doclingEnabled,
+        doclingPageChunkSize: config.doclingPageChunkSize,
+        imageContextEnabled: IMAGE_CONTEXT_CONFIG.enabled,
+      },
+      "File processing mode selected",
+    )
     if (baseMimeType === "application/pdf" && useOCR && config.doclingEnabled) {
-      const loadedPdfDocument = await PdfProcessor.loadDocument(fileBuffer)
-      const pageCount = loadedPdfDocument?.pageCount ?? null
+      if (config.doclingAsyncEnabled && config.doclingAsyncSchedulerEnabled) {
+        const { sourceKind, basePriority } = inferDoclingSourcePriority({
+          collectionId: file.collectionId,
+          parentId: file.parentId,
+          metadata: file.metadata,
+        })
+        const schedulerSource = buildDoclingSchedulerSourceReference(
+          runtimeStoragePath,
+        )
 
-      if (
-        loadedPdfDocument &&
-        PdfProcessor.shouldStreamWithDocling(pageCount)
-      ) {
+        const schedulerFile = await upsertDoclingAsyncFileForSplit({
+          fileId,
+          vespaDocId: file.vespaDocId,
+          collectionId: file.collectionId,
+          parentId: file.parentId,
+          collectionName: file.collectionName,
+          fileName: file.fileName,
+          originalName: file.originalName,
+          sourcePath: schedulerSource.sourcePath,
+          sourceStorageKey: schedulerSource.sourceStorageKey,
+          path: file.path,
+          mimeType: file.mimeType || "application/pdf",
+          baseMimeType,
+          fileSize: file.fileSize || 0,
+          uploadedByEmail: file.uploadedByEmail,
+          pageTitle,
+          metadata:
+            typeof file.metadata === "object" && file.metadata !== null
+              ? (file.metadata as Record<string, unknown>)
+              : {},
+          sourceKind,
+          basePriority,
+          priorityOverride: null,
+          totalPages: 0,
+          totalParts: 0,
+          pageChunkSize: config.doclingPageChunkSize,
+        })
+
+        if (!schedulerFile) {
+          recordWorkerPhase("async_docling_scheduler_duplicate_ignored", {
+            fileId,
+            fileName: file.fileName,
+          })
+          Logger.info(
+            { fileId, fileName: file.fileName },
+            "Skipped async Docling scheduler enqueue because file is already active or completed",
+          )
+          return
+        }
+
+        await db
+          .update(collectionItems)
+          .set({
+            uploadStatus: UploadStatus.PROCESSING,
+            statusMessage: `Queued PDF for async Docling scheduler: ${file.fileName}`,
+            metadata: mergeCollectionItemMetadata(file.metadata, {
+              pdfProcessingMethod: PDF_PROCESSING_METHOD.DOCLING,
+              doclingAsyncScheduler: true,
+              doclingPageChunkSize: config.doclingPageChunkSize,
+            }),
+            updatedAt: new Date(),
+          })
+          .where(eq(collectionItems.id, fileId))
+
+        recordWorkerPhase("async_docling_scheduler_queued", {
+          fileId,
+          fileName: file.fileName,
+          sourceKind,
+          basePriority,
+        })
+        Logger.info(
+          { fileId, fileName: file.fileName, sourceKind, basePriority },
+          "Queued PDF for async Docling scheduler",
+        )
+        return
+      }
+
+      const fileBufferBytes = fileBuffer?.length ?? file.fileSize ?? null
+      Logger.info(
+        {
+          fileId,
+          fileName: file.fileName,
+          fileBufferBytes,
+          runtimeStoragePath,
+          asyncDoclingPdfPath,
+        },
+        "Counting PDF pages for Docling streaming eligibility check",
+      )
+      recordWorkerPhase("pdf_page_count_start", {
+        fileId,
+        fileName: file.fileName,
+        fileBufferBytes,
+        pageChunkSize: config.doclingPageChunkSize,
+        doclingStreamingMinPages: config.doclingStreamingMinPages,
+      })
+      const loadedPdfMetadata = await PdfProcessor.loadDocumentMetadataFromFile(
+        runtimeStoragePath,
+        {
+          fileId,
+          fileName: file.fileName,
+        },
+      )
+      const pageCount = loadedPdfMetadata?.pageCount ?? null
+      const shouldStream =
+        loadedPdfMetadata && PdfProcessor.shouldStreamWithDocling(pageCount)
+      recordWorkerPhase("pdf_page_count_done", {
+        fileId,
+        fileName: file.fileName,
+        pageCount,
+        pageChunkSize: config.doclingPageChunkSize,
+        doclingStreamingMinPages: config.doclingStreamingMinPages,
+        shouldStream,
+      })
+
+      Logger.info(
+        {
+          fileId,
+          fileName: file.fileName,
+          pageCount,
+          pageChunkSize: config.doclingPageChunkSize,
+          doclingStreamingMinPages: config.doclingStreamingMinPages,
+          shouldStream,
+        },
+        "PDF Docling streaming eligibility check completed",
+      )
+
+      if (!loadedPdfMetadata && config.doclingAsyncEnabled) {
+        throw new Error(
+          `Failed to load PDF for async Docling processing: ${file.fileName}`,
+        )
+      }
+
+      if (loadedPdfMetadata && config.doclingAsyncEnabled) {
+        Logger.info(
+          {
+            fileId,
+            fileName: file.fileName,
+            pageCount,
+            pageChunkSize: config.doclingPageChunkSize,
+          },
+          "Using async split Docling PDF ingestion",
+        )
+        recordWorkerPhase("async_docling_split_start", {
+          fileId,
+          fileName: file.fileName,
+          pageCount,
+          pageChunkSize: config.doclingPageChunkSize,
+        })
+        fileBuffer = null
+        recordWorkerPhase("docling_stage_start", {
+          fileId,
+          fileName: file.fileName,
+          pageCount,
+          pageChunkSize: config.doclingPageChunkSize,
+          mode: "async",
+        })
+        const stagedParts = await PdfProcessor.stageDoclingPagePartsFromFile({
+          fileId,
+          sourcePath: runtimeStoragePath,
+          fileName: file.fileName,
+          vespaDocId: file.vespaDocId,
+          pageChunkSize: config.doclingPageChunkSize,
+          knownTotalPages: pageCount,
+        })
+        recordWorkerPhase("docling_stage_done", {
+          fileId,
+          fileName: file.fileName,
+          pageCount,
+          pageChunkSize: config.doclingPageChunkSize,
+          partsTotal: stagedParts.partsTotal,
+          stageDir: stagedParts.stageDir,
+          mode: "async",
+        })
+        await processPdfWithAsyncSplitDocling(
+          {
+            ...file,
+            storagePath: runtimeStoragePath,
+            vespaDocId: file.vespaDocId,
+          },
+          stagedParts,
+          pageTitle,
+        )
+        recordWorkerPhase("async_docling_split_submitted", {
+          fileId,
+          fileName: file.fileName,
+          pageCount,
+          pageChunkSize: config.doclingPageChunkSize,
+        })
+        const endTime = Date.now()
+        Logger.info(
+          `Submitted async split Docling file: ${fileId} in ${endTime - startTime}ms`,
+        )
+        return
+      }
+
+      let resolvedPdfDocumentForStreaming: LoadedPdfDocument | null = null
+      if (shouldStream && !config.doclingAsyncEnabled) {
+        if (!fileBuffer) {
+          throw new Error(`Missing PDF buffer for streaming Docling: ${fileId}`)
+        }
+        resolvedPdfDocumentForStreaming = await PdfProcessor.loadDocument(
+          fileBuffer,
+          {
+            fileId,
+            fileName: file.fileName,
+          },
+        )
+      }
+
+      if (resolvedPdfDocumentForStreaming && shouldStream) {
         try {
           Logger.info(
             {
@@ -571,18 +1527,64 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
             },
             "Using streaming Docling PDF ingestion",
           )
+          recordWorkerPhase("streaming_docling_start", {
+            fileId,
+            fileName: file.fileName,
+            pageCount,
+            pageChunkSize: config.doclingPageChunkSize,
+          })
 
           fileBuffer = null
+          Logger.info(
+            {
+              fileId,
+              fileName: file.fileName,
+              pageCount,
+            },
+            "Released original PDF buffer before streaming Docling processing",
+          )
+          recordWorkerPhase("docling_stage_start", {
+            fileId,
+            fileName: file.fileName,
+            pageCount,
+            pageChunkSize: config.doclingPageChunkSize,
+            mode: "streaming",
+          })
+          const stagedParts = await PdfProcessor.stageDoclingPageParts({
+            fileId,
+            source: resolvedPdfDocumentForStreaming,
+            sourcePath: runtimeStoragePath,
+            fileName: file.fileName,
+            vespaDocId: file.vespaDocId,
+            pageChunkSize: config.doclingPageChunkSize,
+            knownTotalPages: pageCount,
+          })
+          recordWorkerPhase("docling_stage_done", {
+            fileId,
+            fileName: file.fileName,
+            pageCount,
+            pageChunkSize: config.doclingPageChunkSize,
+            partsTotal: stagedParts.partsTotal,
+            stageDir: stagedParts.stageDir,
+            mode: "streaming",
+          })
           const streamResult = await processPdfWithStreamingDocling(
             {
               ...file,
-              storagePath: file.storagePath,
+              storagePath: runtimeStoragePath,
               vespaDocId: file.vespaDocId,
             },
-            loadedPdfDocument,
+            stagedParts,
             pageTitle,
-            pageCount as number,
           )
+          recordWorkerPhase("streaming_docling_done", {
+            fileId,
+            fileName: file.fileName,
+            chunksCount: streamResult.chunksCount,
+            imageChunksCount: streamResult.imageChunksCount,
+            tocChunksCount: streamResult.tocChunksCount,
+            partCount: streamResult.partCount,
+          })
 
           const dbMetadata = mergeCollectionItemMetadata(file.metadata, {
             chunksCount: streamResult.chunksCount,
@@ -594,6 +1596,13 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
             doclingPartsProcessed: streamResult.partCount,
           })
 
+          recordWorkerPhase("streaming_completion_update_start", {
+            fileId,
+            fileName: file.fileName,
+            chunksCount: streamResult.chunksCount,
+            imageChunksCount: streamResult.imageChunksCount,
+            partCount: streamResult.partCount,
+          })
           await db
             .update(collectionItems)
             .set({
@@ -605,6 +1614,13 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
               updatedAt: new Date(),
             })
             .where(eq(collectionItems.id, fileId))
+          recordWorkerPhase("streaming_completion_update_done", {
+            fileId,
+            fileName: file.fileName,
+            chunksCount: streamResult.chunksCount,
+            imageChunksCount: streamResult.imageChunksCount,
+            partCount: streamResult.partCount,
+          })
 
           if (file.parentId) {
             await updateParentStatus(db, file.parentId, false)
@@ -618,6 +1634,13 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
           )
           return
         } catch (error) {
+          resolvedPdfDocumentForStreaming = null
+          recordWorkerPhase("streaming_docling_failed", {
+            fileId,
+            fileName: file.fileName,
+            error,
+            fallbackDisabled: config.pdfProcessingDisableFallbacks,
+          })
           if (config.pdfProcessingDisableFallbacks) {
             throw error
           }
@@ -627,24 +1650,112 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
             `Streaming Docling PDF processing failed for ${file.fileName}, falling back without OCR`,
           )
           fallbackUseOCR = false
-          fileBuffer = await readFile(file.storagePath)
+          Logger.info(
+            {
+              fileId,
+              fileName: file.fileName,
+              storagePath: file.storagePath,
+              runtimeStoragePath,
+            },
+            "Re-reading file from disk for non-streaming fallback processing",
+          )
+          recordWorkerPhase("fallback_read_file_start", {
+            fileId,
+            fileName: file.fileName,
+            runtimeStoragePath,
+          })
+          fileBuffer = await readFile(runtimeStoragePath)
+          recordWorkerPhase("fallback_read_file_done", {
+            fileId,
+            fileName: file.fileName,
+            fileBufferBytes: fileBuffer.length,
+          })
+          Logger.info(
+            {
+              fileId,
+              fileName: file.fileName,
+              fileBufferBytes: fileBuffer.length,
+            },
+            "Fallback file read completed",
+          )
         }
       }
     }
 
     if (!fileBuffer) {
-      fileBuffer = await readFile(file.storagePath)
+      Logger.info(
+        {
+          fileId,
+          fileName: file.fileName,
+          storagePath: file.storagePath,
+          runtimeStoragePath,
+        },
+        "Re-reading file from disk for standard processing",
+      )
+      recordWorkerPhase("standard_read_file_start", {
+        fileId,
+        fileName: file.fileName,
+        runtimeStoragePath,
+      })
+      fileBuffer = await readFile(runtimeStoragePath)
+      recordWorkerPhase("standard_read_file_done", {
+        fileId,
+        fileName: file.fileName,
+        fileBufferBytes: fileBuffer.length,
+      })
+      Logger.info(
+        {
+          fileId,
+          fileName: file.fileName,
+          fileBufferBytes: fileBuffer.length,
+        },
+        "Standard processing file read completed",
+      )
     }
 
+    Logger.info(
+      {
+        fileId,
+        fileName: file.fileName,
+        mimeType: file.mimeType,
+        baseMimeType,
+        fallbackUseOCR,
+        extractImages: IMAGE_CONTEXT_CONFIG.enabled,
+        describeImages: IMAGE_CONTEXT_CONFIG.enabled,
+        fileBufferBytes: fileBuffer.length,
+      },
+      "Standard file processor starting",
+    )
+    recordWorkerPhase("standard_processor_start", {
+      fileId,
+      fileName: file.fileName,
+      mimeType: file.mimeType,
+      baseMimeType,
+      fallbackUseOCR,
+      fileBufferBytes: fileBuffer.length,
+    })
     const processingResults = await FileProcessorService.processFile(
       fileBuffer,
       file.mimeType || "application/octet-stream",
       file.fileName,
       file.vespaDocId || "",
-      file.storagePath,
+      runtimeStoragePath,
       IMAGE_CONTEXT_CONFIG.enabled, // extractImages
       IMAGE_CONTEXT_CONFIG.enabled, // describeImages
       fallbackUseOCR, // useOCR option
+    )
+    recordWorkerPhase("standard_processor_done", {
+      fileId,
+      fileName: file.fileName,
+      resultsCount: processingResults.length,
+    })
+    Logger.info(
+      {
+        fileId,
+        fileName: file.fileName,
+        resultsCount: processingResults.length,
+      },
+      "Standard file processor completed",
     )
 
     // Handle multiple processing results (e.g., for spreadsheets with multiple sheets)
@@ -741,7 +1852,21 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       }
 
       // Insert into Vespa
+      recordWorkerPhase("vespa_insert_start", {
+        fileId,
+        fileName: file.fileName,
+        docId,
+        resultIndex,
+        chunksCount: processingResult.chunks.length,
+        imageChunksCount: processingResult.image_chunks.length,
+      })
       await insert(vespaDoc, KbItemsSchema)
+      recordWorkerPhase("vespa_insert_done", {
+        fileId,
+        fileName: file.fileName,
+        docId,
+        resultIndex,
+      })
 
       totalChunksCount +=
         processingResult.chunks.length + processingResult.image_chunks.length
@@ -763,6 +1888,12 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       }),
     })
 
+    recordWorkerPhase("file_completion_update_start", {
+      fileId,
+      fileName: file.fileName,
+      chunksCount,
+      newVespaDocId,
+    })
     await db
       .update(collectionItems)
       .set({
@@ -774,6 +1905,12 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         updatedAt: new Date(),
       })
       .where(eq(collectionItems.id, fileId))
+    recordWorkerPhase("file_completion_update_done", {
+      fileId,
+      fileName: file.fileName,
+      chunksCount,
+      newVespaDocId,
+    })
 
     // Trigger parent status update after file completion
     if (file.parentId) {
@@ -788,6 +1925,13 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
     )
   } catch (error) {
     const errorMessage = getErrorMessage(error)
+    recordWorkerPhase("file_processing_failed", {
+      fileId,
+      fileName: file.fileName,
+      error,
+      errorMessage,
+      elapsedMs: Date.now() - startTime,
+    })
     Logger.error(error, `Failed to process file: ${fileId} - ${errorMessage}`)
 
     // Use common retry handling function

@@ -1,0 +1,83 @@
+x-docling-scheduler-worker: &docling-scheduler-worker
+  image: xynehq/xyne-sync
+  build:
+    context: ../..
+    dockerfile: Dockerfile.sync
+  user: "${DOCKER_UID}:${DOCKER_GID}"
+  depends_on:
+    xyne-db:
+      condition: service_healthy
+    vespa:
+      condition: service_started
+    redis:
+      condition: service_healthy
+  env_file:
+    - .env
+  environment: &docling-scheduler-env
+    NODE_ENV: production
+    DATABASE_HOST: xyne-db
+    VESPA_HOST: vespa
+    MAIN_SERVER_HOST: app
+    REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    KB_STORAGE_ROOT: ${KB_STORAGE_ROOT:-storage/kb_files}
+    DOCLING_ASYNC_STORAGE_ROOT: ${DOCLING_ASYNC_STORAGE_ROOT:-storage/doclingAsync}
+    DOCLING_ASYNC_ENABLED: ${DOCLING_ASYNC_ENABLED:-true}
+    DOCLING_ASYNC_SCHEDULER_ENABLED: ${DOCLING_ASYNC_SCHEDULER_ENABLED:-true}
+    DOCLING_RESULTS_STREAM: ${DOCLING_RESULTS_STREAM:-docling:results}
+    DOCLING_SCHEDULER_RESULT_GROUP: ${DOCLING_SCHEDULER_RESULT_GROUP:-app-sync-scheduler}
+    DOCLING_PAGE_CHUNK_SIZE: ${DOCLING_PAGE_CHUNK_SIZE:-50}
+    DOCLING_SCHEDULER_SPLIT_CONCURRENCY: ${DOCLING_SCHEDULER_SPLIT_CONCURRENCY:-1}
+    DOCLING_SCHEDULER_ACTIVE_OCR_FILES: ${DOCLING_SCHEDULER_ACTIVE_OCR_FILES:-4}
+    DOCLING_SCHEDULER_PER_FILE_INFLIGHT_PARTS: ${DOCLING_SCHEDULER_PER_FILE_INFLIGHT_PARTS:-2}
+    DOCLING_ASYNC_SUBMIT_PERMITS: ${DOCLING_ASYNC_SUBMIT_PERMITS:-16}
+    DOCLING_ASYNC_SUBMIT_PERMIT_LEASE_TTL_MS: ${DOCLING_ASYNC_SUBMIT_PERMIT_LEASE_TTL_MS:-21600000}
+    DOCLING_SCHEDULER_VESPA_WRITE_PERMITS: ${DOCLING_SCHEDULER_VESPA_WRITE_PERMITS:-1}
+    DOCLING_SCHEDULER_VESPA_WRITE_TIMEOUT_MS: ${DOCLING_SCHEDULER_VESPA_WRITE_TIMEOUT_MS:-300000}
+    DOCLING_SCHEDULER_MAX_VESPA_PAYLOAD_BYTES: ${DOCLING_SCHEDULER_MAX_VESPA_PAYLOAD_BYTES:-9437184}
+    APP_SYNC_PDF_LIB_CONCURRENCY: ${APP_SYNC_PDF_LIB_CONCURRENCY:-2}
+    APP_SYNC_PDF_LIB_SEMAPHORE_TIMEOUT_MS: ${APP_SYNC_PDF_LIB_SEMAPHORE_TIMEOUT_MS:-600000}
+  volumes:
+    - ${XYNE_DATA_DIR:-./data}/app-uploads:/usr/src/app/server/storage
+    - ${XYNE_DATA_DIR:-./data}/app-logs:/usr/src/app/server/logs
+    - ${XYNE_DATA_DIR:-./data}/app-downloads:/usr/src/app/server/downloads
+    - ./config/litellm-models.json:/usr/src/app/server/config/litellm-models.json:ro
+  networks:
+    - xyne
+  restart: unless-stopped
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+
+services:
+  docling-scheduler-splitter:
+    <<: *docling-scheduler-worker
+    environment:
+      <<: *docling-scheduler-env
+      DOCLING_SCHEDULER_ROLE: splitter
+
+  docling-scheduler-submitter:
+    <<: *docling-scheduler-worker
+    environment:
+      <<: *docling-scheduler-env
+      DOCLING_SCHEDULER_ROLE: submitter
+
+  docling-scheduler-result:
+    <<: *docling-scheduler-worker
+    environment:
+      <<: *docling-scheduler-env
+      DOCLING_SCHEDULER_ROLE: result
+
+  docling-scheduler-writer:
+    <<: *docling-scheduler-worker
+    environment:
+      <<: *docling-scheduler-env
+      DOCLING_SCHEDULER_ROLE: writer
+
+  docling-scheduler-reaper:
+    <<: *docling-scheduler-worker
+    environment:
+      <<: *docling-scheduler-env
+      DOCLING_SCHEDULER_ROLE: reaper
+
+networks:
+  xyne:
+    external: true

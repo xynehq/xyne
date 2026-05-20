@@ -1,7 +1,7 @@
 import { createId } from "@paralleldrive/cuid2"
 import { mkdir, unlink, writeFile, readFile } from "node:fs/promises"
 import { createReadStream as createFileReadStream } from "node:fs"
-import { join, dirname, extname } from "node:path"
+import { join, dirname, extname, isAbsolute } from "node:path"
 import { stat } from "node:fs/promises"
 import { stream } from "hono/streaming"
 import { userAgentPermissions, type SelectUser } from "@/db/schema"
@@ -111,7 +111,9 @@ const loggerWithChild = getLoggerWithChild(Subsystem.Api, {
 const { JwtPayloadKey } = config
 
 // Storage configuration for Knowledge Base feature files
-const KB_STORAGE_ROOT = join(process.cwd(), "storage", "kb_files")
+const KB_STORAGE_ROOT = isAbsolute(config.knowledgeBaseStorageRoot)
+  ? config.knowledgeBaseStorageRoot
+  : join(process.cwd(), config.knowledgeBaseStorageRoot)
 const MAX_FILE_SIZE = 100 // 100MB max file size
 const MAX_ZIP_FILE_SIZE = 35 // 35MB max zip file size
 
