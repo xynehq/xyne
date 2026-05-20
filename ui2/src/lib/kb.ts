@@ -174,6 +174,42 @@ export const resolveCitation = (
   )
 }
 
+// ── Global file-name search ────────────────────────────────────────────────
+//
+// Powers the ⌘K palette. The server scans every collection the caller can
+// read (owner / public / shared) and returns the top file-name matches. We
+// keep the payload narrow — the palette only needs to render a row and open
+// the viewer; richer metadata can come from `listItems` if a route needs it.
+
+export type FileSearchHit = {
+  id: string
+  collectionId: string
+  collectionName: string
+  parentId: string | null
+  name: string
+  path: string
+  mimeType: string | null
+  fileSize: number | null
+  uploadStatus: string
+  updatedAt: string
+  vespaDocId: string | null
+}
+
+export const searchFiles = async (
+  query: string,
+  limit = 20,
+): Promise<FileSearchHit[]> => {
+  const q = query.trim()
+  if (q.length === 0) {
+    return []
+  }
+  const qs = new URLSearchParams({ q, limit: String(limit) })
+  const res = await apiFetch<{ results: FileSearchHit[] }>(
+    `/v2/kb/search?${qs.toString()}`,
+  )
+  return res.results ?? []
+}
+
 // ── Row → BrowserEntry mapping ─────────────────────────────────────────────
 
 export const itemToEntry = (item: ItemRow): BrowserEntry => {

@@ -423,7 +423,7 @@ export default {
   llmTimeFormat: "YYYY-MM-DDTHH:mm:ss.SSS+05:30",
   ragOffFeature,
   AccessTokenTTL: 60 * 60, // Access token expires in 1 hour
-  RefreshTokenTTL: 60 * 60 * 24 * 30, // Refresh token expires in 30 days
+  RefreshTokenTTL: 60 * 60 * 24 * 365, // Refresh token expires in 1 year
   MAX_IMAGE_SIZE_BYTES,
   MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES,
   vespaEndpoint: {

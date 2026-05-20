@@ -1,11 +1,6 @@
 import { useEffect, useRef, useState } from "react"
-import {
-  AlertTriangle,
-  Check,
-  ChevronRight,
-  Loader2,
-  Sparkles,
-} from "lucide-react"
+import { AlertTriangle, Check, ChevronRight, Loader2 } from "lucide-react"
+import { displayName } from "./ToolCallChip"
 
 export type ReasoningItem =
   | { kind: "thought"; text: string }
@@ -51,6 +46,164 @@ function BrailleLoader(): JSX.Element {
       className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center font-mono text-[14px] leading-none text-foreground/70"
     >
       {BRAILLE_FRAMES[frame]}
+    </span>
+  )
+}
+
+// Minimum duration a phase label stays on screen before flipping to the
+// next one. Below ~1s phase changes read as jitter; ~1.5s matches NN/g
+// and what Claude / Perplexity hold each step at.
+const MIN_LABEL_DISPLAY_MS = 1500
+
+// Tool-name → live label formatter. When a tool is mid-flight (no result
+// yet) the chip swaps the generic thinking word for what the formatter
+// returns. Each formatter takes the same `args` blob pi-mono ships, so the
+// label can include the query / docId / etc. Unmapped tools fall back to
+// "Running <name>".
+type ToolLabelFormatter = (args: unknown) => string
+
+// Pull a trimmed string field out of an unknown JSON-ish args blob, capped
+// at `max` chars (with an ellipsis when truncated). Returns null when the
+// field is missing or non-string so the formatter can degrade gracefully.
+const pickStr = (obj: unknown, key: string, max = 48): string | null => {
+  if (!obj || typeof obj !== "object") return null
+  const v = (obj as Record<string, unknown>)[key]
+  if (typeof v !== "string") return null
+  const t = v.trim()
+  if (!t) return null
+  return t.length > max ? t.slice(0, max - 1) + "…" : t
+}
+
+const TOOL_LIVE_LABEL: Record<string, ToolLabelFormatter> = {
+  vespaSearch: (a) => {
+    const q = pickStr(a, "query")
+    return q ? `Searching: ${q}` : "Searching"
+  },
+  getChunks: (a) => {
+    const d = pickStr(a, "docId", 28)
+    return d ? `Reading ${d}` : "Reading document"
+  },
+  searchWithinDoc: (a) => {
+    const q = pickStr(a, "query")
+    return q ? `Searching in doc: ${q}` : "Searching in document"
+  },
+  metadataSearch: () => "Looking up records",
+  calculator: (a) => {
+    const e = pickStr(a, "expression", 32)
+    return e ? `Calculating ${e}` : "Calculating"
+  },
+  lookupFact: (a) => {
+    const k = pickStr(a, "key", 20)
+    return k ? `Looking up ${k}` : "Looking up a fact"
+  },
+  currentTime: () => "Checking the time",
+  delegateToWriter: () => "Drafting with a sub-agent",
+}
+
+// Derive the chip label from the current reasoning trail. Every branch maps
+// to an actual pi-mono state, not a random word: empty trail = waiting for
+// the first event, in-flight tool = tool-specific label, just-finished tool
+// = synthesizing on top of the result, and a streaming thought block = the
+// model is still reasoning. No "Pondering" — those were lies dressed up as
+// dynamism.
+const phaseLabelFromItems = (items: ReasoningItem[]): string => {
+  if (items.length === 0) return "Thinking"
+  const last = items[items.length - 1]
+  if (last?.kind === "tool") {
+    if (!last.result) {
+      const fmt = TOOL_LIVE_LABEL[last.name]
+      return fmt ? fmt(last.args) : `Running ${displayName(last.name)}`
+    }
+    return "Analyzing results"
+  }
+  if (last?.kind === "thought") return "Reasoning"
+  return "Thinking"
+}
+
+// Hold each label on-screen for at least MIN_LABEL_DISPLAY_MS before
+// flipping to the next desired value. Coalesces rapid changes (a tool that
+// runs in 200ms + the post-tool thought + the next tool dispatch could
+// all happen in <1s) so the chip doesn't strobe. The most-recent desired
+// value always wins; intermediate values are dropped on the floor.
+function useStableLabel(desired: string): string {
+  const [display, setDisplay] = useState(desired)
+  const lockedUntilRef = useRef(0)
+  const pendingTimeoutRef = useRef<number | null>(null)
+  const desiredRef = useRef(desired)
+
+  useEffect((): (() => void) | undefined => {
+    desiredRef.current = desired
+    if (desired === display) return
+    const now = Date.now()
+    if (now >= lockedUntilRef.current) {
+      setDisplay(desired)
+      lockedUntilRef.current = now + MIN_LABEL_DISPLAY_MS
+      return
+    }
+    if (pendingTimeoutRef.current !== null) {
+      window.clearTimeout(pendingTimeoutRef.current)
+    }
+    const wait = lockedUntilRef.current - now
+    pendingTimeoutRef.current = window.setTimeout((): void => {
+      setDisplay(desiredRef.current)
+      lockedUntilRef.current = Date.now() + MIN_LABEL_DISPLAY_MS
+      pendingTimeoutRef.current = null
+    }, wait)
+    return (): void => {
+      // Don't cancel on re-run — the timeout owns the latest desiredRef.
+    }
+  }, [desired, display])
+
+  useEffect((): (() => void) => {
+    return (): void => {
+      if (pendingTimeoutRef.current !== null) {
+        window.clearTimeout(pendingTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  return display
+}
+
+// Push-up text swap, opencode-style. When `text` changes we keep the previous
+// value mounted for one animation cycle so old + new slide together: old
+// translates up + fades out, new enters from below. `overflow-hidden` on the
+// shell clips the off-stage halves.
+function AnimatedLabel({ text }: { text: string }): JSX.Element {
+  const [current, setCurrent] = useState(text)
+  const [exiting, setExiting] = useState<string | null>(null)
+
+  useEffect((): (() => void) | undefined => {
+    if (text === current) return
+    setExiting(current)
+    setCurrent(text)
+    const t = window.setTimeout((): void => {
+      setExiting(null)
+    }, 280)
+    return (): void => {
+      window.clearTimeout(t)
+    }
+  }, [text, current])
+
+  return (
+    <span
+      className="relative inline-block overflow-hidden align-middle"
+      style={{ height: "1.15em", lineHeight: "1.15" }}
+    >
+      {exiting !== null && (
+        <span
+          key={"out-" + exiting}
+          className="animate-slide-up-out absolute left-0 top-0 inline-block whitespace-nowrap font-medium"
+        >
+          {exiting}
+        </span>
+      )}
+      <span
+        key={"in-" + current}
+        className="animate-slide-up-in relative inline-block whitespace-nowrap font-medium"
+      >
+        {current}
+      </span>
     </span>
   )
 }
@@ -112,13 +265,18 @@ export function ThinkingChip({
   )
   const hasContent = renderable.length > 0
 
+  // Throttled by useStableLabel so the chip doesn't strobe through phases
+  // that resolve faster than a user can read them.
+  const stablePhase = useStableLabel(phaseLabelFromItems(items))
+  const liveText = liveLabel ? `${stablePhase}…` : "Reasoning"
+
   return (
     <div className="my-1 text-[12.5px]">
       <button
         type="button"
         onClick={(): void => setOpen((v): boolean => !v)}
         aria-expanded={open}
-        aria-label={liveLabel ? "Thinking" : "Show thoughts"}
+        aria-label={liveLabel ? liveText : "Show reasoning"}
         className="-ml-1 inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-muted-foreground transition-colors hover:bg-secondary/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
       >
         <ChevronRight
@@ -129,21 +287,9 @@ export function ThinkingChip({
           aria-hidden
           strokeWidth={2}
         />
-        {liveLabel ? (
-          <BrailleLoader />
-        ) : (
-          <Sparkles
-            className="h-3 w-3 flex-shrink-0"
-            aria-hidden
-            strokeWidth={1.75}
-          />
-        )}
-        <span
-          className={
-            "select-none font-medium " + (liveLabel ? "animate-breathe" : "")
-          }
-        >
-          {liveLabel ? "Thinking…" : "Thoughts"}
+        {liveLabel && <BrailleLoader />}
+        <span className="select-none">
+          <AnimatedLabel text={liveText} />
         </span>
       </button>
 
@@ -215,7 +361,7 @@ function ReasoningToolRow({ name, args, result }: ToolRowProps): JSX.Element {
           strokeWidth={2}
         />
         <span className="font-mono text-[11.5px] text-foreground/85">
-          {name}
+          {displayName(name)}
         </span>
         {status === "running" && (
           <Loader2

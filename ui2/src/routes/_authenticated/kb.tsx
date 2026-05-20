@@ -3,6 +3,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import {
   ArrowLeft,
   ChevronRight,
+  File,
   FolderOpen,
   FolderPlus,
   Loader2,
@@ -32,10 +33,18 @@ import {
   itemToEntry,
   listCollections,
   listItems,
-  uploadFiles,
+  searchFiles,
   type CollectionRow,
+  type FileSearchHit,
   type ItemRow,
 } from "@/lib/kb"
+import {
+  UploadingGrid,
+  UploadingList,
+} from "@/components/file-browser/UploadingCard"
+import { uploadStore, useUploadsFor } from "@/lib/upload-store"
+import { extOf, formatDate } from "@/lib/files"
+import { cn } from "@/lib/utils"
 
 type KbSearch = {
   cl?: string
@@ -79,11 +88,21 @@ function KnowledgeRoute(): JSX.Element {
   const [items, setItems] = useState<ItemRow[]>([])
   const [breadcrumb, setBreadcrumb] = useState<{ id: string; name: string }[]>([])
   const [loading, setLoading] = useState(false)
-  const [uploading, setUploading] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   const [dialog, setDialog] = useState<"collection" | "folder" | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  // App-wide uploads scoped to this folder. Survives unmount: navigating
+  // away and back leaves the placeholders + XHRs intact.
+  const uploadsHere = useUploadsFor(currentCl, currentParent)
+  const hasUploading = uploadsHere.some(
+    (u) => u.status === "uploading" || u.status === "processing",
+  )
+  // Tracks itemIds we've already triggered a refresh for, so the
+  // "post-upload one-shot" effect below doesn't re-fire on every render
+  // while the placeholder lingers waiting for the listing.
+  const seenProcessingRef = useRef<Set<string>>(new Set())
 
   const refresh = useCallback((): void => {
     setReloadKey((k) => k + 1)
@@ -126,6 +145,14 @@ function KnowledgeRoute(): JSX.Element {
           setItems(rows)
           setBreadcrumb(chain)
           setCollections([])
+          // Any row present in the server listing means the upload bytes
+          // landed — drop the matching placeholder. We don't wait on
+          // uploadStatus because the processor worker isn't necessarily
+          // running (e.g. backendv2 standalone on DGX) and we'd never
+          // see "completed".
+          for (const row of rows) {
+            uploadStore.markSeen(row.id)
+          }
         })
         .catch((err: unknown): void => {
           if (cancelled) {
@@ -150,30 +177,77 @@ function KnowledgeRoute(): JSX.Element {
     }
   }, [currentCl, currentParent, reloadKey, navigate])
 
-  // Apply client-side search filter once we have the rows.
-  const filteredItems = useMemo<ItemRow[]>(() => {
-    const needle = query.trim().toLowerCase()
-    if (!needle) {
-      return items
-    }
-    return items.filter((it) => it.name.toLowerCase().includes(needle))
-  }, [items, query])
-
-  const filteredCollections = useMemo<CollectionRow[]>(() => {
-    const needle = query.trim().toLowerCase()
-    if (!needle) {
-      return collections
-    }
-    return collections.filter((c) => c.name.toLowerCase().includes(needle))
-  }, [collections, query])
-
+  // Map rows → BrowserEntry for the browse view. When the search input has
+  // a non-empty query we switch the main pane to inline search results
+  // (see `searchHits` below), so this only needs to handle the unfiltered
+  // case.
   const entries: BrowserEntry[] = useMemo(
     () =>
       currentCl === null
-        ? filteredCollections.map(collectionToFolderEntry)
-        : filteredItems.map(itemToEntry),
-    [currentCl, filteredCollections, filteredItems],
+        ? collections.map(collectionToFolderEntry)
+        : items.map(itemToEntry),
+    [currentCl, collections, items],
   )
+
+  // ── Inline file search ────────────────────────────────────────────────
+  //
+  // The top-right field calls `searchFiles` (same endpoint the ⌘K palette
+  // hits) and renders the hits inside the page instead of swapping to a
+  // modal. Search is global on purpose — it isn't scoped to the current
+  // collection / folder. If the brief later needs an "only-here" toggle we
+  // can add a server-side `clId` filter and a chip in the input.
+  const [searchHits, setSearchHits] = useState<FileSearchHit[]>([])
+  const [searchLoading, setSearchLoading] = useState<boolean>(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const searchTokenRef = useRef(0)
+  const trimmedQuery = query.trim()
+  const searching = trimmedQuery.length > 0
+
+  useEffect((): (() => void) | undefined => {
+    if (!searching) {
+      setSearchHits([])
+      setSearchLoading(false)
+      setSearchError(null)
+      return undefined
+    }
+    setSearchLoading(true)
+    setSearchError(null)
+    const myToken = ++searchTokenRef.current
+    const handle = window.setTimeout((): void => {
+      searchFiles(trimmedQuery, 40)
+        .then((rows): void => {
+          if (myToken !== searchTokenRef.current) {
+            return
+          }
+          setSearchHits(rows)
+        })
+        .catch((err: unknown): void => {
+          if (myToken !== searchTokenRef.current) {
+            return
+          }
+          const msg = err instanceof Error ? err.message : "Search failed"
+          setSearchError(msg)
+          setSearchHits([])
+        })
+        .finally((): void => {
+          if (myToken !== searchTokenRef.current) {
+            return
+          }
+          setSearchLoading(false)
+        })
+    }, 160)
+    return (): void => {
+      window.clearTimeout(handle)
+    }
+  }, [searching, trimmedQuery])
+
+  const openHit = (hit: FileSearchHit): void => {
+    void navigate({
+      to: "/kb/file/$itemId",
+      params: { itemId: hit.id },
+      search: { cl: hit.collectionId },
+    })
+  }
 
   // ── Navigation helpers ───────────────────────────────────────────────────
 
@@ -272,7 +346,7 @@ function KnowledgeRoute(): JSX.Element {
     fileInputRef.current?.click()
   }
 
-  const doUpload = async (fileList: FileList | File[]): Promise<void> => {
+  const doUpload = (fileList: FileList | File[]): void => {
     if (!currentCl) {
       return
     }
@@ -280,31 +354,14 @@ function KnowledgeRoute(): JSX.Element {
     if (files.length === 0) {
       return
     }
-    setUploading(true)
-    try {
-      const res = await uploadFiles(currentCl, files, currentParent)
-      if (res.summary.successful > 0) {
-        toast.success(
-          `Uploaded ${String(res.summary.successful)} of ${String(res.summary.total)} file${res.summary.total === 1 ? "" : "s"}`,
-        )
-      }
-      for (const r of res.results) {
-        if (!r.success) {
-          toast.error(`${r.name} — ${r.error}`)
-        }
-      }
-      refresh()
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Upload failed"
-      toast.error(`Upload failed — ${msg}`)
-    } finally {
-      setUploading(false)
-    }
+    // Hand off to the store: per-file XHR with onprogress, parallel.
+    // Placeholders render via UploadingGrid/List below.
+    uploadStore.start(currentCl, currentParent, files)
   }
 
   const onFileInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     if (e.target.files) {
-      void doUpload(e.target.files)
+      doUpload(e.target.files)
     }
     // Reset so picking the same file twice still triggers a change event.
     e.target.value = ""
@@ -318,9 +375,43 @@ function KnowledgeRoute(): JSX.Element {
       return
     }
     if (e.dataTransfer.files.length > 0) {
-      void doUpload(e.dataTransfer.files)
+      doUpload(e.dataTransfer.files)
     }
   }
+
+  // One-shot refresh the moment any placeholder transitions from
+  // "uploading" → "processing" (i.e. its XHR just completed). The backend's
+  // upload handler returns only after createFileItem commits the row, so a
+  // single subsequent listItems() is guaranteed to see it — no need for an
+  // interval. `seenProcessingRef` ensures we don't re-fire while the
+  // placeholder lingers a render or two before markSeen drops it.
+  useEffect((): void => {
+    const stillHere = new Set<string>()
+    for (const u of uploadsHere) {
+      if (u.itemId !== undefined) {
+        stillHere.add(u.itemId)
+      }
+    }
+    for (const id of seenProcessingRef.current) {
+      if (!stillHere.has(id)) {
+        seenProcessingRef.current.delete(id)
+      }
+    }
+    let needsRefresh = false
+    for (const u of uploadsHere) {
+      if (
+        u.status === "processing" &&
+        u.itemId !== undefined &&
+        !seenProcessingRef.current.has(u.itemId)
+      ) {
+        seenProcessingRef.current.add(u.itemId)
+        needsRefresh = true
+      }
+    }
+    if (needsRefresh) {
+      refresh()
+    }
+  }, [uploadsHere, refresh])
 
   const onDelete = async (entry: BrowserEntry): Promise<void> => {
     if (currentCl === null) {
@@ -458,10 +549,9 @@ function KnowledgeRoute(): JSX.Element {
               <button
                 type="button"
                 onClick={onPickFiles}
-                disabled={uploading}
-                className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-surface-elevated px-2 text-[12px] text-foreground transition hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-surface-elevated px-2 text-[12px] text-foreground transition hover:bg-secondary"
               >
-                {uploading ? (
+                {hasUploading ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.75} />
                 ) : (
                   <Upload className="h-3.5 w-3.5" strokeWidth={1.75} />
@@ -481,9 +571,9 @@ function KnowledgeRoute(): JSX.Element {
           <SearchField
             value={query}
             onChange={setQuery}
-            className="w-56"
-            ariaLabel="Search knowledge"
-            placeholder={isAtRoot ? "Search collections" : "Search in folder"}
+            className="w-64"
+            ariaLabel="Search files"
+            placeholder="Search files by name"
           />
         </div>
       </div>
@@ -495,41 +585,65 @@ function KnowledgeRoute(): JSX.Element {
           </div>
         ) : null}
         <div className="mx-auto w-full max-w-7xl">
-          <p className="mb-3 text-[12px] text-muted-foreground">
-            {loading
-              ? "Loading…"
-              : isAtRoot
-                ? entries.length === 0
-                  ? "No collections yet"
-                  : `${String(entries.length)} collection${entries.length === 1 ? "" : "s"}`
-                : entries.length === 0
-                  ? "This folder is empty"
-                  : `${String(folderCount)} folder${folderCount === 1 ? "" : "s"} · ${String(fileCount)} file${fileCount === 1 ? "" : "s"}`}
-          </p>
-
-          {entries.length === 0 && !loading ? (
-            <EmptyPane
-              isRoot={isAtRoot}
-              searching={query.trim().length > 0}
-              query={query}
-            />
-          ) : view === "grid" ? (
-            <EntryGrid
-              entries={entries}
-              onOpen={onOpenEntry}
-              onDelete={(e): void => {
-                void onDelete(e)
-              }}
+          {searching ? (
+            <SearchResultsView
+              query={trimmedQuery}
+              loading={searchLoading}
+              error={searchError}
+              hits={searchHits}
+              onOpen={openHit}
             />
           ) : (
-            <EntryList
-              entries={entries}
-              columns={KB_COLUMNS}
-              onOpen={onOpenEntry}
-              onDelete={(e): void => {
-                void onDelete(e)
-              }}
-            />
+            <>
+              <p className="mb-3 text-[12px] text-muted-foreground">
+                {loading
+                  ? "Loading…"
+                  : isAtRoot
+                    ? entries.length === 0
+                      ? "No collections yet"
+                      : `${String(entries.length)} collection${entries.length === 1 ? "" : "s"}`
+                    : entries.length === 0
+                      ? "This folder is empty"
+                      : `${String(folderCount)} folder${folderCount === 1 ? "" : "s"} · ${String(fileCount)} file${fileCount === 1 ? "" : "s"}`}
+              </p>
+
+              {view === "grid" ? (
+                <UploadingGrid
+                  uploads={uploadsHere}
+                  onCancel={uploadStore.cancel}
+                  onRetry={uploadStore.retry}
+                  onDismiss={uploadStore.dismiss}
+                />
+              ) : (
+                <UploadingList
+                  uploads={uploadsHere}
+                  onCancel={uploadStore.cancel}
+                  onRetry={uploadStore.retry}
+                  onDismiss={uploadStore.dismiss}
+                />
+              )}
+
+              {entries.length === 0 && !loading && uploadsHere.length === 0 ? (
+                <EmptyPane isRoot={isAtRoot} />
+              ) : entries.length === 0 ? null : view === "grid" ? (
+                <EntryGrid
+                  entries={entries}
+                  onOpen={onOpenEntry}
+                  onDelete={(e): void => {
+                    void onDelete(e)
+                  }}
+                />
+              ) : (
+                <EntryList
+                  entries={entries}
+                  columns={KB_COLUMNS}
+                  onOpen={onOpenEntry}
+                  onDelete={(e): void => {
+                    void onDelete(e)
+                  }}
+                />
+              )}
+            </>
           )}
         </div>
       </main>
@@ -666,30 +780,194 @@ function Sep(): JSX.Element {
   )
 }
 
-function EmptyPane({
-  isRoot,
-  searching,
-  query,
-}: {
-  isRoot: boolean
-  searching: boolean
-  query: string
-}): JSX.Element {
+function EmptyPane({ isRoot }: { isRoot: boolean }): JSX.Element {
   return (
     <div className="mx-auto flex max-w-md flex-col items-center justify-center gap-3 py-24 text-center">
       <span className="grid h-12 w-12 place-items-center rounded-2xl bg-surface-muted text-muted-foreground">
         <FolderOpen className="h-5 w-5" aria-hidden strokeWidth={1.5} />
       </span>
       <p className="text-[14px] font-medium text-foreground">
-        {searching ? "No matches" : isRoot ? "No collections yet" : "Nothing here yet"}
+        {isRoot ? "No collections yet" : "Nothing here yet"}
       </p>
       <p className="max-w-xs text-[12.5px] text-muted-foreground">
-        {searching
-          ? `We couldn't find anything matching "${query}". Try a broader term.`
-          : isRoot
-            ? "Create a collection to start organising and uploading documents."
-            : "Drop files here or use the Upload button to add documents to this folder."}
+        {isRoot
+          ? "Create a collection to start organising and uploading documents."
+          : "Drop files here or use the Upload button to add documents to this folder."}
       </p>
     </div>
   )
+}
+
+// ── Inline search results ──────────────────────────────────────────────────
+//
+// Shown in the main pane whenever the top-right search field has a non-empty
+// query. The hits are global (same `searchFiles` endpoint the ⌘K palette
+// hits) — the user said the modal shouldn't open from /kb's field, so we
+// render the list inline instead. Visually richer than the palette row
+// because we have the whole page width to play with.
+
+function SearchResultsView({
+  query,
+  loading,
+  error,
+  hits,
+  onOpen,
+}: {
+  query: string
+  loading: boolean
+  error: string | null
+  hits: FileSearchHit[]
+  onOpen: (hit: FileSearchHit) => void
+}): JSX.Element {
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-[12px] text-muted-foreground">
+        {loading
+          ? "Searching…"
+          : error
+            ? "Search failed"
+            : hits.length === 0
+              ? `No files match "${query}"`
+              : `${String(hits.length)} match${hits.length === 1 ? "" : "es"} for "${query}"`}
+      </p>
+
+      {error ? (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5 text-[12.5px] text-destructive">
+          {error}
+        </div>
+      ) : null}
+
+      {loading && hits.length === 0 ? (
+        <ul aria-busy="true" aria-label="Loading results" className="flex flex-col gap-1">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <li
+              key={i}
+              aria-hidden
+              className="flex items-center gap-3 rounded-lg border border-border bg-surface px-3.5 py-2.5"
+            >
+              <div className="h-7 w-7 flex-shrink-0 animate-breathe rounded-md bg-surface-elevated" />
+              <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                <div className="h-2.5 w-1/2 animate-breathe rounded-full bg-surface-elevated" />
+                <div className="h-2 w-1/3 animate-breathe rounded-full bg-surface-elevated" />
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : hits.length === 0 && !error ? (
+        <div className="mx-auto flex max-w-md flex-col items-center justify-center gap-3 py-16 text-center">
+          <span className="grid h-12 w-12 place-items-center rounded-2xl bg-surface-muted text-muted-foreground">
+            <File className="h-5 w-5" aria-hidden strokeWidth={1.5} />
+          </span>
+          <p className="text-[14px] font-medium text-foreground">No matches</p>
+          <p className="max-w-xs text-[12.5px] text-muted-foreground">
+            Nothing matched <span className="font-medium text-foreground">"{query}"</span>.
+            Try a shorter or different term.
+          </p>
+        </div>
+      ) : (
+        <ul role="list" aria-label="Search results" className="flex flex-col gap-1">
+          {hits.map((hit) => (
+            <li key={hit.id}>
+              <button
+                type="button"
+                onClick={(): void => {
+                  onOpen(hit)
+                }}
+                className="group flex w-full items-center gap-3 rounded-lg border border-border bg-surface px-3.5 py-2.5 text-left transition hover:border-ring hover:bg-surface-elevated"
+              >
+                <ResultBadge name={hit.name} />
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-[13.5px] leading-tight text-foreground">
+                    {highlightMatch(hit.name, query)}
+                  </span>
+                  <span className="truncate text-[11.5px] leading-tight text-muted-foreground">
+                    {hitBreadcrumb(hit)}
+                  </span>
+                </div>
+                <span className="hidden flex-shrink-0 text-[11px] text-muted-foreground/80 md:inline">
+                  {formatDate(hit.updatedAt)}
+                </span>
+                <ChevronRight
+                  className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground transition group-hover:translate-x-0.5"
+                  aria-hidden
+                  strokeWidth={1.75}
+                />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function ResultBadge({ name }: { name: string }): JSX.Element {
+  // Tiny coloured square keyed off the extension. Mirrors the palette tag so
+  // the two views feel like the same feature.
+  const ext = extOf(name) || "file"
+  const tone = TONE_FOR_EXT[ext] ?? "bg-zinc-500 text-white"
+  const label = ext.toUpperCase().slice(0, 4)
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "grid h-7 w-7 flex-shrink-0 place-items-center rounded-md text-[8.5px] font-semibold uppercase tracking-wide",
+        tone,
+      )}
+    >
+      {label}
+    </span>
+  )
+}
+
+const TONE_FOR_EXT: Record<string, string> = {
+  pdf: "bg-red-500 text-white",
+  doc: "bg-blue-500 text-white",
+  docx: "bg-blue-500 text-white",
+  md: "bg-neutral-600 text-white",
+  txt: "bg-gray-500 text-white",
+  csv: "bg-teal-700 text-white",
+  xls: "bg-emerald-600 text-white",
+  xlsx: "bg-emerald-600 text-white",
+  ppt: "bg-orange-500 text-white",
+  pptx: "bg-orange-500 text-white",
+  json: "bg-yellow-500 text-white",
+  png: "bg-pink-500 text-white",
+  jpg: "bg-pink-600 text-white",
+  jpeg: "bg-pink-600 text-white",
+  gif: "bg-pink-600 text-white",
+  webp: "bg-pink-500 text-white",
+  mp4: "bg-green-700 text-white",
+  mov: "bg-green-700 text-white",
+}
+
+function highlightMatch(name: string, q: string): React.ReactNode {
+  if (q === "") {
+    return name
+  }
+  const lower = name.toLowerCase()
+  const idx = lower.indexOf(q.toLowerCase())
+  if (idx < 0) {
+    return name
+  }
+  const before = name.slice(0, idx)
+  const match = name.slice(idx, idx + q.length)
+  const after = name.slice(idx + q.length)
+  return (
+    <>
+      {before}
+      <span className="rounded-sm bg-foreground/10 px-[1px] font-medium text-foreground">
+        {match}
+      </span>
+      {after}
+    </>
+  )
+}
+
+function hitBreadcrumb(hit: FileSearchHit): string {
+  const collection = hit.collectionName || "Collection"
+  const inner = hit.path.replace(/^\/|\/$/g, "")
+  return inner.length === 0
+    ? collection
+    : `${collection} / ${inner.split("/").join(" / ")}`
 }

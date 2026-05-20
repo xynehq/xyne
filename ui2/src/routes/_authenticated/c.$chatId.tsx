@@ -9,7 +9,7 @@ import {
   setScope as setCitationScope,
   useCitationStore,
 } from "@/lib/citation-store"
-import { PanelRightOpen } from "lucide-react"
+import { ArrowDown, PanelRightOpen } from "lucide-react"
 import { chatStore, useConversation, type Block } from "@/lib/chat-store"
 import { useModels } from "@/lib/models"
 import { useAgents } from "@/lib/agents"
@@ -38,23 +38,15 @@ function ChatThreadRoute(): JSX.Element {
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
   const tailRef = useRef<HTMLDivElement | null>(null)
-  // True while the user is glued to the bottom of the scroll view. As soon as
-  // they scroll up, we stop auto-following stream deltas so the view doesn't
-  // fight their scroll position. Flips back on once they scroll near bottom.
-  const stickToBottomRef = useRef(true)
+  const isAtBottomRef = useRef(true)
+  const [showJumpPill, setShowJumpPill] = useState(false)
   const [seed, setSeed] = useState<{ text: string; key: number } | undefined>()
 
   useEffect((): (() => void) | void => {
     void chatStore.loadConv(chatId)
-    // Fresh route — assume they want to follow along.
-    stickToBottomRef.current = true
-    // Point the citation panel at this conversation's tab set. The store
-    // persists tabs by conversationId in localStorage, so navigating
-    // between chats swaps tab strips without losing state.
+    isAtBottomRef.current = true
+    setShowJumpPill(false)
     setCitationScope(chatId)
-    // On unmount (route change or close), tear down the SSE connection. The
-    // resume cursor persists in sessionStorage, so coming back picks up
-    // exactly where this user left off without a duplicate-replay.
     return (): void => {
       chatStore.closeStream(chatId)
       setCitationScope(null)
@@ -63,26 +55,74 @@ function ChatThreadRoute(): JSX.Element {
 
   useEffect((): (() => void) | void => {
     const scroll = scrollRef.current
-    const content = contentRef.current
-    if (!scroll || !content) return
-    const snap = (): void => {
-      if (!stickToBottomRef.current) return
-      scroll.scrollTop = scroll.scrollHeight
+    const tail = tailRef.current
+    if (!scroll || !tail) return
+
+    const io = new IntersectionObserver(
+      (entries): void => {
+        const entry = entries[0]
+        if (!entry) return
+        isAtBottomRef.current = entry.isIntersecting
+        setShowJumpPill(!entry.isIntersecting)
+      },
+      { root: scroll, rootMargin: "0px 0px 80px 0px", threshold: 0 },
+    )
+    io.observe(tail)
+
+    const onWheel = (e: WheelEvent): void => {
+      if (e.deltaY < 0) {
+        isAtBottomRef.current = false
+      }
     }
-    snap()
-    const ro = new ResizeObserver(snap)
-    ro.observe(content)
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "ArrowUp" || e.key === "PageUp" || e.key === "Home") {
+        isAtBottomRef.current = false
+      }
+    }
+    let touchStartY: number | null = null
+    const onTouchStart = (e: TouchEvent): void => {
+      touchStartY = e.touches[0]?.clientY ?? null
+    }
+    const onTouchMove = (e: TouchEvent): void => {
+      if (touchStartY === null) return
+      const y = e.touches[0]?.clientY ?? null
+      if (y === null) return
+      if (y - touchStartY > 8) {
+        isAtBottomRef.current = false
+        touchStartY = null
+      }
+    }
+
+    scroll.addEventListener("wheel", onWheel, { passive: true })
+    scroll.addEventListener("keydown", onKey)
+    scroll.addEventListener("touchstart", onTouchStart, { passive: true })
+    scroll.addEventListener("touchmove", onTouchMove, { passive: true })
+
     return (): void => {
-      ro.disconnect()
+      io.disconnect()
+      scroll.removeEventListener("wheel", onWheel)
+      scroll.removeEventListener("keydown", onKey)
+      scroll.removeEventListener("touchstart", onTouchStart)
+      scroll.removeEventListener("touchmove", onTouchMove)
     }
   }, [chatId])
 
-  const onScroll = (): void => {
-    const el = scrollRef.current
-    if (!el) return
-    // 80px slack so small upward nudges don't break the stick.
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-    stickToBottomRef.current = distanceFromBottom < 80
+  useEffect((): void => {
+    if (!isAtBottomRef.current) return
+    const tail = tailRef.current
+    if (!tail) return
+    tail.scrollIntoView({ block: "end", behavior: "instant" as ScrollBehavior })
+  }, [
+    conv.messages.length,
+    conv.streamingMessageId,
+    conv.streamingText,
+    conv.streamingThinking,
+  ])
+
+  const jumpToLatest = (): void => {
+    isAtBottomRef.current = true
+    setShowJumpPill(false)
+    tailRef.current?.scrollIntoView({ block: "end", behavior: "smooth" })
   }
 
   const rendered = useMemo(() => {
@@ -140,9 +180,8 @@ function ChatThreadRoute(): JSX.Element {
   ])
 
   const onSubmit = (text: string): void => {
-    // Sending a new message means the user wants to see it land — even if
-    // they had scrolled up to read earlier content.
-    stickToBottomRef.current = true
+    isAtBottomRef.current = true
+    setShowJumpPill(false)
     const opts: {
       model?: string
       agentId?: string
@@ -201,8 +240,8 @@ function ChatThreadRoute(): JSX.Element {
       <main className="flex flex-1 flex-col overflow-hidden">
         <div
           ref={scrollRef}
-          onScroll={onScroll}
-          className="flex-1 overflow-y-auto"
+          tabIndex={0}
+          className="flex-1 overflow-y-auto focus:outline-none"
         >
           <div
             ref={contentRef}
@@ -223,7 +262,20 @@ function ChatThreadRoute(): JSX.Element {
             <div ref={tailRef} aria-hidden />
           </div>
         </div>
-        <div className="bg-background/70 backdrop-blur-md">
+        <div className="relative bg-background/70 backdrop-blur-md">
+          {showJumpPill ? (
+            <button
+              type="button"
+              onClick={jumpToLatest}
+              aria-label="Jump to latest"
+              className="absolute left-1/2 top-0 z-10 -translate-x-1/2 -translate-y-full pb-2"
+            >
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-elevated px-3 py-1 text-[11.5px] font-medium text-foreground shadow-md transition hover:bg-secondary">
+                <ArrowDown className="h-3 w-3" aria-hidden strokeWidth={2} />
+                Jump to latest
+              </span>
+            </button>
+          ) : null}
           <div className="mx-auto w-full max-w-3xl px-4 pb-4">
             <Composer
               onSubmit={onSubmit}

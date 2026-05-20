@@ -41,18 +41,10 @@ export function useSidebarSearch({ collapsed, expand }: Args): Result {
     }
   }, [collapsed, pendingFocus])
 
-  useEffect((): (() => void) => {
-    const onKey = (e: globalThis.KeyboardEvent): void => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault()
-        focusSearch()
-      }
-    }
-    window.addEventListener("keydown", onKey)
-    return (): void => {
-      window.removeEventListener("keydown", onKey)
-    }
-  }, [focusSearch])
+  // ⌘K used to focus this sidebar search. That binding moved to the global
+  // command palette (see _authenticated.tsx) — sidebar conversation search
+  // is still reachable by clicking the input or the collapsed "Search" item.
+  // Keeping no global keybinding here so the two never both fire.
 
   return { query, setQuery, searchRef, focusSearch }
 }

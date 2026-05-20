@@ -20,6 +20,7 @@ import {
   createCollection,
   getCollectionById,
   getCollectionsByOwner,
+  getAccessibleCollections,
   softDeleteCollection,
   createFolder as dbCreateFolder,
   createFileItem,
@@ -48,7 +49,7 @@ import { ProcessingJobType, type TxnOrClient } from "@/types"
 import { UploadStatus } from "@/shared/types"
 import type { Collection, CollectionItem } from "@/db/schema"
 import { collectionItems } from "@/db/schema"
-import { and, eq, isNull } from "drizzle-orm"
+import { and, eq, isNull, inArray, sql, desc } from "drizzle-orm"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 
@@ -880,6 +881,95 @@ router.get("/files/resolve/:docId", async (c) => {
     pages,
     bbox,
     chunkText,
+  })
+})
+
+// ── Global file-name search ───────────────────────────────────────────────
+//
+// GET /v2/kb/search?q=<query>&limit=<n>
+//
+// Spotlight-style "go to file" search. Returns file rows whose name matches
+// `q` (case-insensitive, contains) across every collection the caller can
+// read. Same access rule as `loadCollection` — owner, public, or explicitly
+// permitted. Folders and collections are intentionally excluded; the v1 UI's
+// global palette is "files first" and other entity types can be added by
+// flipping the `type=` filter when the product is ready.
+//
+// Ranking is intentionally simple — prefix matches float to the top, then
+// recency tie-breaks. We don't reach for Vespa here: filename ILIKE is
+// O(rows-in-accessible-collections), which is tiny compared to a workspace's
+// chunk volume, and it stays correct for freshly-uploaded files that haven't
+// finished indexing yet.
+router.get("/search", async (c) => {
+  const actor = await loadActor(c)
+  const q = (c.req.query("q") ?? "").trim()
+  const limitRaw = Number(c.req.query("limit") ?? "20")
+  const limit = Number.isFinite(limitRaw)
+    ? Math.max(1, Math.min(50, Math.floor(limitRaw)))
+    : 20
+
+  if (q.length === 0) {
+    return c.json({ results: [] })
+  }
+
+  const accessible = await getAccessibleCollections(db, actor.id)
+  if (accessible.length === 0) {
+    return c.json({ results: [] })
+  }
+  const idToName = new Map(accessible.map((cl) => [cl.id, cl.name]))
+  const collectionIds = accessible.map((cl) => cl.id)
+
+  // LOWER() + LIKE so the underlying index can be reused even when callers
+  // pass mixed case. Parameterisation prevents SQL injection but does NOT
+  // neutralise `%` / `_` / `\` as LIKE metacharacters — those are escaped
+  // explicitly below (and ESCAPE '\' is set on each LIKE clause). Without
+  // this, `q = "%"` would match everything.
+  const escapedQ = q.toLowerCase().replace(/[\\%_]/g, "\\$&")
+  const needle = `%${escapedQ}%`
+  const prefix = `${escapedQ}%`
+
+  const rows = await db
+    .select({
+      id: collectionItems.id,
+      collectionId: collectionItems.collectionId,
+      parentId: collectionItems.parentId,
+      name: collectionItems.name,
+      path: collectionItems.path,
+      mimeType: collectionItems.mimeType,
+      fileSize: collectionItems.fileSize,
+      uploadStatus: collectionItems.uploadStatus,
+      updatedAt: collectionItems.updatedAt,
+      vespaDocId: collectionItems.vespaDocId,
+    })
+    .from(collectionItems)
+    .where(
+      and(
+        inArray(collectionItems.collectionId, collectionIds),
+        eq(collectionItems.type, "file"),
+        isNull(collectionItems.deletedAt),
+        sql`LOWER(${collectionItems.name}) LIKE ${needle} ESCAPE '\\'`,
+      ),
+    )
+    .orderBy(
+      sql`CASE WHEN LOWER(${collectionItems.name}) LIKE ${prefix} ESCAPE '\\' THEN 0 ELSE 1 END`,
+      desc(collectionItems.updatedAt),
+    )
+    .limit(limit)
+
+  return c.json({
+    results: rows.map((r) => ({
+      id: r.id,
+      collectionId: r.collectionId,
+      collectionName: idToName.get(r.collectionId) ?? "",
+      parentId: r.parentId,
+      name: r.name,
+      path: r.path,
+      mimeType: r.mimeType,
+      fileSize: r.fileSize,
+      uploadStatus: r.uploadStatus,
+      updatedAt: r.updatedAt,
+      vespaDocId: r.vespaDocId,
+    })),
   })
 })
 

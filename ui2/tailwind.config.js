@@ -205,12 +205,22 @@ export default {
           "0%, 100%": { opacity: "0.7" },
           "50%": { opacity: "1" },
         },
+        slideUpIn: {
+          "0%": { opacity: "0", transform: "translateY(100%)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        slideUpOut: {
+          "0%": { opacity: "1", transform: "translateY(0)" },
+          "100%": { opacity: "0", transform: "translateY(-100%)" },
+        },
       },
       animation: {
         "fade-up": "fadeUp 320ms cubic-bezier(0.2, 0.7, 0.1, 1) both",
         "fade-in": "fadeIn 180ms ease-out both",
         "scale-in": "scaleIn 200ms cubic-bezier(0.2, 0.9, 0.3, 1) both",
         breathe: "breathe 2.4s ease-in-out infinite",
+        "slide-up-in": "slideUpIn 280ms cubic-bezier(0.22, 0.9, 0.3, 1) both",
+        "slide-up-out": "slideUpOut 280ms cubic-bezier(0.22, 0.9, 0.3, 1) both",
       },
     },
   },

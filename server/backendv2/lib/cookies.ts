@@ -7,7 +7,12 @@ import { deleteCookieByEnv, setCookieByEnv } from "@/utils"
 export const ACCESS_COOKIE = config.AccessTokenCookie // "access-token"
 export const REFRESH_COOKIE = "refresh-token"
 
-const baseOpts = { secure: true, path: "/", httpOnly: true } as const
+const baseOpts = {
+  secure: true,
+  path: "/",
+  httpOnly: true,
+  maxAge: config.RefreshTokenTTL,
+} as const
 
 export const setSessionCookies = (
   c: Context,

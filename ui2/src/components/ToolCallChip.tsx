@@ -12,6 +12,13 @@ type Props = {
   result?: { output: unknown; isError: boolean }
 }
 
+const DISPLAY_NAME: Record<string, string> = {
+  vespaSearch: "search",
+}
+
+export const displayName = (name: string): string =>
+  DISPLAY_NAME[name] ?? name
+
 const stringify = (v: unknown): string => {
   if (typeof v === "string") {
     return v
@@ -47,7 +54,7 @@ export function ToolCallChip({ name, args, result }: Props): JSX.Element {
           aria-hidden
         />
         <span className="font-mono text-[12px] text-foreground/85">
-          {name}
+          {displayName(name)}
         </span>
         <span className="ml-auto inline-flex items-center text-muted-foreground">
           {status === "running" && (

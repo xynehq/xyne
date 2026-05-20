@@ -123,7 +123,7 @@
     --text-warning: var(--amber-500);
     --text-error: var(--red-500);
 
-    /* Legacy shadcn aliases
+    /* Legacy shadcn aliases */
     --background: 38 30% 96%;             /* cream page  ~#f7f3ea */
     --foreground: 30 16% 14%;             /* warm near-black */
 
