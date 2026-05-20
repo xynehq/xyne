@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 import type { BrowserEntry, ColumnDef, LeadingRenderer } from "./types"
 import { FileCard } from "./FileCard"
 import { FolderCard } from "./FolderCard"
+import { IngestStatusIndicator } from "./IngestStatusIndicator"
 
 type Props = {
   entries: ReadonlyArray<BrowserEntry>
@@ -75,6 +76,11 @@ export function EntryList({
               <div
                 className={cn(
                   "grid w-full items-center gap-3 px-4 py-2 transition",
+                  // Pulsing ring on the row while ingestion is still in
+                  // flight. Theme's `ring` token so it adapts to light
+                  // / dark; `ring-inset` keeps it inside the row width.
+                  (e.status === "pending" || e.status === "processing") &&
+                    "animate-pulse ring-1 ring-inset ring-ring/30",
                   disabled ? "cursor-default" : "hover:bg-secondary/60",
                 )}
                 style={{ gridTemplateColumns: template }}
@@ -94,6 +100,7 @@ export function EntryList({
                   <span className="truncate text-[13.5px] font-medium text-foreground">
                     {e.name}
                   </span>
+                  <IngestStatusIndicator status={e.status} />
                 </button>
                 {columns.map((c) => (
                   <button

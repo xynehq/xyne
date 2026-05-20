@@ -8,12 +8,14 @@ import {
   FolderPlus,
   Loader2,
   Plus,
+  RefreshCw,
   Upload,
 } from "lucide-react"
 import { Topbar } from "@/components/Topbar"
 import {
   EntryGrid,
   EntryList,
+  IngestStatusIndicator,
   SearchField,
   ViewToggle,
   type BrowserEntry,
@@ -134,17 +136,22 @@ function KnowledgeRoute(): JSX.Element {
           }
         })
     } else {
+      // Fetch the collections list alongside items so the breadcrumb
+      // can resolve the active collection's display name even when the
+      // user deep-links straight into /kb?cl=<id>. Cheap call — keeps
+      // the lookup robust without a dedicated single-collection fetch.
       Promise.all([
         listItems(currentCl, currentParent),
         currentParent ? getBreadcrumb(currentCl, currentParent) : Promise.resolve([]),
+        listCollections(),
       ])
-        .then(([rows, chain]): void => {
+        .then(([rows, chain, cols]): void => {
           if (cancelled) {
             return
           }
           setItems(rows)
           setBreadcrumb(chain)
-          setCollections([])
+          setCollections(cols)
           // Any row present in the server listing means the upload bytes
           // landed — drop the matching placeholder. We don't wait on
           // uploadStatus because the processor worker isn't necessarily
@@ -562,11 +569,31 @@ function KnowledgeRoute(): JSX.Element {
                 ref={fileInputRef}
                 type="file"
                 multiple
-                className="hidden"
+                // `sr-only` (not `hidden`) — Firefox and some Chrome
+                // security contexts refuse a programmatic .click() on a
+                // display:none input. Keep the element in the layout
+                // but offscreen so the file picker opens reliably.
+                className="sr-only"
                 onChange={onFileInputChange}
               />
             </>
           )}
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={loading}
+            aria-label="Refresh"
+            title="Refresh"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-surface-elevated text-muted-foreground transition hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <RefreshCw
+              className={cn(
+                "h-3.5 w-3.5",
+                loading && "animate-spin",
+              )}
+              strokeWidth={1.75}
+            />
+          </button>
           <ViewToggle value={view} onChange={setView} />
           <SearchField
             value={query}
@@ -877,8 +904,11 @@ function SearchResultsView({
               >
                 <ResultBadge name={hit.name} />
                 <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-[13.5px] leading-tight text-foreground">
-                    {highlightMatch(hit.name, query)}
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate text-[13.5px] leading-tight text-foreground">
+                      {highlightMatch(hit.name, query)}
+                    </span>
+                    <IngestStatusIndicator status={hit.uploadStatus} />
                   </span>
                   <span className="truncate text-[11.5px] leading-tight text-muted-foreground">
                     {hitBreadcrumb(hit)}

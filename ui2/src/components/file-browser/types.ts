@@ -16,6 +16,10 @@ export type FileEntry = {
   caption?: string
   // Per-column data for EntryList. Keys match ColumnDef.key on the caller side.
   columns?: Readonly<Record<string, string>>
+  // Ingestion state surfaced next to the name. Lowercase string matching
+  // the server's UploadStatus enum (pending/processing/completed/failed).
+  // "completed" renders no indicator — successful ingest is the default.
+  status?: string
 }
 
 export type FolderEntry = {
@@ -28,6 +32,9 @@ export type FolderEntry = {
   // Per-column data for EntryList — keys match ColumnDef.key. Folders may want
   // different values than files (e.g. "Folder" instead of "PDF" under "Kind").
   columns?: Readonly<Record<string, string>>
+  // Mirror of FileEntry.status — collections also carry an upload_status
+  // (rollup of their items), shown the same way.
+  status?: string
 }
 
 export type BrowserEntry = FileEntry | FolderEntry

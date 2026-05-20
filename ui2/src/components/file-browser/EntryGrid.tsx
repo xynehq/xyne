@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 import type { BrowserEntry, LeadingRenderer } from "./types"
 import { FileCard } from "./FileCard"
 import { FolderCard } from "./FolderCard"
+import { IngestStatusIndicator } from "./IngestStatusIndicator"
 
 type Props = {
   entries: ReadonlyArray<BrowserEntry>
@@ -61,7 +62,14 @@ export function EntryGrid({
                 onOpen?.(e)
               }}
               className={cn(
-                "flex w-full flex-col items-start gap-3 rounded-2xl border border-border bg-surface-elevated p-4 text-left transition",
+                "flex w-full flex-col items-start gap-3 rounded-2xl border bg-surface-elevated p-4 text-left transition",
+                // Pulsing ring while ingestion is still in flight so the
+                // row clearly reads as "not ready yet" at a glance.
+                // Uses the theme's `ring` token so the indicator picks
+                // up the right colour in both light + dark mode.
+                e.status === "pending" || e.status === "processing"
+                  ? "animate-pulse border-ring/60 ring-1 ring-ring/25"
+                  : "border-border",
                 disabled
                   ? "cursor-default"
                   : "hover:border-ring/40 hover:bg-secondary/60 active:scale-[0.99]",
@@ -70,8 +78,11 @@ export function EntryGrid({
             >
               <div className="pl-1 pt-1">{renderLeading(e, "md")}</div>
               <span className="flex w-full min-w-0 flex-col gap-0.5">
-                <span className="truncate text-[13.5px] font-medium text-foreground">
-                  {e.name}
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="truncate text-[13.5px] font-medium text-foreground">
+                    {e.name}
+                  </span>
+                  <IngestStatusIndicator status={e.status} />
                 </span>
                 {e.caption ? (
                   <span className="truncate text-[11.5px] text-muted-foreground">

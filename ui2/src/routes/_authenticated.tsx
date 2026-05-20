@@ -9,6 +9,7 @@ import { ApiError, getMe, type Me } from "@/lib/api"
 import { Sidebar } from "@/components/Sidebar"
 import { ToastHost } from "@/components/Toast"
 import { CommandPalette } from "@/components/CommandPalette"
+import { UploadTray } from "@/components/UploadTray"
 import { useChatHistory } from "@/hooks/useChatHistory"
 import {
   closeFilePalette,
@@ -73,6 +74,7 @@ function AuthenticatedLayout(): JSX.Element {
         initialQuery={palette.initialQuery}
         onClose={closeFilePalette}
       />
+      <UploadTray />
     </div>
   )
 }

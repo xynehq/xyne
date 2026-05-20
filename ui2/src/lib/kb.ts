@@ -80,6 +80,7 @@ export const collectionToFolderEntry = (c: CollectionRow): FolderEntry => {
       size: total === 0 ? "Empty" : `${String(total)} item${total === 1 ? "" : "s"}`,
       updated: formatDate(c.updatedAt),
     },
+    status: c.uploadStatus,
   }
 }
 
@@ -224,6 +225,7 @@ export const itemToEntry = (item: ItemRow): BrowserEntry => {
         size: "—",
         updated: formatDate(item.updatedAt),
       },
+      status: item.uploadStatus,
     }
     return f
   }
@@ -240,6 +242,7 @@ export const itemToEntry = (item: ItemRow): BrowserEntry => {
       size: formatBytes(size),
       updated: formatDate(item.updatedAt),
     },
+    status: item.uploadStatus,
   }
   return fe
 }
