@@ -76,6 +76,48 @@ export type Me = {
   tokenType: "access" | "refresh"
 }
 
+// ── Message feedback ────────────────────────────────────────────────────────
+// Single PUT endpoint upserts on (user, message). Returning the saved row so
+// the client can rehydrate filled-icon state without re-fetching.
+
+export type FeedbackRating = "like" | "dislike"
+
+export type MessageFeedbackRecord = {
+  id: string
+  messageId: string
+  conversationId: string
+  rating: FeedbackRating
+  tags: string[]
+  comment?: string
+  shareChat: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+export const submitMessageFeedback = (
+  conversationId: string,
+  messageId: string,
+  input: {
+    rating: FeedbackRating
+    tags?: string[]
+    comment?: string
+    shareChat?: boolean
+  },
+): Promise<MessageFeedbackRecord> =>
+  apiFetch<MessageFeedbackRecord>(
+    `/v2/chat/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/feedback`,
+    { method: "PUT", body: JSON.stringify(input) },
+  )
+
+export const deleteMessageFeedback = (
+  conversationId: string,
+  messageId: string,
+): Promise<{ deleted: boolean }> =>
+  apiFetch<{ deleted: boolean }>(
+    `/v2/chat/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/feedback`,
+    { method: "DELETE" },
+  )
+
 export const getMe = (): Promise<Me> => apiFetch<Me>("/v2/me")
 
 export type ModelInfo = {

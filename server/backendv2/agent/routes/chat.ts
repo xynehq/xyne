@@ -7,13 +7,16 @@ import {
   ConcurrentRunError,
   ConversationNotFoundError,
   ForbiddenError,
+  MessageNotFoundError,
   viewerFromPayload,
 } from "../services/chat"
 import { agentDeps } from "../wiring"
 import {
   asConversationId,
+  asMessageId,
   asRunId,
   type Cursor,
+  type MessageFeedbackRating,
   type StreamEvent,
 } from "../storage/types"
 
@@ -55,6 +58,9 @@ const handle = async (
     return c.json(result)
   } catch (err) {
     if (err instanceof ConversationNotFoundError) {
+      throw new HTTPException(404, { message: err.message })
+    }
+    if (err instanceof MessageNotFoundError) {
       throw new HTTPException(404, { message: err.message })
     }
     if (err instanceof ForbiddenError) {
@@ -191,6 +197,103 @@ router.get("/conversations/:id/runs/:parentRunId/nested", (c) =>
       asRunId(c.req.param("parentRunId")),
     ),
   ),
+)
+
+// ─── Message feedback ────────────────────────────────────────────────────────
+// PUT semantics — single endpoint upserts. Client always sends the desired
+// final state; toggling like→dislike or editing tags/comment all hit this.
+// DELETE retracts. GET reads the viewer's own rating (used to paint the
+// filled icon state when a chat reloads).
+
+const FEEDBACK_TAG_LIMIT = 16
+const FEEDBACK_TAG_MAX_LEN = 64
+const FEEDBACK_COMMENT_MAX_LEN = 4000
+
+const parseFeedbackBody = (
+  raw: unknown,
+): {
+  rating: MessageFeedbackRating
+  tags?: string[]
+  comment?: string
+  shareChat?: boolean
+} => {
+  if (!raw || typeof raw !== "object") {
+    throw new HTTPException(400, { message: "body required" })
+  }
+  const body = raw as Record<string, unknown>
+  if (body["rating"] !== "like" && body["rating"] !== "dislike") {
+    throw new HTTPException(400, {
+      message: "rating must be 'like' or 'dislike'",
+    })
+  }
+  const out: {
+    rating: MessageFeedbackRating
+    tags?: string[]
+    comment?: string
+    shareChat?: boolean
+  } = { rating: body["rating"] }
+  // Tags: cap count + length so a malicious client can't bloat the row.
+  if (body["tags"] !== undefined) {
+    if (!Array.isArray(body["tags"])) {
+      throw new HTTPException(400, { message: "tags must be an array" })
+    }
+    const tags = body["tags"]
+      .filter((t): t is string => typeof t === "string")
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0 && t.length <= FEEDBACK_TAG_MAX_LEN)
+      .slice(0, FEEDBACK_TAG_LIMIT)
+    out.tags = tags
+  }
+  if (body["comment"] !== undefined) {
+    if (typeof body["comment"] !== "string") {
+      throw new HTTPException(400, { message: "comment must be a string" })
+    }
+    const c = body["comment"].trim()
+    if (c.length > 0) {
+      out.comment = c.slice(0, FEEDBACK_COMMENT_MAX_LEN)
+    }
+  }
+  if (body["shareChat"] !== undefined) {
+    out.shareChat = Boolean(body["shareChat"])
+  }
+  return out
+}
+
+// PUT /v2/chat/conversations/:id/messages/:messageId/feedback
+router.put("/conversations/:id/messages/:messageId/feedback", (c) =>
+  handle(c, async () => {
+    const body = parseFeedbackBody(await c.req.json().catch(() => null))
+    return service.setMessageFeedback(
+      viewer(c),
+      asConversationId(c.req.param("id")),
+      asMessageId(c.req.param("messageId")),
+      body,
+    )
+  }),
+)
+
+// GET /v2/chat/conversations/:id/messages/:messageId/feedback
+router.get("/conversations/:id/messages/:messageId/feedback", (c) =>
+  handle(c, async () => {
+    const fb = await service.getMessageFeedback(
+      viewer(c),
+      asConversationId(c.req.param("id")),
+      asMessageId(c.req.param("messageId")),
+    )
+    return fb ?? { feedback: null }
+  }),
+)
+
+// DELETE /v2/chat/conversations/:id/messages/:messageId/feedback
+router.delete("/conversations/:id/messages/:messageId/feedback", (c) =>
+  handle(c, async () => {
+    const deleted = await service.deleteMessageFeedback(
+      viewer(c),
+      asConversationId(c.req.param("id")),
+      asMessageId(c.req.param("messageId")),
+    )
+    return { deleted }
+  }),
 )
 
 // GET /v2/chat/conversations/:id/stream  (SSE — live turn/block events)

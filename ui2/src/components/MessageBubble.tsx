@@ -1,4 +1,12 @@
-import { Copy, RefreshCcw, AlertTriangle, Layers, RotateCw } from "lucide-react"
+import {
+  AlertTriangle,
+  Copy,
+  Layers,
+  RefreshCcw,
+  RotateCw,
+  ThumbsDown,
+  ThumbsUp,
+} from "lucide-react"
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown"
 import remarkGfm from "remark-gfm"
 
@@ -45,6 +53,7 @@ const markdownComponents: Components = {
 }
 
 export type ChatRole = "user" | "assistant"
+export type FeedbackRating = "like" | "dislike"
 
 type Props = {
   role: ChatRole
@@ -64,6 +73,12 @@ type Props = {
    *  timeline; otherwise the chip degrades to the plain ToolCallChip. */
   conversationId?: string
   runId?: string
+  /** Existing rating for this message — paints the matching thumb filled.
+   *  Undefined when the user hasn't rated (or hasn't been loaded). */
+  feedback?: FeedbackRating
+  /** Fired when the user clicks a thumb. The route owns modal state, so the
+   *  bubble doesn't import the modal — it just signals intent. */
+  onFeedback?: (rating: FeedbackRating) => void
 }
 
 const formatDuration = (ms: number): string => {
@@ -100,6 +115,8 @@ export function MessageBubble({
   stats,
   conversationId,
   runId,
+  feedback,
+  onFeedback,
 }: Props): JSX.Element {
   const { collapseTools } = usePreferences()
   if (role === "user") {
@@ -305,6 +322,22 @@ export function MessageBubble({
             {onRetry && (
               <ActionIcon icon={RefreshCcw} label="Retry" onClick={onRetry} />
             )}
+            {onFeedback && (
+              <>
+                <ActionIcon
+                  icon={ThumbsUp}
+                  label="Helpful"
+                  active={feedback === "like"}
+                  onClick={() => onFeedback("like")}
+                />
+                <ActionIcon
+                  icon={ThumbsDown}
+                  label="Not helpful"
+                  active={feedback === "dislike"}
+                  onClick={() => onFeedback("dislike")}
+                />
+              </>
+            )}
           </div>
         )}
       </div>
@@ -370,21 +403,35 @@ function ActionIcon({
   icon,
   label,
   onClick,
+  active = false,
 }: {
   icon: typeof Copy
   label: string
   onClick?: () => void
+  /** When true, paints the icon with the foreground color so it reads as a
+   *  selected state (used for the rated thumb after submission). */
+  active?: boolean
 }): JSX.Element {
   const Glyph = icon
   return (
     <button
       type="button"
       aria-label={label}
+      aria-pressed={active}
       title={label}
       onClick={onClick}
-      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+      className={
+        active
+          ? "inline-flex h-7 w-7 items-center justify-center rounded-md bg-secondary text-foreground"
+          : "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+      }
     >
-      <Glyph className="h-3.5 w-3.5" aria-hidden strokeWidth={1.75} />
+      <Glyph
+        className="h-3.5 w-3.5"
+        aria-hidden
+        strokeWidth={1.75}
+        {...(active ? { fill: "currentColor" } : {})}
+      />
     </button>
   )
 }

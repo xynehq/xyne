@@ -22,6 +22,7 @@ import { db } from "@/db/client"
 import type { TxnOrClient } from "@/types"
 import {
   v2ChatConversations,
+  v2ChatMessageFeedback,
   v2ChatMessages,
   v2ChatRuns,
   v2ChatToolCalls,
@@ -39,6 +40,10 @@ import {
   type Cursor,
   type IdemKey,
   type Message,
+  type MessageFeedback,
+  type MessageFeedbackInput,
+  type MessageFeedbackRating,
+  type MessageFeedbackRepo,
   type MessageId,
   type MessageRepo,
   type MessageRole,
@@ -60,8 +65,10 @@ import {
   type Tx,
   type UnitOfWork,
   type UserId,
+  type WorkspaceId,
   asAgentId,
   asConversationId,
+  asMessageFeedbackId,
   asMessageId,
   asRunId,
   asToolCallId,
@@ -105,6 +112,7 @@ type TurnRow = typeof v2ChatTurns.$inferSelect
 type RunRow = typeof v2ChatRuns.$inferSelect
 type MsgRow = typeof v2ChatMessages.$inferSelect
 type ToolCallRow = typeof v2ChatToolCalls.$inferSelect
+type FeedbackRow = typeof v2ChatMessageFeedback.$inferSelect
 
 const rowToConversation = (row: ConvRow): Conversation => {
   const c: Conversation = {
@@ -171,6 +179,31 @@ const rowToMessageWithBlocks = (row: MsgRow): MessageWithBlocks => ({
   ...rowToMessage(row),
   blocks: (row.blocks as Block[] | null) ?? [],
 })
+
+const rowToFeedback = (row: FeedbackRow): MessageFeedback => {
+  const f: MessageFeedback = {
+    id: asMessageFeedbackId(row.id),
+    messageId: asMessageId(row.messageId),
+    conversationId: asConversationId(row.conversationId),
+    userId: asUserId(row.userId),
+    workspaceId: asWorkspaceId(row.workspaceId),
+    rating: row.rating as MessageFeedbackRating,
+    tags: (row.tags as string[] | null) ?? [],
+    shareChat: row.shareChat,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }
+  if (row.runId) f.runId = asRunId(row.runId)
+  if (row.comment) f.comment = row.comment
+  if (row.modelSnapshot) f.modelSnapshot = row.modelSnapshot
+  if (row.latencyMs !== null) f.latencyMs = row.latencyMs
+  if (row.tokensIn !== null) f.tokensIn = row.tokensIn
+  if (row.tokensOut !== null) f.tokensOut = row.tokensOut
+  if (row.retrievedSourceIds) {
+    f.retrievedSourceIds = row.retrievedSourceIds as string[]
+  }
+  return f
+}
 
 const rowToToolCall = (row: ToolCallRow): ToolCall => {
   const t: ToolCall = {
@@ -960,5 +993,108 @@ export class PostgresMessageRepo implements MessageRepo {
     const last = items[items.length - 1]
     const nextCursor = rows.length > limit && last ? last.id : undefined
     return nextCursor ? { items, nextCursor } : { items }
+  }
+}
+
+// ─── MessageFeedbackRepo ────────────────────────────────────────────────────
+export class PostgresMessageFeedbackRepo implements MessageFeedbackRepo {
+  public async upsert(
+    keys: {
+      messageId: MessageId
+      conversationId: ConversationId
+      userId: UserId
+      workspaceId: WorkspaceId
+      runId?: RunId
+    },
+    input: MessageFeedbackInput,
+    tx?: Tx,
+  ): Promise<MessageFeedback> {
+    const client = clientOf(tx)
+    const ts = now()
+    const id = newId("mfb")
+    // ON CONFLICT (user_id, message_id) DO UPDATE — flipping like→dislike or
+    // editing tags/comment replaces the row. We bump updated_at but keep
+    // created_at so analytics can distinguish first-rating-at vs last-edit-at.
+    const rows = await client
+      .insert(v2ChatMessageFeedback)
+      .values({
+        id,
+        messageId: keys.messageId,
+        conversationId: keys.conversationId,
+        runId: keys.runId ?? null,
+        userId: keys.userId,
+        workspaceId: keys.workspaceId,
+        rating: input.rating,
+        tags: input.tags ?? [],
+        comment: input.comment ?? null,
+        shareChat: input.shareChat ?? false,
+        modelSnapshot: input.modelSnapshot ?? null,
+        latencyMs: input.latencyMs ?? null,
+        tokensIn: input.tokensIn ?? null,
+        tokensOut: input.tokensOut ?? null,
+        retrievedSourceIds: input.retrievedSourceIds ?? null,
+        createdAt: ts,
+        updatedAt: ts,
+      })
+      .onConflictDoUpdate({
+        target: [
+          v2ChatMessageFeedback.userId,
+          v2ChatMessageFeedback.messageId,
+        ],
+        set: {
+          rating: input.rating,
+          tags: input.tags ?? [],
+          comment: input.comment ?? null,
+          shareChat: input.shareChat ?? false,
+          modelSnapshot: input.modelSnapshot ?? null,
+          latencyMs: input.latencyMs ?? null,
+          tokensIn: input.tokensIn ?? null,
+          tokensOut: input.tokensOut ?? null,
+          retrievedSourceIds: input.retrievedSourceIds ?? null,
+          updatedAt: ts,
+        },
+      })
+      .returning()
+    const row = rows[0]
+    if (!row) {
+      throw new Error("v2ChatMessageFeedback: upsert returned no row")
+    }
+    return rowToFeedback(row)
+  }
+
+  public async get(
+    keys: { messageId: MessageId; userId: UserId },
+    tx?: Tx,
+  ): Promise<MessageFeedback | null> {
+    const client = clientOf(tx)
+    const rows = await client
+      .select()
+      .from(v2ChatMessageFeedback)
+      .where(
+        and(
+          eq(v2ChatMessageFeedback.messageId, keys.messageId),
+          eq(v2ChatMessageFeedback.userId, keys.userId),
+        ),
+      )
+      .limit(1)
+    if (!rows[0]) return null
+    return rowToFeedback(rows[0])
+  }
+
+  public async delete(
+    keys: { messageId: MessageId; userId: UserId },
+    tx?: Tx,
+  ): Promise<boolean> {
+    const client = clientOf(tx)
+    const rows = await client
+      .delete(v2ChatMessageFeedback)
+      .where(
+        and(
+          eq(v2ChatMessageFeedback.messageId, keys.messageId),
+          eq(v2ChatMessageFeedback.userId, keys.userId),
+        ),
+      )
+      .returning({ id: v2ChatMessageFeedback.id })
+    return rows.length > 0
   }
 }

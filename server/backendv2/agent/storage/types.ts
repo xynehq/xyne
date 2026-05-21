@@ -18,6 +18,7 @@ export type TurnId = Brand<string, "TurnId">
 export type RunId = Brand<string, "RunId">
 export type MessageId = Brand<string, "MessageId">
 export type ToolCallId = Brand<string, "ToolCallId">
+export type MessageFeedbackId = Brand<string, "MessageFeedbackId">
 export type BlobRef = Brand<string, "BlobRef">
 
 export const asWorkspaceId = (v: string): WorkspaceId => v as WorkspaceId
@@ -29,6 +30,8 @@ export const asTurnId = (v: string): TurnId => v as TurnId
 export const asRunId = (v: string): RunId => v as RunId
 export const asMessageId = (v: string): MessageId => v as MessageId
 export const asToolCallId = (v: string): ToolCallId => v as ToolCallId
+export const asMessageFeedbackId = (v: string): MessageFeedbackId =>
+  v as MessageFeedbackId
 export const asBlobRef = (v: string): BlobRef => v as BlobRef
 
 // ─── Content blocks (discriminated union) ────────────────────────────────────
@@ -411,6 +414,66 @@ export interface MessageRepo {
     page: Cursor,
     tx?: Tx,
   ): Promise<Page<ToolCall>>
+}
+
+// ─── Message feedback ────────────────────────────────────────────────────────
+// Mirrors v1's shared enum so cross-version analytics can union the two tables.
+export type MessageFeedbackRating = "like" | "dislike"
+
+export type MessageFeedback = {
+  id: MessageFeedbackId
+  messageId: MessageId
+  conversationId: ConversationId
+  runId?: RunId
+  userId: UserId
+  workspaceId: WorkspaceId
+  rating: MessageFeedbackRating
+  tags: string[]
+  comment?: string
+  shareChat: boolean
+  modelSnapshot?: string
+  latencyMs?: number
+  tokensIn?: number
+  tokensOut?: number
+  retrievedSourceIds?: string[]
+  createdAt: number
+  updatedAt: number
+}
+
+export type MessageFeedbackInput = {
+  rating: MessageFeedbackRating
+  tags?: string[]
+  comment?: string
+  shareChat?: boolean
+  modelSnapshot?: string
+  latencyMs?: number
+  tokensIn?: number
+  tokensOut?: number
+  retrievedSourceIds?: string[]
+}
+
+export interface MessageFeedbackRepo {
+  upsert(
+    keys: {
+      messageId: MessageId
+      conversationId: ConversationId
+      userId: UserId
+      workspaceId: WorkspaceId
+      runId?: RunId
+    },
+    input: MessageFeedbackInput,
+    tx?: Tx,
+  ): Promise<MessageFeedback>
+
+  get(
+    keys: { messageId: MessageId; userId: UserId },
+    tx?: Tx,
+  ): Promise<MessageFeedback | null>
+
+  delete(
+    keys: { messageId: MessageId; userId: UserId },
+    tx?: Tx,
+  ): Promise<boolean>
 }
 
 export interface StreamBus {

@@ -8,6 +8,7 @@ import { Subsystem } from "@/types"
 import type {
   BlobStore,
   ConversationRepo,
+  MessageFeedbackRepo,
   MessageRepo,
   StreamBus,
   UnitOfWork,
@@ -15,12 +16,14 @@ import type {
 import {
   InMemoryBlobStore,
   InMemoryConversationRepo,
+  InMemoryMessageFeedbackRepo,
   InMemoryMessageRepo,
   InMemoryStreamBus,
   InMemoryUnitOfWork,
 } from "./storage/inMemory"
 import {
   PostgresConversationRepo,
+  PostgresMessageFeedbackRepo,
   PostgresMessageRepo,
   PostgresUnitOfWork,
 } from "./storage/postgres"
@@ -30,6 +33,7 @@ const Logger = getLogger(Subsystem.Api).child({ module: "agent/wiring" })
 export type AgentDeps = {
   convs: ConversationRepo
   msgs: MessageRepo
+  feedback: MessageFeedbackRepo
   stream: StreamBus
   blobs: BlobStore
   uow: UnitOfWork
@@ -38,6 +42,7 @@ export type AgentDeps = {
 const memoryDeps = (): AgentDeps => ({
   convs: new InMemoryConversationRepo(),
   msgs: new InMemoryMessageRepo(),
+  feedback: new InMemoryMessageFeedbackRepo(),
   stream: new InMemoryStreamBus(),
   blobs: new InMemoryBlobStore(),
   uow: new InMemoryUnitOfWork(),
@@ -46,6 +51,7 @@ const memoryDeps = (): AgentDeps => ({
 const postgresDeps = (): AgentDeps => ({
   convs: new PostgresConversationRepo(),
   msgs: new PostgresMessageRepo(),
+  feedback: new PostgresMessageFeedbackRepo(),
   stream: new InMemoryStreamBus(),
   blobs: new InMemoryBlobStore(),
   uow: new PostgresUnitOfWork(),

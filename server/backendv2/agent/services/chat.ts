@@ -22,6 +22,9 @@ import {
   type ConversationId,
   type Cursor,
   type Message,
+  type MessageFeedback,
+  type MessageFeedbackRating,
+  type MessageId,
   type MessageWithBlocks,
   type Page,
   type RunId,
@@ -53,6 +56,13 @@ export class ConversationNotFoundError extends Error {
   public override readonly name = "ConversationNotFoundError"
   public constructor(public readonly id: ConversationId) {
     super(`Conversation ${String(id)} not found`)
+  }
+}
+
+export class MessageNotFoundError extends Error {
+  public override readonly name = "MessageNotFoundError"
+  public constructor(id: MessageId) {
+    super(`Message ${String(id)} not found`)
   }
 }
 
@@ -820,6 +830,92 @@ export class ChatService {
     return { nestedRuns: nested }
   }
 
+  // ─── Message feedback ──────────────────────────────────────────────────
+  // Three thin wrappers around MessageFeedbackRepo. The service layer enforces
+  // (1) the conversation belongs to the viewer and (2) the targeted message
+  // actually lives in that conversation — repos do no auth. We also snapshot
+  // model + latency + tokens + retrievedSourceIds at write time so a later
+  // regenerate / model swap doesn't silently change what the user rated.
+  public async setMessageFeedback(
+    viewer: Viewer,
+    conversationId: ConversationId,
+    messageId: MessageId,
+    input: {
+      rating: MessageFeedbackRating
+      tags?: string[]
+      comment?: string
+      shareChat?: boolean
+    },
+  ): Promise<MessageFeedback> {
+    await this.getConversation(viewer, conversationId)
+    const msg = await this.deps.msgs.getMessage(messageId)
+    if (!msg || msg.conversationId !== conversationId) {
+      // Collapse both "not found" and "wrong conversation" into a single 404
+      // so we don't leak the existence of foreign messages.
+      throw new MessageNotFoundError(messageId)
+    }
+    if (msg.role !== "assistant") {
+      throw new ForbiddenError("Only assistant messages can be rated")
+    }
+
+    // Snapshot model from the run that produced this message. listRunsForTurn
+    // is cheap (one row in practice) so no need for a getRun primitive.
+    let modelSnapshot: string | undefined
+    if (msg.runId) {
+      const runs = await this.deps.msgs.listRunsForTurn(msg.turnId)
+      const run = runs.find((r) => r.id === msg.runId)
+      if (run) modelSnapshot = run.model
+    }
+
+    const retrievedSourceIds = collectCitationDocIds(msg.blocks)
+    const stats = msg.stats
+
+    return this.deps.feedback.upsert(
+      {
+        messageId,
+        conversationId,
+        userId: viewer.userId,
+        workspaceId: viewer.workspaceId,
+        ...(msg.runId ? { runId: msg.runId } : {}),
+      },
+      {
+        rating: input.rating,
+        ...(input.tags ? { tags: input.tags } : {}),
+        ...(input.comment ? { comment: input.comment } : {}),
+        ...(input.shareChat !== undefined ? { shareChat: input.shareChat } : {}),
+        ...(modelSnapshot ? { modelSnapshot } : {}),
+        ...(stats?.durationMs !== undefined
+          ? { latencyMs: stats.durationMs }
+          : {}),
+        ...(stats?.tokenUsage.input !== undefined
+          ? { tokensIn: stats.tokenUsage.input }
+          : {}),
+        ...(stats?.tokenUsage.output !== undefined
+          ? { tokensOut: stats.tokenUsage.output }
+          : {}),
+        ...(retrievedSourceIds.length > 0 ? { retrievedSourceIds } : {}),
+      },
+    )
+  }
+
+  public async getMessageFeedback(
+    viewer: Viewer,
+    conversationId: ConversationId,
+    messageId: MessageId,
+  ): Promise<MessageFeedback | null> {
+    await this.getConversation(viewer, conversationId)
+    return this.deps.feedback.get({ messageId, userId: viewer.userId })
+  }
+
+  public async deleteMessageFeedback(
+    viewer: Viewer,
+    conversationId: ConversationId,
+    messageId: MessageId,
+  ): Promise<boolean> {
+    await this.getConversation(viewer, conversationId)
+    return this.deps.feedback.delete({ messageId, userId: viewer.userId })
+  }
+
   public async subscribe(
     viewer: Viewer,
     conversationId: ConversationId,
@@ -868,6 +964,22 @@ export class ChatService {
 
 export const channelFor = (conversationId: ConversationId): string =>
   `conv:${String(conversationId)}`
+
+// Walk the assistant message's blocks for citation entries and pull out the
+// docIds the model actually cited. Empty array when the answer didn't cite
+// anything (small talk, no-results, etc.) — feedback snapshots distinguish
+// "no retrieval" from "retrieval failed" downstream by this presence.
+const collectCitationDocIds = (blocks: Block[]): string[] => {
+  const ids: string[] = []
+  const seen = new Set<string>()
+  for (const b of blocks) {
+    if (b.kind === "citation" && !seen.has(b.docId)) {
+      seen.add(b.docId)
+      ids.push(b.docId)
+    }
+  }
+  return ids
+}
 
 const newIdemKey = (): string =>
   crypto.randomUUID().split("-").slice(0, 2).join("") ||

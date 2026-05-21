@@ -51,6 +51,13 @@ export const v2ChatToolCallStatusEnum = pgEnum("v2_chat_tool_call_status", [
   "error",
 ])
 
+// Mirrors v1's shared `MessageFeedback` enum so future cross-version analytics
+// can union both tables without translating values.
+export const v2ChatMessageFeedbackRatingEnum = pgEnum(
+  "v2_chat_message_feedback_rating",
+  ["like", "dislike"],
+)
+
 // ─── Conversations ──────────────────────────────────────────────────────────
 export const v2ChatConversations = pgTable(
   "v2_chat_conversations",
@@ -176,6 +183,57 @@ export const v2ChatMessages = pgTable(
       table.ordinal,
     ),
     turnIndex: index("v2_chat_msg_turn_index").on(table.turnId),
+  }),
+)
+
+// ─── Message feedback ───────────────────────────────────────────────────────
+// One row per (user, message). Upsert on conflict — flipping like→dislike
+// replaces the row rather than appending history. Snapshot fields
+// (model, latency, tokens, retrievedSourceIds) freeze the run context at the
+// moment the user rated; joins to v2_chat_runs / v2_chat_messages would drift
+// if the message is later regenerated. workspaceId is denormalized for
+// workspace-scoped admin/eval queries without a 4-table join.
+export const v2ChatMessageFeedback = pgTable(
+  "v2_chat_message_feedback",
+  {
+    id: text("id").primaryKey(),
+    messageId: text("message_id")
+      .notNull()
+      .references(() => v2ChatMessages.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => v2ChatConversations.id, { onDelete: "cascade" }),
+    runId: text("run_id").references(() => v2ChatRuns.id),
+    userId: text("user_id").notNull(),
+    workspaceId: text("workspace_id").notNull(),
+    rating: v2ChatMessageFeedbackRatingEnum("rating").notNull(),
+    tags: jsonb("tags").notNull().default(sql`'[]'::jsonb`),
+    comment: text("comment"),
+    shareChat: boolean("share_chat").notNull().default(false),
+    modelSnapshot: text("model_snapshot"),
+    latencyMs: integer("latency_ms"),
+    tokensIn: integer("tokens_in"),
+    tokensOut: integer("tokens_out"),
+    retrievedSourceIds: jsonb("retrieved_source_ids"),
+    createdAt: bigint("created_at", { mode: "number" }).notNull(),
+    updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    userMessageUnique: uniqueIndex("v2_chat_msg_feedback_user_msg_unique").on(
+      table.userId,
+      table.messageId,
+    ),
+    convIndex: index("v2_chat_msg_feedback_conv_index").on(
+      table.conversationId,
+    ),
+    ratingCreatedIndex: index("v2_chat_msg_feedback_rating_created_index").on(
+      table.rating,
+      table.createdAt,
+    ),
+    workspaceIndex: index("v2_chat_msg_feedback_workspace_index").on(
+      table.workspaceId,
+      table.createdAt,
+    ),
   }),
 )
 

@@ -2,7 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { Topbar } from "@/components/Topbar"
 import { Composer } from "@/components/Composer"
-import { MessageBubble } from "@/components/MessageBubble"
+import {
+  MessageBubble,
+  type FeedbackRating,
+} from "@/components/MessageBubble"
+import {
+  FeedbackModal,
+  type FeedbackSubmission,
+} from "@/components/FeedbackModal"
 import { CitationPanel } from "@/components/CitationPanel"
 import {
   setCollapsed as setCitationCollapsed,
@@ -41,6 +48,13 @@ function ChatThreadRoute(): JSX.Element {
   const isAtBottomRef = useRef(true)
   const [showJumpPill, setShowJumpPill] = useState(false)
   const [seed, setSeed] = useState<{ text: string; key: number } | undefined>()
+  // Feedback modal — opened by a thumb click on an assistant message. We
+  // store the target id + the rating the user clicked so the modal can
+  // pre-select it. Null means closed.
+  const [feedbackTarget, setFeedbackTarget] = useState<{
+    messageId: string
+    rating: FeedbackRating
+  } | null>(null)
 
   useEffect((): (() => void) | void => {
     void chatStore.loadConv(chatId)
@@ -170,6 +184,7 @@ function ChatThreadRoute(): JSX.Element {
         promptText,
         stats: conv.statsByMessageId[m.id],
         runId: m.runId,
+        feedback: conv.feedbackByMessageId[m.id],
       }
     })
   }, [
@@ -178,6 +193,7 @@ function ChatThreadRoute(): JSX.Element {
     conv.streamingText,
     conv.streamingThinking,
     conv.statsByMessageId,
+    conv.feedbackByMessageId,
   ])
 
   const onSubmit = (text: string): void => {
@@ -196,6 +212,17 @@ function ChatThreadRoute(): JSX.Element {
 
   const onRetry = (promptText: string): void => {
     setSeed({ text: promptText, key: Date.now() })
+  }
+
+  const onFeedbackClick = (messageId: string, rating: FeedbackRating): void => {
+    setFeedbackTarget({ messageId, rating })
+  }
+
+  const onFeedbackSubmit = async (
+    payload: FeedbackSubmission,
+  ): Promise<void> => {
+    if (!feedbackTarget) return
+    await chatStore.submitFeedback(chatId, feedbackTarget.messageId, payload)
   }
 
   const title = conv.title ?? "New chat"
@@ -260,6 +287,13 @@ function ChatThreadRoute(): JSX.Element {
                 {...(m.role === "assistant" && m.promptText
                   ? { onRetry: () => onRetry(m.promptText ?? "") }
                   : {})}
+                {...(m.role === "assistant" && !m.pending
+                  ? {
+                      onFeedback: (rating: FeedbackRating) =>
+                        onFeedbackClick(m.id, rating),
+                      ...(m.feedback ? { feedback: m.feedback } : {}),
+                    }
+                  : {})}
               />
             ))}
             <div ref={tailRef} aria-hidden />
@@ -294,6 +328,12 @@ function ChatThreadRoute(): JSX.Element {
       </main>
       </div>
       <CitationPanel />
+      <FeedbackModal
+        open={feedbackTarget !== null}
+        initialRating={feedbackTarget?.rating ?? "like"}
+        onSubmit={onFeedbackSubmit}
+        onClose={() => setFeedbackTarget(null)}
+      />
     </div>
   )
 }

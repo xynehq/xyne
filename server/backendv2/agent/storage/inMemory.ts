@@ -22,6 +22,9 @@ import {
   type Cursor,
   type IdemKey,
   type Message,
+  type MessageFeedback,
+  type MessageFeedbackInput,
+  type MessageFeedbackRepo,
   type MessageId,
   type MessageRepo,
   type MessageWithBlocks,
@@ -43,8 +46,10 @@ import {
   type Unsubscribe,
   type UnitOfWork,
   type UserId,
+  type WorkspaceId,
   asBlobRef,
   asConversationId,
+  asMessageFeedbackId,
   asMessageId,
   asRunId,
   asTurnId,
@@ -647,6 +652,67 @@ export class InMemoryStreamBus implements StreamBus {
         this.listeners.delete(channelId)
       }
     }
+  }
+}
+
+// ─── InMemoryMessageFeedbackRepo ─────────────────────────────────────────────
+export class InMemoryMessageFeedbackRepo implements MessageFeedbackRepo {
+  private readonly byKey = new Map<string, MessageFeedback>()
+
+  private key(messageId: MessageId, userId: UserId): string {
+    return `${String(userId)}:${String(messageId)}`
+  }
+
+  public async upsert(
+    keys: {
+      messageId: MessageId
+      conversationId: ConversationId
+      userId: UserId
+      workspaceId: WorkspaceId
+      runId?: RunId
+    },
+    input: MessageFeedbackInput,
+  ): Promise<MessageFeedback> {
+    const k = this.key(keys.messageId, keys.userId)
+    const existing = this.byKey.get(k)
+    const ts = now()
+    const next: MessageFeedback = {
+      id: existing?.id ?? asMessageFeedbackId(newId("mfb")),
+      messageId: keys.messageId,
+      conversationId: keys.conversationId,
+      ...(keys.runId ? { runId: keys.runId } : {}),
+      userId: keys.userId,
+      workspaceId: keys.workspaceId,
+      rating: input.rating,
+      tags: input.tags ?? [],
+      ...(input.comment ? { comment: input.comment } : {}),
+      shareChat: input.shareChat ?? false,
+      ...(input.modelSnapshot ? { modelSnapshot: input.modelSnapshot } : {}),
+      ...(input.latencyMs !== undefined ? { latencyMs: input.latencyMs } : {}),
+      ...(input.tokensIn !== undefined ? { tokensIn: input.tokensIn } : {}),
+      ...(input.tokensOut !== undefined ? { tokensOut: input.tokensOut } : {}),
+      ...(input.retrievedSourceIds
+        ? { retrievedSourceIds: input.retrievedSourceIds }
+        : {}),
+      createdAt: existing?.createdAt ?? ts,
+      updatedAt: ts,
+    }
+    this.byKey.set(k, next)
+    return next
+  }
+
+  public async get(keys: {
+    messageId: MessageId
+    userId: UserId
+  }): Promise<MessageFeedback | null> {
+    return this.byKey.get(this.key(keys.messageId, keys.userId)) ?? null
+  }
+
+  public async delete(keys: {
+    messageId: MessageId
+    userId: UserId
+  }): Promise<boolean> {
+    return this.byKey.delete(this.key(keys.messageId, keys.userId))
   }
 }
 

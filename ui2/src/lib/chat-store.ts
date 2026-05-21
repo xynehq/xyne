@@ -7,7 +7,11 @@
 // conv state with an immutable update and notify subscribers.
 
 import { useSyncExternalStore } from "react"
-import { apiFetch } from "./api"
+import {
+  apiFetch,
+  submitMessageFeedback as apiSubmitFeedback,
+  type FeedbackRating,
+} from "./api"
 
 // ─── Wire types (match backendv2 storage/types.ts) ──────────────────────────
 export type Block =
@@ -85,6 +89,11 @@ export type ConvState = {
   streamingText: string
   streamingThinking: string
   statsByMessageId: Record<string, MessageStats>
+  // In-memory only: rating per assistant message. Survives navigation within
+  // the same session but not page refresh (server has the durable record;
+  // we just don't currently preload it). Update path: user submits → action
+  // posts to server → on success this map is set so the icon paints filled.
+  feedbackByMessageId: Record<string, FeedbackRating>
   status: ConvStatus
   error?: string
 }
@@ -95,6 +104,7 @@ const EMPTY: ConvState = {
   streamingText: "",
   streamingThinking: "",
   statsByMessageId: {},
+  feedbackByMessageId: {},
   status: "idle",
 }
 
@@ -837,6 +847,30 @@ export const chatStore = {
    *  the cursor persisted in sessionStorage. */
   closeStream(convId: string): void {
     closeStream(convId)
+  },
+
+  /** Submit feedback for an assistant message. Server upserts on (user,
+   *  message); flipping like→dislike replaces the row. On success we cache
+   *  the rating so the icon paints filled. Throws on failure — caller
+   *  surfaces the error in the modal. */
+  async submitFeedback(
+    convId: string,
+    messageId: string,
+    payload: {
+      rating: FeedbackRating
+      tags: string[]
+      comment?: string
+      shareChat: boolean
+    },
+  ): Promise<void> {
+    await apiSubmitFeedback(convId, messageId, payload)
+    updateConv(convId, (p) => ({
+      ...p,
+      feedbackByMessageId: {
+        ...p.feedbackByMessageId,
+        [messageId]: payload.rating,
+      },
+    }))
   },
 
   async renameConv(convId: string, title: string): Promise<void> {
