@@ -12,6 +12,7 @@
 import { defineTool } from "@mariozechner/pi-coding-agent"
 import { Type } from "@sinclair/typebox"
 
+import config from "@/config"
 import { searchVespaAgent, searchVespaKnowledgeBase } from "@/search/vespa"
 import type { VespaSearchResponse } from "@xyne/vespa-ts/types"
 
@@ -41,7 +42,9 @@ const DESCRIPTION = [
   "documents. After this, drill in with `getChunks` (to read more around a ",
   "specific chunk) or `searchWithinDoc` (to find other relevant chunks in ",
   "the same document). Issue multiple varied queries — synonyms, regulation ",
-  "numbers, circular numbers, section names — to maximise recall. Be specific.",
+  "numbers, circular numbers, section names — to maximise recall. Be specific. ",
+  "When the user names a folder/section, pass a `folder` path (from ",
+  "`getFolderTree`) to scope the search to that folder subtree.",
 ].join("")
 
 const params = Type.Object({
@@ -53,13 +56,37 @@ const params = Type.Object({
     minLength: 2,
     maxLength: 200,
   }),
+  folder: Type.Optional(
+    Type.String({
+      description:
+        "Optional folder-path scope (e.g. 'Enforcements/Orders'). When set, " +
+        "the search is restricted to documents whose path starts with this " +
+        "folder, matching the document `fileName`. Call `getFolderTree` first " +
+        "to discover valid paths. Start BROAD (a top-level folder) and only " +
+        "narrow if you get too many irrelevant hits.",
+      minLength: 1,
+      maxLength: 300,
+    }),
+  ),
+  alpha: Type.Optional(
+    Type.Number({
+      description:
+        "Hybrid weight between lexical and vector match (0 = keyword-only, " +
+        "1 = vector-only). Only used when `folder` is set; default 0.7 leans " +
+        "semantic. Lower it toward 0.3-0.5 when the query is mostly exact " +
+        "keywords/identifiers.",
+      minimum: 0,
+      maximum: 1,
+    }),
+  ),
   limit: Type.Optional(
     Type.Number({
       description:
-        "Maximum chunks to return (1–30). Default 15. Use higher (20–30) " +
-        "for broad survey queries; keep tight (5–10) for precision.",
+        "Maximum chunks to return (1–50). Default 15 (25 when `folder` is " +
+        "set). Use higher (30–50) for broad survey queries; keep tight " +
+        "(5–10) for precision.",
       minimum: 1,
-      maximum: 30,
+      maximum: 50,
     }),
   ),
 })
@@ -111,6 +138,76 @@ const runSearch = async (
   })
 }
 
+/** Escape a YQL double-quoted string literal (backslash + dquote). */
+const yqlString = (s: string): string =>
+  `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
+
+const inClause = (field: string, values: readonly string[]): string =>
+  `${field} in (${values.map(yqlString).join(", ")})`
+
+/** Replicate the agent's KB allowlist (clId/clFd/docId) as a YQL clause so the
+ *  scoped path enforces the same visibility as `searchVespaAgent`. Returns ""
+ *  when the scope carries no KB collection selections (nothing to gate on). */
+const scopeGateClause = (agentScope: AgentScope | undefined): string => {
+  if (!agentScope?.collectionSelections.length) return ""
+  const ids: string[] = []
+  const folderIds: string[] = []
+  const fileIds: string[] = []
+  for (const s of agentScope.collectionSelections) {
+    if (s.collectionIds?.length) ids.push(...s.collectionIds)
+    if (s.collectionFolderIds?.length) folderIds.push(...s.collectionFolderIds)
+    if (s.collectionFileIds?.length) fileIds.push(...s.collectionFileIds)
+  }
+  const parts: string[] = []
+  if (ids.length) parts.push(inClause("clId", ids))
+  if (folderIds.length) parts.push(inClause("clFd", folderIds))
+  if (fileIds.length) parts.push(inClause("docId", fileIds))
+  return parts.length ? `(${parts.join(" or ")})` : ""
+}
+
+/** Folder-scoped hybrid search. The vespa-ts client can't express a `fileName`
+ *  filter, so we build the YQL by hand and POST it to the query endpoint
+ *  directly — same transport metadataSearch uses. The agent scope gate is
+ *  ANDed in so a scoped session can't read outside its allowlist. */
+const runScopedSearch = async (
+  query: string,
+  limit: number,
+  folder: string,
+  alpha: number,
+  args: SearchToolArgs,
+): Promise<VespaSearchResponse> => {
+  const targetHits = Math.max(limit, 200)
+  const clauses = [
+    `(({targetHits:${String(targetHits)}}nearestNeighbor(chunk_embeddings, e)) ` +
+      `or userInput(@query))`,
+    `fileName contains ${yqlString(folder)}`,
+  ]
+  const gate = scopeGateClause(args.agentScope)
+  if (gate) clauses.push(gate)
+  const yql = `select * from kb_items where ${clauses.join(" and ")}`
+  const body: Record<string, unknown> = {
+    yql,
+    query,
+    "input.query(e)": "embed(@query)",
+    "input.query(alpha)": alpha,
+    "input.query(recency_decay_rate)": 0.02,
+    "ranking.profile": "default_native",
+    hits: limit,
+    timeout: "30s",
+  }
+  const endpoint = `${config.vespaEndpoint.queryEndpoint}/search/`
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    throw new Error(`vespa HTTP ${String(res.status)}: ${text.slice(0, 240)}`)
+  }
+  return (await res.json()) as VespaSearchResponse
+}
+
 export const buildVespaSearchTool = (
   args: SearchToolArgs,
 ): ReturnType<typeof defineTool> =>
@@ -128,18 +225,24 @@ export const buildVespaSearchTool = (
         toolCallId,
       })
       const startedAt = Date.now()
+      const folder = typeof p.folder === "string" ? p.folder.trim() : ""
+      const limit = p.limit ?? (folder ? 35 : 20)
+      const alpha = typeof p.alpha === "number" ? p.alpha : 0.7
       log.info(
         {
           query: p.query,
-          limit: p.limit ?? 15,
+          limit,
+          folder: folder || undefined,
+          alpha: folder ? alpha : undefined,
           agentScoped: !!args.agentScope,
           agentExternalId: args.agentScope?.externalId,
         },
         "tool: vespaSearch start",
       )
-      const limit = p.limit ?? 15
       try {
-        const resp = await runSearch(p.query, limit, args)
+        const resp = folder
+          ? await runScopedSearch(p.query, limit, folder, alpha, args)
+          : await runSearch(p.query, limit, args)
         const children = resp?.root?.children ?? []
         if (children.length === 0) {
           log.info(
@@ -163,6 +266,7 @@ export const buildVespaSearchTool = (
           chunkIndices: number[]
           score: number
           title: string
+          aiSummary: string | null
         }> = []
 
         children.forEach((hit, i) => {
@@ -176,6 +280,13 @@ export const buildVespaSearchTool = (
             docId,
           })
           const score = typeof hit?.relevance === "number" ? hit.relevance : 0
+          // LLM-generated per-document summary (title/type/date/entities/topics/
+          // regulations/summary). Gives the agent the whole-doc gist alongside
+          // the matched chunks so it can judge relevance, not just the passage.
+          const aiSummary =
+            typeof fields["ai_summary"] === "string"
+              ? (fields["ai_summary"] as string)
+              : null
 
           // Top-N chunk indices come from `matchfeatures.chunk_scores`.
           // Snippet text is fetched from `chunks_summary` at the matching
@@ -211,6 +322,11 @@ export const buildVespaSearchTool = (
               `${typeof totalChunks === "number" ? ` total_chunks="${String(totalChunks)}"` : ""}>`,
           )
           lines.push(`    <title>${title}</title>`)
+          if (aiSummary) {
+            lines.push(
+              `    <ai_summary>${truncate(aiSummary, 2000)}</ai_summary>`,
+            )
+          }
           for (const c of renderedChunks) {
             // `cite` is the exact string the system prompt instructs the
             // model to copy verbatim into its answer. Emitting it as a
@@ -234,6 +350,7 @@ export const buildVespaSearchTool = (
             chunkIndices: renderedChunks.map((c) => c.index),
             score,
             title,
+            aiSummary,
           })
         })
 

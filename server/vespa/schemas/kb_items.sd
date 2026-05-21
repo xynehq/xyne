@@ -190,6 +190,13 @@ schema kb_items {
       index { enable-bm25 }
       attribute: fast-search
     }
+
+    # LLM-generated per-document summary (title/type/date/entities/topics/regulations/summary).
+    field ai_summary type string {
+      indexing: index | summary | attribute
+      index { enable-bm25 }
+      match: text
+    }
   }
 
   # Vector embeddings
@@ -210,9 +217,9 @@ schema kb_items {
     match { gram gram-size: 3 }
   }
 
-  fieldset default      { fields:  description, toc_chunks, chunks, image_chunks, fileName, entity, createdBy, clFd, referenced_ids, entities_involved }
+  fieldset default      { fields:  description, toc_chunks, chunks, image_chunks, fileName, entity, createdBy, clFd, referenced_ids, entities_involved, ai_summary }
   fieldset autocomplete { fields:  fileName }
-  fieldset search       { fields:  description, toc_chunks, chunks, image_chunks, fileName, entity, clFd }
+  fieldset search       { fields:  description, toc_chunks, chunks, image_chunks, fileName, entity, clFd, ai_summary }
 
   rank-profile initial {
     # Inputs for the query vector and alpha for hybrid search

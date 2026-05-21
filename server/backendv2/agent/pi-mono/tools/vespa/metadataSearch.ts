@@ -39,7 +39,8 @@ const TOP_CHUNKS_PER_DOC = 3
 const DESCRIPTION = [
   "Structured metadata search across the SEBI corpus. Use when the user ",
   "names a CONCRETE identifier — a PAN, a document_id, an entity (company/",
-  "person/regulator), a referenced ID, or a date range. Returns documents ",
+  "person/regulator), a referenced ID, a date range, or a folder path. ",
+  "Returns documents ",
   "matching ALL provided filters (AND semantics). No semantic ranking, no ",
   "embeddings — exact + BM25 on the metadata fields. ",
   "Prefer this over `vespaSearch` whenever the user's question pivots on a ",
@@ -98,6 +99,17 @@ const params = Type.Object(
         maxLength: 32,
       }),
     ),
+    folder: Type.Optional(
+      Type.String({
+        description:
+          "Folder-path scope (e.g. 'Enforcements/Orders'). Restricts results " +
+          "to documents whose path starts with this folder, matching the " +
+          "document `fileName`. Call `getFolderTree` to discover valid paths. " +
+          "Can be used on its own or combined with the filters above.",
+        minLength: 1,
+        maxLength: 300,
+      }),
+    ),
     limit: Type.Optional(
       Type.Number({
         description: `Max hits to return (1-${String(MAX_LIMIT)}). Default ${String(DEFAULT_LIMIT)}.`,
@@ -129,6 +141,7 @@ type Params = {
   entities?: string | string[]
   dateFrom?: string
   dateTo?: string
+  folder?: string
   limit?: number
   query?: string
 }
@@ -221,6 +234,12 @@ const buildWhere = (p: Params, scope: AgentScope | undefined): string => {
       )
     }
     clauses.push(`document_date <= ${String(hi)}`)
+  }
+  if (p.folder) {
+    // Folder scope — matches documents whose path (Vespa `fileName`) starts
+    // with the folder, e.g. "Enforcements/Orders". `contains` keeps multi-word
+    // folder names matching even after tokenization.
+    clauses.push(`fileName contains ${yqlString(p.folder)}`)
   }
 
   // Agent scope narrowing — if the agent's KB scope is set via cl- / clfd- /
@@ -362,6 +381,7 @@ export const buildMetadataSearchTool = (
             entities: p.entities,
             dateFrom: p.dateFrom,
             dateTo: p.dateTo,
+            folder: p.folder,
           },
         },
         "tool: metadataSearch start",
@@ -393,6 +413,7 @@ export const buildMetadataSearchTool = (
           panIds: string[]
           referencedIds: string[]
           fileName: string | null
+          aiSummary: string | null
         }> = []
 
         children.forEach((hit, i) => {
@@ -433,6 +454,13 @@ export const buildMetadataSearchTool = (
                 (s): s is string => typeof s === "string",
               )
             : []
+          // LLM-generated per-document summary (title/type/date/entities/topics/
+          // regulations/summary). Lets the agent judge relevance from the gist
+          // instead of discarding a doc on a thin metadata-only snippet.
+          const aiSummary =
+            typeof fields["ai_summary"] === "string"
+              ? (fields["ai_summary"] as string)
+              : null
 
           // Best-effort snippets from the top chunks (when present) so the
           // agent sees what the document actually says, not just metadata.
@@ -484,6 +512,11 @@ export const buildMetadataSearchTool = (
               `    <references>${referencedIds.join(", ")}</references>`,
             )
           }
+          if (aiSummary) {
+            lines.push(
+              `    <ai_summary>${truncate(aiSummary, 2000)}</ai_summary>`,
+            )
+          }
           for (const c of renderedChunks) {
             // See vespa/search.ts: emit a ready-made `cite` attribute
             // matching the system prompt's "copy, don't construct" rule
@@ -507,6 +540,7 @@ export const buildMetadataSearchTool = (
             entities,
             panIds,
             referencedIds,
+            aiSummary,
           })
         })
 

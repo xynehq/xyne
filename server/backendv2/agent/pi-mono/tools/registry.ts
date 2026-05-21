@@ -23,6 +23,7 @@ import { defineTool } from "@mariozechner/pi-coding-agent"
 import type { AgentScope } from "../../agent-scope"
 import type { Log } from "../../log"
 import { buildGetChunksTool } from "./vespa/getChunks"
+import { buildGetFolderTreeTool } from "./vespa/getFolderTree"
 import { buildMetadataSearchTool } from "./vespa/metadataSearch"
 import { buildVespaSearchTool } from "./vespa/search"
 import { buildSearchWithinDocTool } from "./vespa/searchWithinDoc"
@@ -74,6 +75,20 @@ export const TOOL_REGISTRY: ReadonlyArray<ToolDescriptor> = [
     category: "retrieval",
     build: (ctx) =>
       buildMetadataSearchTool({
+        logger: ctx.logger,
+        ...(ctx.agentScope ? { agentScope: ctx.agentScope } : {}),
+      }),
+  },
+  {
+    name: "getFolderTree",
+    label: "KB folder tree",
+    description:
+      "List the collection → folder tree so the agent can pick an exact " +
+      "folder path to scope vespaSearch / metadataSearch with. Use before a " +
+      "scoped search when the user names a folder or section.",
+    category: "retrieval",
+    build: (ctx) =>
+      buildGetFolderTreeTool({
         logger: ctx.logger,
         ...(ctx.agentScope ? { agentScope: ctx.agentScope } : {}),
       }),
