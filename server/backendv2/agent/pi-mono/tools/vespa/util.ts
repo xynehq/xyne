@@ -28,6 +28,17 @@ export const textResult = (
   ...(isError ? { isError: true } : {}),
 })
 
+// Truncate long text to keep tool outputs bounded. The agent can call
+// getChunks for full content when needed.
+export const SNIPPET_CHARS = 2500
+
+export const truncate = (s: string, max = SNIPPET_CHARS): string => {
+  if (s.length <= max) {
+    return s
+  }
+  return `${s.slice(0, max - 1)}…`
+}
+
 // Extract a chunk's representative page range. Vespa stores chunks with a
 // 0-indexed `chunk_index` and a `page_numbers` array. We render as "1-3" or
 // "1,2,5" so the agent can cross-reference against citations.

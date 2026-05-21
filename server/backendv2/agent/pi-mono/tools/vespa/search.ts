@@ -24,6 +24,7 @@ import {
   textResult,
   titleOf,
   topChunkIndices,
+  truncate,
 } from "./util"
 
 // Per-hit snippet cap. Showing the agent multiple top-scoring chunks per

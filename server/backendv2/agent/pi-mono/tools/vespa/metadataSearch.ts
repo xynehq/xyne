@@ -22,7 +22,7 @@ import config from "@/config"
 
 import type { AgentScope } from "../../../agent-scope"
 import type { Log } from "../../../log"
-import { formatPages, snippetForChunk, textResult, titleOf, topChunkIndices } from "./util"
+import { formatPages, snippetForChunk, textResult, titleOf, topChunkIndices, truncate } from "./util"
 
 // Max hits we return — the agent should narrow further if it gets a wide
 // result set rather than ask Vespa for a million rows.
