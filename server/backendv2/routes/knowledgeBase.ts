@@ -5,53 +5,52 @@
 // reuse the same exported helpers from @/db/knowledgeBase and the storage
 // path helpers from @/api/knowledgeBase.
 
-import { Hono, type Context } from "hono"
+import * as crypto from "crypto"
+import { createReadStream as createFileReadStream } from "node:fs"
+import { mkdir, stat, unlink, writeFile } from "node:fs/promises"
+import { dirname, extname } from "node:path"
+import { fileTypeFromBuffer } from "file-type"
+import { type Context, Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { stream } from "hono/streaming"
-import { mkdir, unlink, writeFile, stat } from "node:fs/promises"
-import { createReadStream as createFileReadStream } from "node:fs"
-import { dirname, extname } from "node:path"
-import * as crypto from "crypto"
-import { fileTypeFromBuffer } from "file-type"
 
+import { getStoragePath, sanitizeFileName } from "@/api/knowledgeBase"
+import config from "@/config"
 import { db } from "@/db/client"
-import { getUserByEmail } from "@/db/user"
 import {
   createCollection,
-  getCollectionById,
-  getCollectionsByOwner,
-  getAccessibleCollections,
-  softDeleteCollection,
-  createFolder as dbCreateFolder,
   createFileItem,
+  createFolder as dbCreateFolder,
+  generateCollectionVespaDocId,
+  generateFileVespaDocId,
+  generateStorageKey,
+  getAccessibleCollections,
+  getCollectionById,
+  getCollectionFileByItemId,
   getCollectionItemById,
   getCollectionItemsByParent,
-  getCollectionFileByItemId,
+  getCollectionsByOwner,
+  softDeleteCollection,
   softDeleteCollectionItem,
-  generateStorageKey,
-  generateFileVespaDocId,
-  generateCollectionVespaDocId,
 } from "@/db/knowledgeBase"
-import {
-  getStoragePath,
-  sanitizeFileName,
-} from "@/api/knowledgeBase"
-import {
-  boss,
-  FileProcessingQueue,
-  PdfFileProcessingQueue,
-} from "@/queue/api-server-queue"
-import { DeleteDocument, GetDocumentsByDocIds } from "@/search/vespa"
-import { getTracer } from "@/tracer"
-import { KbItemsSchema } from "@xyne/vespa-ts/types"
-import { expandSheetIds } from "@/search/utils"
-import { ProcessingJobType, type TxnOrClient } from "@/types"
-import { UploadStatus } from "@/shared/types"
 import type { Collection, CollectionItem } from "@/db/schema"
 import { collectionItems } from "@/db/schema"
-import { and, eq, isNull, inArray, sql, desc } from "drizzle-orm"
+import { getUserByEmail } from "@/db/user"
+import { queuePdfForDoclingScheduler } from "@/lib/doclingSchedulerIntake"
 import { getLogger } from "@/logger"
+import {
+  FileProcessingQueue,
+  PdfFileProcessingQueue,
+  boss,
+} from "@/queue/api-server-queue"
+import { expandSheetIds } from "@/search/utils"
+import { DeleteDocument, GetDocumentsByDocIds } from "@/search/vespa"
+import { UploadStatus } from "@/shared/types"
+import { getTracer } from "@/tracer"
+import { ProcessingJobType, type TxnOrClient } from "@/types"
 import { Subsystem } from "@/types"
+import { KbItemsSchema } from "@xyne/vespa-ts/types"
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "backendv2/kb" })
 
@@ -141,8 +140,7 @@ const EXT_MIME: Record<string, string> = {
   ".docx":
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ".xls": "application/vnd.ms-excel",
-  ".xlsx":
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   ".ppt": "application/vnd.ms-powerpoint",
   ".pptx":
     "application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -457,7 +455,9 @@ router.post("/collections/:clId/upload", async (c) => {
   const parentIdRaw = formData.get("parentId")
   const parentId =
     typeof parentIdRaw === "string" && parentIdRaw !== "" ? parentIdRaw : null
-  const files = formData.getAll("files").filter((f): f is File => f instanceof File)
+  const files = formData
+    .getAll("files")
+    .filter((f): f is File => f instanceof File)
   if (files.length === 0) {
     throw new HTTPException(400, { message: "No files provided" })
   }
@@ -524,21 +524,56 @@ router.post("/collections/:clId/upload", async (c) => {
         ),
       )
 
-      // Same routing as v1 — PDFs go to the PDF queue.
-      const queueName =
-        mime === "application/pdf"
-          ? PdfFileProcessingQueue
-          : FileProcessingQueue
       try {
-        await boss.send(
-          queueName,
-          {
-            fileId: item.id,
-            type: ProcessingJobType.FILE,
-            useOCR: true,
-          },
-          { retryLimit: 3, expireInHours: 12 },
-        )
+        const useDoclingSchedulerForPdf =
+          mime === "application/pdf" &&
+          config.doclingEnabled &&
+          config.doclingAsyncEnabled &&
+          config.doclingAsyncSchedulerEnabled
+
+        if (useDoclingSchedulerForPdf) {
+          const { schedulerFile, sourceKind, basePriority } =
+            await queuePdfForDoclingScheduler({
+              fileId: item.id,
+              vespaDocId: item.vespaDocId,
+              collectionId: item.collectionId,
+              parentId: item.parentId,
+              collectionName: collection.name,
+              fileName: item.name,
+              originalName: item.originalName,
+              storagePath: item.storagePath,
+              path: item.path,
+              mimeType: item.mimeType || mime,
+              fileSize: item.fileSize,
+              uploadedByEmail: item.uploadedByEmail,
+              metadata: item.metadata,
+            })
+          Logger.info(
+            {
+              fileId: item.id,
+              sourceKind,
+              basePriority,
+              queuedThroughDoclingScheduler: Boolean(schedulerFile),
+            },
+            schedulerFile
+              ? "Queued uploaded PDF directly for async Docling scheduler"
+              : "Skipped direct async Docling scheduler queue because file already exists there",
+          )
+        } else {
+          const queueName =
+            mime === "application/pdf"
+              ? PdfFileProcessingQueue
+              : FileProcessingQueue
+          await boss.send(
+            queueName,
+            {
+              fileId: item.id,
+              type: ProcessingJobType.FILE,
+              useOCR: true,
+            },
+            { retryLimit: 3, expireInHours: 12 },
+          )
+        }
       } catch (err) {
         Logger.error({ err, fileId: item.id }, "queue enqueue failed")
       }
@@ -612,7 +647,11 @@ router.get("/collections/:clId/files/:itemId/content", async (c) => {
     // through.
     upstream.headers.forEach((v, k) => {
       const lk = k.toLowerCase()
-      if (lk === "set-cookie" || lk === "transfer-encoding" || lk === "connection") {
+      if (
+        lk === "set-cookie" ||
+        lk === "transfer-encoding" ||
+        lk === "connection"
+      ) {
         return
       }
       passthrough.set(k, v)
@@ -687,13 +726,20 @@ router.get("/collections/:clId/files/:itemId/content", async (c) => {
     const chunkSize = end - start + 1
     const sp = file.storagePath
     return stream(c, async (w) => {
-      c.header("Content-Range", `bytes ${String(start)}-${String(end)}/${String(fileSize)}`)
+      c.header(
+        "Content-Range",
+        `bytes ${String(start)}-${String(end)}/${String(fileSize)}`,
+      )
       c.header("Content-Length", String(chunkSize))
       for (const [k, v] of Object.entries(baseHeaders)) {
         c.header(k, v)
       }
       c.status(206)
-      const rs = createFileReadStream(sp, { start, end, highWaterMark: 64 * 1024 })
+      const rs = createFileReadStream(sp, {
+        start,
+        end,
+        highWaterMark: 64 * 1024,
+      })
       await new Promise<void>((resolve, reject) => {
         rs.on("data", async (chunk) => {
           try {
@@ -753,7 +799,8 @@ router.get("/files/resolve/:docId", async (c) => {
   const actor = await loadActor(c)
   const docId = c.req.param("docId")
   const chunkRaw = c.req.query("chunk")
-  const chunkIndex = chunkRaw && /^\d+$/.test(chunkRaw) ? Number(chunkRaw) : null
+  const chunkIndex =
+    chunkRaw && /^\d+$/.test(chunkRaw) ? Number(chunkRaw) : null
 
   const [row] = await db
     .select({

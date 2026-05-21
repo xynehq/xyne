@@ -1,10 +1,10 @@
 import { promises as fsPromises } from "fs"
 import * as path from "path"
-import { getLogger } from "@/logger"
-import { Subsystem, type ChunkMetadata } from "@/types"
-import type { ProcessingResult } from "@/services/fileProcessor"
-import config from "@/config"
 import { chunkTextByParagraph } from "@/chunks"
+import config from "@/config"
+import { getLogger } from "@/logger"
+import type { ProcessingResult } from "@/services/fileProcessor"
+import { type ChunkMetadata, Subsystem } from "@/types"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "chunkByDocling",
@@ -15,8 +15,19 @@ const DEFAULT_DOCLING_TIMEOUT_MS = 300000
 const DEFAULT_MAX_RETRIES = 3
 const DEFAULT_RETRY_DELAY_MS = 1000
 
+// On a POST /process timeout, do a single GET /status/{doc_id} to find out
+// what really happened on the docling side before retrying.
+const STATUS_FETCH_TIMEOUT_MS = 10_000
+
 type DoclingCallOptions = {
   timeoutMs?: number
+}
+
+type BunFetchInit = Omit<RequestInit, "timeout"> & {
+  // Bun has a runtime-only fetch option for its HTTP socket idle timeout.
+  // Keep our AbortController deadline, but do not let Bun's default 300s idle
+  // timeout abort long-running Docling requests first.
+  timeout?: false | number
 }
 
 function parsePositiveInteger(
@@ -51,14 +62,14 @@ function getEffectiveDoclingTimeoutMs(timeoutMs?: number): number {
 }
 
 // Docling API response types
-interface DoclingBbox {
+export interface DoclingBbox {
   l: number
   t: number
   r: number
   b: number
 }
 
-interface DoclingTocEntry {
+export interface DoclingTocEntry {
   section_number: string
   section_title: string
   page_number: number
@@ -67,11 +78,11 @@ interface DoclingTocEntry {
   parent_index?: number | null
 }
 
-interface DoclingBboxFragment extends DoclingBbox {
+export interface DoclingBboxFragment extends DoclingBbox {
   page_no?: number | null
 }
 
-interface DoclingChunk {
+export interface DoclingChunk {
   text: string
   headings: string[]
   page_numbers: number[]
@@ -79,7 +90,7 @@ interface DoclingChunk {
   bboxes?: DoclingBboxFragment[]
 }
 
-interface DoclingImageChunk {
+export interface DoclingImageChunk {
   text: string
   page_number: number
   bbox?: DoclingBbox
@@ -87,13 +98,13 @@ interface DoclingImageChunk {
   height?: number
 }
 
-interface DoclingVlmStats {
+export interface DoclingVlmStats {
   tables_replaced: number
   pictures_replaced: number
   scanned_pages_ocrd: number
 }
 
-interface DoclingVlmMetadata {
+export interface DoclingVlmMetadata {
   enabled: boolean
   preset: string | null
   model: string | null
@@ -102,7 +113,7 @@ interface DoclingVlmMetadata {
   scanned_pages_ocrd: number
 }
 
-interface DoclingMetadata {
+export interface DoclingMetadata {
   doc_id: string
   filename: string
   num_pages: number
@@ -112,7 +123,7 @@ interface DoclingMetadata {
   vlm: DoclingVlmMetadata
 }
 
-interface DoclingResponse {
+export interface DoclingResponse {
   metadata: DoclingMetadata
   toc: {
     entries: DoclingTocEntry[]
@@ -192,6 +203,51 @@ function ensureUniqueFileName(name: string, usedNames: Set<string>): string {
   }
 }
 
+interface DoclingStatusEntry {
+  doc_id: string
+  filename?: string | null
+  state: "running" | "done" | "failed"
+  stage?: string | null
+  started_at?: number | null
+  completed_at?: number | null
+  duration_seconds?: number | null
+  error?: string | null
+}
+
+/**
+ * Single GET /status/{docId}. Returns `null` if the entry is missing (404),
+ * unreachable, or malformed — the caller treats null as "unknown, just retry".
+ */
+async function fetchDoclingStatus(
+  docId: string,
+  baseUrl: string,
+  fileName: string,
+): Promise<DoclingStatusEntry | null> {
+  const statusUrl = `${baseUrl}/status/${docId}`
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), STATUS_FETCH_TIMEOUT_MS)
+  try {
+    const resp = await fetch(statusUrl, { signal: controller.signal })
+    if (resp.status === 404) return null
+    if (!resp.ok) {
+      Logger.warn(
+        `Docling /status returned ${resp.status} for docId=${docId}`,
+        { fileName, docId, statusUrl },
+      )
+      return null
+    }
+    return (await resp.json()) as DoclingStatusEntry
+  } catch (err) {
+    Logger.warn(
+      `Docling /status fetch failed for docId=${docId}: ${(err as Error).message}`,
+      { fileName, docId },
+    )
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /**
  * Call docling service with retry logic
  */
@@ -203,7 +259,12 @@ async function callDoclingService(
 ): Promise<DoclingResponse> {
   const baseUrl = DOCLING_BASE_URL.replace(/\/+$/, "")
   const apiUrl = `${baseUrl}/process`
-  const timeoutMs = getEffectiveDoclingTimeoutMs(options?.timeoutMs)
+  // currentTimeoutMs grows on every "done while we were timed out" race or
+  // "still running" outcome — that's direct evidence the calculated timeout
+  // was too tight for this document. Grow linearly by adding the original
+  // calculated value each time (T, 2T, 3T, ...), not exponentially.
+  const initialTimeoutMs = getEffectiveDoclingTimeoutMs(options?.timeoutMs)
+  let currentTimeoutMs = initialTimeoutMs
 
   const formData = new FormData()
   // Create blob from buffer bytes - use type assertion to bypass strict typing
@@ -217,7 +278,7 @@ async function callDoclingService(
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    const timer = setTimeout(() => controller.abort(), currentTimeoutMs)
 
     try {
       Logger.info(
@@ -225,17 +286,22 @@ async function callDoclingService(
           fileName,
           docId,
           fileSize: buffer.length,
-          timeoutMs,
+          timeoutMs: currentTimeoutMs,
           url: apiUrl,
         },
-        `Calling docling service (attempt ${attempt}/${MAX_RETRIES}) timeoutMs=${timeoutMs} fileSize=${buffer.length} docId=${docId}`,
+        `Calling docling service (attempt ${attempt}/${MAX_RETRIES}) timeoutMs=${currentTimeoutMs} fileSize=${buffer.length} docId=${docId}`,
       )
 
-      const response = await fetch(apiUrl, {
+      const fetchOptions: BunFetchInit = {
         method: "POST",
         body: formData,
         signal: controller.signal,
-      })
+        timeout: false,
+      }
+
+      const response = await fetch(apiUrl, {
+        ...fetchOptions,
+      } as RequestInit)
 
       clearTimeout(timer)
 
@@ -262,6 +328,78 @@ async function callDoclingService(
     } catch (error) {
       clearTimeout(timer)
       lastError = error instanceof Error ? error : new Error(String(error))
+
+      const isTimeout =
+        controller.signal.aborted ||
+        lastError.name === "AbortError" ||
+        lastError.name === "TimeoutError" ||
+        (lastError as Error & { code?: unknown }).code === 23
+
+      if (isTimeout) {
+        // One-shot check of docling's view of this doc_id before we retry.
+        // Only `failed` keeps the same timeout (the failure was unrelated to
+        // timing); every other outcome — done, still running, status
+        // unreachable — is treated as evidence the timeout was too tight,
+        // so the next attempt waits longer.
+        //   done     → race; result was lost. Bump timeout, LOUD log, retry.
+        //   failed   → docling-side error. Retry at same timeout.
+        //   running  → docling still busy. Bump timeout, retry.
+        //   null     → /status unreachable / not_found. Bump timeout, retry.
+        const status = await fetchDoclingStatus(docId, baseUrl, fileName)
+        const prevTimeoutMs = currentTimeoutMs
+
+        if (status?.state === "done") {
+          currentTimeoutMs = currentTimeoutMs + initialTimeoutMs
+          Logger.error(
+            `!!! DOCLING DONE-WHILE-TIMED-OUT RACE !!! docling reported state=done for docId=${docId} but the HTTP client aborted at ${prevTimeoutMs}ms. The processed result has been discarded on the docling side and there is no /result endpoint to recover it. Calculated timeout was too tight — bumping timeout from ${prevTimeoutMs}ms to ${currentTimeoutMs}ms and retrying upload. If this fires repeatedly for this file, raise DOCLING_TIMEOUT_PER_PAGE_MS / DOCLING_TIMEOUT_PER_100KB_MS in pdfProcessor.ts.`,
+            {
+              fileName,
+              docId,
+              prevTimeoutMs,
+              newTimeoutMs: currentTimeoutMs,
+              attempt,
+              doclingDurationSeconds: status.duration_seconds,
+              doclingStage: status.stage,
+            },
+          )
+        } else if (status?.state === "failed") {
+          Logger.warn(
+            `Docling reported state=failed for docId=${docId}: ${status.error ?? "no error message"}; retrying upload at same timeout=${currentTimeoutMs}ms.`,
+            {
+              fileName,
+              docId,
+              doclingError: status.error,
+              doclingStage: status.stage,
+              attempt,
+            },
+          )
+        } else if (status?.state === "running") {
+          currentTimeoutMs = currentTimeoutMs + initialTimeoutMs
+          Logger.warn(
+            `Docling POST timed out after ${prevTimeoutMs}ms but /status still shows state=running for docId=${docId} (stage=${status.stage ?? "unknown"}); bumping timeout to ${currentTimeoutMs}ms and retrying.`,
+            {
+              fileName,
+              docId,
+              prevTimeoutMs,
+              newTimeoutMs: currentTimeoutMs,
+              doclingStage: status.stage,
+              attempt,
+            },
+          )
+        } else {
+          currentTimeoutMs = currentTimeoutMs + initialTimeoutMs
+          Logger.warn(
+            `Docling POST timed out after ${prevTimeoutMs}ms; /status unavailable for docId=${docId}; bumping timeout to ${currentTimeoutMs}ms and retrying.`,
+            {
+              fileName,
+              docId,
+              prevTimeoutMs,
+              newTimeoutMs: currentTimeoutMs,
+              attempt,
+            },
+          )
+        }
+      }
 
       if (attempt < MAX_RETRIES) {
         Logger.warn(
@@ -373,12 +511,18 @@ function transformChunks(doclingChunks: DoclingChunk[]): {
     // Normalize to 0-based to match PDF.js/OCR convention
     const pageNumbers = (chunk.page_numbers || []).map((p) => p - 1)
 
+    const bboxes = chunk.bboxes?.map((bbox) =>
+      typeof bbox.page_no === "number"
+        ? { ...bbox, page_no: bbox.page_no - 1 }
+        : bbox,
+    )
+
     chunks_map.push({
       chunk_index: index,
       page_numbers: pageNumbers,
       block_labels: blockLabels,
       bbox: chunk.bbox,
-      bboxes: chunk.bboxes,
+      bboxes,
       headings: chunk.headings,
     })
   }
@@ -442,7 +586,7 @@ function buildMetadata(
       vlm: metadata.vlm,
     },
     // Table of contents
-    toc: toc.entries.map((entry) => ({
+    toc: (toc?.entries || []).map((entry) => ({
       sectionNumber: entry.section_number,
       sectionTitle: entry.section_title,
       pageNumber: entry.page_number,
@@ -490,20 +634,33 @@ export async function chunkByDoclingFromBuffer(
     options,
   )
 
+  return await processingResultFromDoclingResponse(doclingResponse, docId, {
+    fileName,
+  })
+}
+
+export async function processingResultFromDoclingResponse(
+  doclingResponse: DoclingResponse,
+  docId: string,
+  options?: { fileName?: string },
+): Promise<ProcessingResult> {
+  const fileName =
+    options?.fileName || doclingResponse.metadata?.filename || "unknown.pdf"
+
   // Step 2: Save images to disk
-  const savedImagePaths = await saveImages(doclingResponse.images, docId)
+  const savedImagePaths = await saveImages(doclingResponse.images || {}, docId)
 
   // Step 3: Transform chunks
-  const { chunks, chunks_map } = transformChunks(doclingResponse.chunks)
+  const { chunks, chunks_map } = transformChunks(doclingResponse.chunks || [])
 
   // Step 4: Transform image chunks
   const { image_chunks, image_chunks_map } = transformImageChunks(
-    doclingResponse.image_chunks,
+    doclingResponse.image_chunks || [],
   )
 
   // Step 5: Build TOC chunks
   // Accumulate TOC entries into text and chunk them
-  const tocText = doclingResponse.toc.entries
+  const tocText = (doclingResponse.toc?.entries || [])
     .map((entry) => `${entry.section_number} ${entry.section_title}`.trim())
     .join("\n")
   const toc_chunks = tocText ? chunkTextByParagraph(tocText, 512, 0) : []
@@ -518,8 +675,8 @@ export async function chunkByDoclingFromBuffer(
     imageChunks: image_chunks.length,
     tocChunks: toc_chunks.length,
     savedImages: savedImagePaths.size,
-    numPages: doclingResponse.metadata.num_pages,
-    processingTime: doclingResponse.metadata.processing_time,
+    numPages: doclingResponse.metadata?.num_pages,
+    processingTime: doclingResponse.metadata?.processing_time,
   })
 
   return {

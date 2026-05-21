@@ -1,20 +1,21 @@
+import { readFile } from "node:fs/promises"
+import config, { IMAGE_CONTEXT_CONFIG } from "@/config"
+import { db } from "@/db/client"
+import { updateParentStatus } from "@/db/knowledgeBase"
+import { collectionItems, collections } from "@/db/schema"
+import { getBaseMimeType } from "@/integrations/dataSource/config"
+import { queuePdfForDoclingScheduler } from "@/lib/doclingSchedulerIntake"
 import { getLogger } from "@/logger"
-import { Subsystem, ProcessingJobType, type ChunkMetadata } from "@/types"
-import { getErrorMessage } from "@/utils"
+import { insert } from "@/search/vespa"
 import {
   FileProcessorService,
   type SheetProcessingResult,
 } from "@/services/fileProcessor"
-import { insert } from "@/search/vespa"
-import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
-import { getBaseMimeType } from "@/integrations/dataSource/config"
-import { db } from "@/db/client"
-import { collectionItems, collections } from "@/db/schema"
-import { eq, and, isNull } from "drizzle-orm"
-import { readFile } from "node:fs/promises"
 import { UploadStatus } from "@/shared/types"
-import { updateParentStatus } from "@/db/knowledgeBase"
-import { IMAGE_CONTEXT_CONFIG } from "@/config"
+import { type ChunkMetadata, ProcessingJobType, Subsystem } from "@/types"
+import { getErrorMessage } from "@/utils"
+import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
+import { and, eq, isNull } from "drizzle-orm"
 
 const Logger = getLogger(Subsystem.Queue)
 
@@ -311,11 +312,53 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       throw new Error(`No vespaDocId for file: ${fileId}`)
     }
 
+    const useOCR = jobData.useOCR !== false
+    const baseMimeType = getBaseMimeType(
+      file.mimeType || "application/octet-stream",
+    )
+
+    if (
+      baseMimeType === "application/pdf" &&
+      useOCR &&
+      config.doclingEnabled &&
+      config.doclingAsyncEnabled &&
+      config.doclingAsyncSchedulerEnabled
+    ) {
+      const { schedulerFile, sourceKind, basePriority } =
+        await queuePdfForDoclingScheduler({
+          fileId,
+          vespaDocId: file.vespaDocId,
+          collectionId: file.collectionId,
+          parentId: file.parentId,
+          collectionName: file.collectionName,
+          fileName: file.fileName,
+          originalName: file.originalName,
+          storagePath: file.storagePath,
+          path: file.path,
+          mimeType: file.mimeType || "application/pdf",
+          fileSize: file.fileSize,
+          uploadedByEmail: file.uploadedByEmail,
+          metadata: file.metadata,
+        })
+
+      Logger.info(
+        {
+          fileId,
+          fileName: file.fileName,
+          sourceKind,
+          basePriority,
+          queuedThroughDoclingScheduler: Boolean(schedulerFile),
+        },
+        schedulerFile
+          ? "Queued pg-boss PDF job into async Docling scheduler"
+          : "Skipped async Docling scheduler queue because file already exists there",
+      )
+      return
+    }
+
     const fileBuffer = await readFile(file.storagePath)
 
     // Process file to extract content
-    // Get useOCR from job data (default to true for backward compatibility)
-    const useOCR = jobData.useOCR !== false
     const processingResults = await FileProcessorService.processFile(
       fileBuffer,
       file.mimeType || "application/octet-stream",

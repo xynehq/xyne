@@ -1,72 +1,73 @@
-import { createId } from "@paralleldrive/cuid2"
-import { mkdir, unlink, writeFile, readFile } from "node:fs/promises"
+import * as crypto from "crypto"
 import { createReadStream as createFileReadStream } from "node:fs"
-import { join, dirname, extname } from "node:path"
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises"
 import { stat } from "node:fs/promises"
-import { stream } from "hono/streaming"
-import { userAgentPermissions, type SelectUser } from "@/db/schema"
-import { z } from "zod"
-import type { Context } from "hono"
-import { HTTPException } from "hono/http-exception"
-import { getLogger, getLoggerWithChild } from "@/logger"
-import { Subsystem, ProcessingJobType, type TxnOrClient } from "@/types"
+import { dirname, extname, join } from "node:path"
 import config from "@/config"
-import { getErrorMessage } from "@/utils"
-import { db } from "@/db/client"
-import { getUserByEmail } from "@/db/user"
-import JSZip from "jszip"
-import {
-  // New primary function names
-  createCollection,
-  getCollectionById,
-  getCollectionsByOwner,
-  getAccessibleCollections,
-  updateCollection,
-  softDeleteCollection,
-  createFolder,
-  createFileItem,
-  getCollectionItemById,
-  getCollectionItemsByParent,
-  getCollectionItemByPath,
-  updateCollectionItem,
-  softDeleteCollectionItem,
-  getCollectionFileByItemId,
-  generateStorageKey,
-  generateFileVespaDocId,
-  generateFolderVespaDocId,
-  generateCollectionVespaDocId,
-  getCollectionFilesVespaIds,
-  getCollectionItemsStatusByCollections,
-  markParentAsProcessing,
-  // Legacy aliases for backward compatibility
-} from "@/db/knowledgeBase"
 import {
   cleanUpAgentDb,
   getAgentByExternalId,
   getAgentCollections,
 } from "@/db/agent"
+import { db } from "@/db/client"
+import { clearDatabaseConnectorKbCollectionId } from "@/db/connector"
+import {
+  // New primary function names
+  createCollection,
+  createFileItem,
+  createFolder,
+  generateCollectionVespaDocId,
+  generateFileVespaDocId,
+  generateFolderVespaDocId,
+  generateStorageKey,
+  getAccessibleCollections,
+  getCollectionById,
+  getCollectionFileByItemId,
+  getCollectionFilesVespaIds,
+  getCollectionItemById,
+  getCollectionItemByPath,
+  getCollectionItemsByParent,
+  getCollectionItemsStatusByCollections,
+  getCollectionsByOwner,
+  markParentAsProcessing,
+  softDeleteCollection,
+  softDeleteCollectionItem,
+  updateCollection,
+  updateCollectionItem,
+  // Legacy aliases for backward compatibility
+} from "@/db/knowledgeBase"
+import { type SelectUser, userAgentPermissions } from "@/db/schema"
 import type { Collection, CollectionItem, File as DbFile } from "@/db/schema"
 import { collectionItems, collections } from "@/db/schema"
-import { and, eq, isNull, sql } from "drizzle-orm"
-import { clearDatabaseConnectorKbCollectionId } from "@/db/connector"
-import { DeleteDocument, GetDocument } from "@/search/vespa"
-import { ChunkMetadata, fileSchema, KbItemsSchema } from "@xyne/vespa-ts/types"
-import {
-  boss,
-  FileProcessingQueue,
-  PdfFileProcessingQueue,
-} from "@/queue/api-server-queue"
-import * as crypto from "crypto"
-import { fileTypeFromBuffer } from "file-type"
+import { getUserByEmail } from "@/db/user"
+import { checkFileSize } from "@/integrations/dataSource"
 import {
   DATASOURCE_CONFIG,
   getBaseMimeType,
 } from "@/integrations/dataSource/config"
-import { getAuth, safeGet } from "./agent"
-import { ApiKeyScopes, FileType, UploadStatus } from "@/shared/types"
+import { queuePdfForDoclingScheduler } from "@/lib/doclingSchedulerIntake"
+import { getLogger, getLoggerWithChild } from "@/logger"
+import {
+  FileProcessingQueue,
+  PdfFileProcessingQueue,
+  boss,
+} from "@/queue/api-server-queue"
 import { expandSheetIds } from "@/search/utils"
-import { checkFileSize } from "@/integrations/dataSource"
+import { DeleteDocument, GetDocument } from "@/search/vespa"
 import { getFileType } from "@/shared/fileUtils"
+import { ApiKeyScopes, FileType, UploadStatus } from "@/shared/types"
+import { ProcessingJobType, Subsystem, type TxnOrClient } from "@/types"
+import { getErrorMessage } from "@/utils"
+import { createId } from "@paralleldrive/cuid2"
+import { ChunkMetadata, KbItemsSchema, fileSchema } from "@xyne/vespa-ts/types"
+import { and, eq, isNull, sql } from "drizzle-orm"
+import { fileTypeFromBuffer } from "file-type"
+import type { Context } from "hono"
+import { HTTPException } from "hono/http-exception"
+import { stream } from "hono/streaming"
+import JSZip from "jszip"
+import { z } from "zod"
+import { getAuth, safeGet } from "./agent"
 
 const EXTENSION_MIME_MAP: Record<string, string> = {
   ".pdf": "application/pdf",
@@ -1677,24 +1678,67 @@ export const UploadFilesApi = async (c: Context) => {
           )
         })
 
-        // Queue after transaction commits to avoid race condition
-        // Route PDF files to the PDF queue, other files to the general queue
-        const queueName =
-          detectedMimeType === "application/pdf"
-            ? PdfFileProcessingQueue
-            : FileProcessingQueue
-        await boss.send(
-          queueName,
-          {
-            fileId: item.id,
-            type: ProcessingJobType.FILE,
-            useOCR: useOCR, // Pass OCR option to the processing job
-          },
-          {
-            retryLimit: 3,
-            expireInHours: 12,
-          },
-        )
+        // Queue after transaction commits to avoid race condition.
+        // In scheduler mode, OCR PDFs bypass pg-boss and enter
+        // docling_async_files as pending_split so scheduler splitters control
+        // PDF intake directly.
+        const baseMimeType = getBaseMimeType(detectedMimeType)
+        const useDoclingSchedulerForPdf =
+          baseMimeType === "application/pdf" &&
+          useOCR &&
+          config.doclingEnabled &&
+          config.doclingAsyncEnabled &&
+          config.doclingAsyncSchedulerEnabled
+        let queuedThroughDoclingScheduler = false
+
+        if (useDoclingSchedulerForPdf) {
+          const { schedulerFile, sourceKind, basePriority } =
+            await queuePdfForDoclingScheduler({
+              fileId: item.id,
+              vespaDocId: item.vespaDocId,
+              collectionId: item.collectionId,
+              parentId: item.parentId,
+              collectionName: collection.name,
+              fileName: item.name,
+              originalName: item.originalName,
+              storagePath: item.storagePath,
+              path: item.path,
+              mimeType: item.mimeType || detectedMimeType,
+              fileSize: item.fileSize,
+              uploadedByEmail: item.uploadedByEmail,
+              metadata: item.metadata,
+            })
+          queuedThroughDoclingScheduler = Boolean(schedulerFile)
+          loggerWithChild({ email: userEmail }).info(
+            {
+              fileId: item.id,
+              fileName: item.name,
+              sourceKind,
+              basePriority,
+              queuedThroughDoclingScheduler,
+            },
+            schedulerFile
+              ? "Queued uploaded PDF directly for async Docling scheduler"
+              : "Skipped direct async Docling scheduler queue because file already exists there",
+          )
+        } else {
+          const queueName =
+            baseMimeType === "application/pdf"
+              ? PdfFileProcessingQueue
+              : FileProcessingQueue
+          await boss.send(
+            queueName,
+            {
+              fileId: item.id,
+              type: ProcessingJobType.FILE,
+              useOCR: useOCR, // Pass OCR option to the processing job
+            },
+            {
+              retryLimit: 3,
+              expireInHours: 12,
+            },
+          )
+        }
 
         uploadResults.push({
           success: true,
@@ -1707,7 +1751,9 @@ export const UploadFilesApi = async (c: Context) => {
               ? `File uploaded as "${fileName}" (renamed to avoid duplicate) - queued for processing`
               : "File uploaded successfully - queued for processing",
           wasRenamed: fileName !== originalFileName,
-          uploadStatus: UploadStatus.PENDING, // Indicate it's pending processing
+          uploadStatus: queuedThroughDoclingScheduler
+            ? UploadStatus.PROCESSING
+            : UploadStatus.PENDING,
         })
 
         loggerWithChild({ email: userEmail }).info(
