@@ -94,6 +94,7 @@ function KnowledgeRoute(): JSX.Element {
   const [reloadKey, setReloadKey] = useState(0)
   const [dialog, setDialog] = useState<"collection" | "folder" | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const mainRef = useRef<HTMLElement | null>(null)
 
   // App-wide uploads scoped to this folder. Survives unmount: navigating
   // away and back leaves the placeholders + XHRs intact.
@@ -605,7 +606,7 @@ function KnowledgeRoute(): JSX.Element {
         </div>
       </div>
 
-      <main className="relative flex-1 overflow-auto px-5 py-5">
+      <main ref={mainRef} className="relative flex-1 overflow-auto px-5 py-5">
         {dragging ? (
           <div className="pointer-events-none absolute inset-3 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-ring/60 bg-background/80 text-[14px] font-medium text-foreground">
             Drop files to upload
@@ -659,6 +660,7 @@ function KnowledgeRoute(): JSX.Element {
                   onDelete={(e): void => {
                     void onDelete(e)
                   }}
+                  scrollParentRef={mainRef}
                 />
               ) : (
                 <EntryList
@@ -668,6 +670,7 @@ function KnowledgeRoute(): JSX.Element {
                   onDelete={(e): void => {
                     void onDelete(e)
                   }}
+                  scrollParentRef={mainRef}
                 />
               )}
             </>

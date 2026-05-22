@@ -3,11 +3,12 @@
 // could show Model/Author/Updated; etc.).
 
 import { Trash2 } from "lucide-react"
+import { useVirtualizer } from "@tanstack/react-virtual"
 import { cn } from "@/lib/utils"
 import type { BrowserEntry, ColumnDef, LeadingRenderer } from "./types"
-import { FileCard } from "./FileCard"
-import { FolderCard } from "./FolderCard"
 import { IngestStatusIndicator } from "./IngestStatusIndicator"
+import { DEFAULT_COL_WIDTH, ROW_ESTIMATE_LIST_PX } from "./constants"
+import { defaultLeading, isEntryDisabled, useScrollMargin } from "./utils"
 
 type Props = {
   entries: ReadonlyArray<BrowserEntry>
@@ -22,16 +23,8 @@ type Props = {
   // Optional per-row delete affordance. Renders a trash button in the right
   // gutter (visible on hover); reserves a 36px trailing column when set.
   onDelete?: (entry: BrowserEntry) => void
+  scrollParentRef: React.RefObject<HTMLElement | null>
 }
-
-const DEFAULT_COL_WIDTH = "120px"
-
-const defaultLeading: LeadingRenderer = (entry, size) =>
-  entry.kind === "folder" ? (
-    <FolderCard size={size} />
-  ) : (
-    <FileCard format={entry.format || "txt"} size={size} />
-  )
 
 export function EntryList({
   entries,
@@ -42,15 +35,30 @@ export function EntryList({
   disableFiles = false,
   disableFolders = false,
   onDelete,
+  scrollParentRef,
 }: Props): JSX.Element {
   const template = [
     "1fr",
     ...columns.map((c) => c.width ?? DEFAULT_COL_WIDTH),
     ...(onDelete ? ["36px"] : []),
   ].join(" ")
-  const isDisabled = (e: BrowserEntry): boolean =>
-    (e.kind === "file" && disableFiles) ||
-    (e.kind === "folder" && disableFolders)
+
+  const { listRef, scrollMargin } = useScrollMargin(scrollParentRef)
+
+  const virtualizer = useVirtualizer({
+    count: entries.length,
+    getScrollElement: () => scrollParentRef.current,
+    estimateSize: () => ROW_ESTIMATE_LIST_PX,
+    overscan: 6,
+    scrollMargin,
+    getItemKey: (i) => {
+      const entry = entries[i]
+      return entry ? `${entry.kind}-${entry.id}` : `i-${String(i)}`
+    },
+  })
+
+  const virtualRows = virtualizer.getVirtualItems()
+
   return (
     <div className="animate-fade-up overflow-hidden rounded-2xl border border-border bg-surface-elevated">
       <div
@@ -68,17 +76,37 @@ export function EntryList({
         ))}
         {onDelete ? <span aria-hidden /> : null}
       </div>
-      <ul role="list" className="divide-y divide-border">
-        {entries.map((e) => {
-          const disabled = isDisabled(e)
+      <div
+        ref={listRef}
+        role="list"
+        style={{
+          height: `${String(virtualizer.getTotalSize())}px`,
+          position: "relative",
+        }}
+      >
+        {virtualRows.map((virtualRow) => {
+          const e = entries[virtualRow.index]
+          if (!e) {
+            return null
+          }
+          const disabled = isEntryDisabled(e, disableFiles, disableFolders)
           return (
-            <li key={`${e.kind}-${e.id}`} className="group relative">
+            <div
+              key={virtualRow.key}
+              role="listitem"
+              data-index={virtualRow.index}
+              ref={virtualizer.measureElement}
+              className={cn(
+                "group absolute left-0 right-0",
+                virtualRow.index > 0 && "border-t border-border",
+              )}
+              style={{
+                transform: `translateY(${String(virtualRow.start - virtualizer.options.scrollMargin)}px)`,
+              }}
+            >
               <div
                 className={cn(
                   "grid w-full items-center gap-3 px-4 py-2 transition",
-                  // Pulsing ring on the row while ingestion is still in
-                  // flight. Theme's `ring` token so it adapts to light
-                  // / dark; `ring-inset` keeps it inside the row width.
                   (e.status === "pending" || e.status === "processing") &&
                     "animate-pulse ring-1 ring-inset ring-ring/30",
                   disabled ? "cursor-default" : "hover:bg-secondary/60",
@@ -133,10 +161,10 @@ export function EntryList({
                   </button>
                 ) : null}
               </div>
-            </li>
+            </div>
           )
         })}
-      </ul>
+      </div>
     </div>
   )
 }
