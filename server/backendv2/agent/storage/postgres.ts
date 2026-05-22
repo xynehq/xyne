@@ -35,6 +35,7 @@ import {
   type Conversation,
   type ConversationId,
   type ConversationInit,
+  type ConversationListFilter,
   type ConversationPatch,
   type ConversationRepo,
   type Cursor,
@@ -69,6 +70,7 @@ import {
   asAgentId,
   asConversationId,
   asMessageFeedbackId,
+  asFolderId,
   asMessageId,
   asRunId,
   asToolCallId,
@@ -125,6 +127,7 @@ const rowToConversation = (row: ConvRow): Conversation => {
   }
   if (row.agentId) c.agentId = asAgentId(row.agentId)
   if (row.archivedAt !== null) c.archivedAt = row.archivedAt
+  if (row.folderId !== null) c.folderId = asFolderId(row.folderId)
   return c
 }
 
@@ -313,6 +316,7 @@ export class PostgresConversationRepo implements ConversationRepo {
     ownerId: UserId,
     page: Cursor,
     tx?: Tx,
+    filter?: ConversationListFilter,
   ): Promise<Page<Conversation>> {
     const client = clientOf(tx)
     const limit = clampLimit(page.limit)
@@ -341,6 +345,9 @@ export class PostgresConversationRepo implements ConversationRepo {
       eq(v2ChatConversations.ownerId, ownerId),
       isNull(v2ChatConversations.archivedAt),
     ]
+    if (filter?.folderId) {
+      conditions.push(eq(v2ChatConversations.folderId, filter.folderId))
+    }
     if (cursorCreatedAt !== null && cursorId !== null) {
       const tupleAfter = or(
         lt(v2ChatConversations.createdAt, cursorCreatedAt),
@@ -381,6 +388,10 @@ export class PostgresConversationRepo implements ConversationRepo {
     if (patch.archivedAt === null) set.archivedAt = null
     else if (typeof patch.archivedAt === "number") {
       set.archivedAt = patch.archivedAt
+    }
+    if (patch.folderId === null) set.folderId = null
+    else if (typeof patch.folderId === "string") {
+      set.folderId = patch.folderId
     }
     await client
       .update(v2ChatConversations)

@@ -25,7 +25,7 @@ export function SidebarListRow({
         onClick={onClick}
         aria-current={ariaCurrent}
         className={
-          "flex h-9 w-full items-center rounded-lg pl-2.5 text-left text-[13px] leading-tight transition-colors duration-150 " +
+          "flex h-9 w-full items-center rounded-lg pl-2.5 text-left text-sm leading-tight transition-colors duration-150 " +
           (actions ? "pr-9 " : "pr-2.5 ") +
           (active
             ? "bg-secondary text-foreground"

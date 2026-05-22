@@ -17,6 +17,7 @@ import { useSidebarSearch } from "@/hooks/useSidebarSearch"
 import { BrandMark } from "./BrandMark"
 import { SidebarNavItem } from "./SidebarNavItem"
 import { ChatHistory, type ChatHistoryItem } from "./ChatHistory"
+import { ProjectsSection } from "./projects/ProjectsSection"
 
 type Props = {
   me?: { email: string; role: string } | undefined
@@ -293,7 +294,7 @@ function ExpandedShell({
           to="/kb"
           aria-current={onKb ? "page" : undefined}
           className={
-            "group flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-[13.5px] transition-colors duration-150 " +
+            "group flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors duration-150 " +
             (onKb
               ? "bg-secondary font-medium text-foreground"
               : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground")
@@ -310,7 +311,7 @@ function ExpandedShell({
           to="/agents"
           aria-current={onAgents ? "page" : undefined}
           className={
-            "group flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-[13.5px] transition-colors duration-150 " +
+            "group flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors duration-150 " +
             (onAgents
               ? "bg-secondary font-medium text-foreground"
               : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground")
@@ -340,12 +341,13 @@ function ExpandedShell({
             }}
             placeholder="Search conversations…"
             aria-label="Search conversations"
-            className="h-9 w-full rounded-lg bg-surface-elevated px-3 pl-9 pr-3 text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+            className="h-9 w-full rounded-lg bg-surface-elevated px-3 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
           />
         </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+        <ProjectsSection activeChatId={activeChatId} />
         <ChatHistory
           items={chats}
           activeId={activeChatId}
@@ -364,11 +366,11 @@ function ExpandedShell({
           title={me?.email ?? "Account"}
           className="group inline-flex min-w-0 flex-1 items-center gap-2 rounded-full px-1.5 py-1 transition-colors hover:bg-secondary/70"
         >
-          <span className="grid h-7 w-7 flex-shrink-0 place-items-center rounded-full bg-primary text-[10.5px] font-medium text-primary-foreground">
+          <span className="grid h-7 w-7 flex-shrink-0 place-items-center rounded-full bg-primary text-[11px] font-medium text-primary-foreground">
             {me ? initials(me.email) : "··"}
           </span>
           {me?.email ? (
-            <span className="truncate text-[12px] text-muted-foreground group-hover:text-foreground">
+            <span className="truncate text-[13px] text-muted-foreground group-hover:text-foreground">
               {me.email}
             </span>
           ) : null}

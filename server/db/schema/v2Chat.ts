@@ -30,6 +30,8 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core"
 
+import { v2ChatFolders } from "@/db/schema/conversationFolders"
+
 // ─── Enums ──────────────────────────────────────────────────────────────────
 // Shared between turns and runs: same status set.
 export const v2ChatTurnStatusEnum = pgEnum("v2_chat_turn_status", [
@@ -70,6 +72,9 @@ export const v2ChatConversations = pgTable(
     createdAt: bigint("created_at", { mode: "number" }).notNull(),
     updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
     archivedAt: bigint("archived_at", { mode: "number" }),
+    folderId: text("folder_id").references(() => v2ChatFolders.id, {
+      onDelete: "set null",
+    }),
     nextOrdinal: integer("next_ordinal").notNull().default(0),
     idemKey: text("idem_key").notNull(),
   },
@@ -79,6 +84,7 @@ export const v2ChatConversations = pgTable(
       table.ownerId,
       table.createdAt,
     ),
+    folderIndex: index("v2_chat_conv_folder_index").on(table.folderId),
   }),
 )
 

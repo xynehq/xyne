@@ -3,11 +3,14 @@ import { useSidebarMobile } from "@/hooks/useSidebarMobile"
 
 type Props = {
   title: string
+  /** Optional content rendered before the title — e.g. a breadcrumb chip
+   *  showing the parent project on a chat that lives inside one. */
+  leftSlot?: React.ReactNode
   /** Extreme-right slot, e.g. the citation panel toggle. */
   rightSlot?: React.ReactNode
 }
 
-export function Topbar({ title, rightSlot }: Props): JSX.Element {
+export function Topbar({ title, leftSlot, rightSlot }: Props): JSX.Element {
   const { setOpen } = useSidebarMobile()
   return (
     <header className="flex items-center gap-1 border-b border-border bg-background/70 px-3 py-2 backdrop-blur-md sm:px-4">
@@ -22,9 +25,12 @@ export function Topbar({ title, rightSlot }: Props): JSX.Element {
       >
         <Menu className="h-4 w-4" aria-hidden strokeWidth={1.75} />
       </button>
-      <h1 className="truncate flex-1 text-[13.5px] font-medium text-foreground">
-        {title}
-      </h1>
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        {leftSlot}
+        <h1 className="truncate text-[13.5px] font-medium text-foreground">
+          {title}
+        </h1>
+      </div>
       {rightSlot}
     </header>
   )

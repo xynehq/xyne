@@ -11,6 +11,7 @@
     "typecheck": "tsc -b --noEmit"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
     "@tanstack/react-router": "^1.170.2",
     "@tanstack/react-virtual": "^3.13.24",
     "@tanstack/router-plugin": "^1.168.3",

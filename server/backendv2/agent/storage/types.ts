@@ -20,6 +20,7 @@ export type MessageId = Brand<string, "MessageId">
 export type ToolCallId = Brand<string, "ToolCallId">
 export type MessageFeedbackId = Brand<string, "MessageFeedbackId">
 export type BlobRef = Brand<string, "BlobRef">
+export type FolderId = Brand<string, "FolderId">
 
 export const asWorkspaceId = (v: string): WorkspaceId => v as WorkspaceId
 export const asUserId = (v: string): UserId => v as UserId
@@ -33,6 +34,7 @@ export const asToolCallId = (v: string): ToolCallId => v as ToolCallId
 export const asMessageFeedbackId = (v: string): MessageFeedbackId =>
   v as MessageFeedbackId
 export const asBlobRef = (v: string): BlobRef => v as BlobRef
+export const asFolderId = (v: string): FolderId => v as FolderId
 
 // ─── Content blocks (discriminated union) ────────────────────────────────────
 export type Block =
@@ -74,6 +76,7 @@ export type Conversation = {
   createdAt: number
   updatedAt: number
   archivedAt?: number
+  folderId?: FolderId
 }
 
 export type ConversationInit = {
@@ -86,6 +89,8 @@ export type ConversationInit = {
 export type ConversationPatch = {
   title?: string
   archivedAt?: number | null
+  /** `null` = explicit unset (remove from folder); `undefined` = leave unchanged. */
+  folderId?: FolderId | null
 }
 
 export type TurnStatus = "running" | "completed" | "errored" | "aborted"
@@ -324,9 +329,17 @@ export interface ConversationRepo {
     ownerId: UserId,
     page: Cursor,
     tx?: Tx,
+    filter?: ConversationListFilter,
   ): Promise<Page<Conversation>>
   patch(id: ConversationId, patch: ConversationPatch, tx?: Tx): Promise<void>
   softDelete(id: ConversationId, tx?: Tx): Promise<void>
+}
+
+/** Optional filters for `listByOwner`. Today only `folderId` is supported;
+ *  the projects sidebar / project pages use it to scope the list. Keep this
+ *  shape additive so future filters (e.g. archived) don't churn callsites. */
+export type ConversationListFilter = {
+  folderId?: FolderId
 }
 
 export interface MessageRepo {

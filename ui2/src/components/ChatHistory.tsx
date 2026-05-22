@@ -1,9 +1,17 @@
-import { useMemo, useRef, useState } from "react"
-import { MessageSquarePlus, MoreHorizontal, Pencil, Trash2 } from "lucide-react"
+import { useMemo, useRef, useState, type ReactNode } from "react"
+import {
+  FolderInput,
+  MessageSquarePlus,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+} from "lucide-react"
+import { useDraggable } from "@dnd-kit/core"
 import { SidebarListRow } from "./SidebarListRow"
 import { InlineRenameField } from "./InlineRenameField"
 import { InlineConfirmRow } from "./InlineConfirmRow"
 import { MenuPopover } from "./MenuPopover"
+import { MoveToProjectModal } from "./projects/MoveToProjectModal"
 
 export type ChatHistoryItem = {
   id: string
@@ -42,6 +50,10 @@ export function ChatHistory({
   onDelete,
 }: Props): JSX.Element {
   const [action, setAction] = useState<RowAction>(null)
+  // The "move to project" modal is portal-rendered, so we don't need an
+  // inline mode — just track which conversation to move and let the modal
+  // mount itself when convId is set.
+  const [moveTargetId, setMoveTargetId] = useState<string | null>(null)
   const rowRefs = useRef(new Map<string, HTMLButtonElement>())
 
   const filtered = useMemo(() => {
@@ -74,7 +86,7 @@ export function ChatHistory({
 
   return (
     <div>
-      <div className="px-2.5 pb-1 pt-3 text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
+      <div className="px-2.5 pb-1 pt-3 text-sm font-medium text-muted-foreground">
         {sectionLabel}
       </div>
       <ul className="flex flex-col gap-0.5">
@@ -129,7 +141,7 @@ export function ChatHistory({
             )
           }
           return (
-            <li key={it.id}>
+            <DraggableConvLi key={it.id} convId={it.id}>
               <SidebarListRow
                 title={it.title}
                 active={it.id === activeId}
@@ -180,6 +192,13 @@ export function ChatHistory({
                         },
                       },
                       {
+                        icon: FolderInput,
+                        label: "Move",
+                        onClick: (): void => {
+                          setMoveTargetId(it.id)
+                        },
+                      },
+                      {
                         icon: Trash2,
                         label: "Delete",
                         tone: "danger",
@@ -191,11 +210,46 @@ export function ChatHistory({
                   />
                 }
               />
-            </li>
+            </DraggableConvLi>
           )
         })}
       </ul>
+      <MoveToProjectModal
+        conversationId={moveTargetId}
+        onClose={(): void => {
+          setMoveTargetId(null)
+        }}
+      />
     </div>
+  )
+}
+
+/** <li> wrapper that makes a chat row draggable via @dnd-kit. Sidebar.tsx's
+ *  DndContext catches the drop on a project row and calls
+ *  projectsStore.moveConversation. The 4px activation distance set on the
+ *  PointerSensor lets plain clicks pass through unaffected. */
+function DraggableConvLi({
+  convId,
+  children,
+}: {
+  convId: string
+  children: ReactNode
+}): JSX.Element {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `conv-${convId}`,
+  })
+  // No transform on the source — the floating ghost is rendered by
+  // <DragOverlay> in the layout so it isn't clipped by the sidebar's
+  // overflow:hidden. Source just fades to signal "picked up".
+  return (
+    <li
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      className={isDragging ? "opacity-40" : undefined}
+    >
+      {children}
+    </li>
   )
 }
 
@@ -220,14 +274,14 @@ function EmptyHint({
         />
       </div>
       {hasQuery ? (
-        <p className="text-[12.5px] text-muted-foreground">
+        <p className="text-[13px] text-muted-foreground">
           No matches for{" "}
           <span className="text-foreground">&quot;{query}&quot;</span>
         </p>
       ) : (
         <>
-          <p className="text-[13px] text-foreground">{title}</p>
-          <p className="mt-1 text-[12px] text-muted-foreground">{subtitle}</p>
+          <p className="text-sm text-foreground">{title}</p>
+          <p className="mt-1 text-[13px] text-muted-foreground">{subtitle}</p>
         </>
       )}
     </div>

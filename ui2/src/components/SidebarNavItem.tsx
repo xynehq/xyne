@@ -45,7 +45,7 @@ export function SidebarNavItem({
       onClick={onClick}
       aria-current={ariaCurrent}
       className={
-        "group flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-[13.5px] transition-colors duration-150 " +
+        "group flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors duration-150 " +
         (active
           ? "bg-secondary font-medium text-foreground"
           : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground")
@@ -54,7 +54,7 @@ export function SidebarNavItem({
       <Icon className="h-4 w-4 shrink-0" aria-hidden strokeWidth={1.75} />
       <span className="flex-1 truncate text-left">{label}</span>
       {shortcut ? (
-        <kbd className="hidden rounded-md bg-foreground/[0.06] px-1.5 py-0.5 text-[10.5px] font-medium tracking-wide text-muted-foreground group-hover:text-foreground/70 sm:inline-block">
+        <kbd className="hidden rounded-md bg-foreground/[0.06] px-1.5 py-0.5 text-xs font-medium tracking-wide text-muted-foreground group-hover:text-foreground/70 sm:inline-block">
           {shortcut}
         </kbd>
       ) : null}

@@ -16,8 +16,15 @@ import {
   setScope as setCitationScope,
   useCitationStore,
 } from "@/lib/citation-store"
-import { ArrowDown, PanelRightOpen } from "lucide-react"
-import { chatStore, useConversation, type Block } from "@/lib/chat-store"
+import { ArrowDown, ChevronRight, FolderClosed, PanelRightOpen } from "lucide-react"
+import { Link } from "@tanstack/react-router"
+import {
+  chatStore,
+  useConversation,
+  useConversationList,
+  type Block,
+} from "@/lib/chat-store"
+import { projectsStore, useProject } from "@/lib/projects-store"
 import { useModels } from "@/lib/models"
 import { useAgents } from "@/lib/agents"
 import { useThinking, type ThinkingLevel } from "@/lib/thinking"
@@ -233,6 +240,48 @@ function ChatThreadRoute(): JSX.Element {
   const showPanelToggle =
     citationView.collapsed && citationView.tabs.length > 0
 
+  // Project breadcrumb — only when this chat actually lives in a project.
+  // Read folderId from convList first (already loaded for every chat in
+  // the top-N) so navigating between project chats doesn't blink the chip
+  // off-and-on while loadConvMeta resolves the per-conv state. Per-conv
+  // state is the fallback for deep-linked chats outside that window.
+  const allChats = useConversationList()
+  const parentFolderId = useMemo<string | null>(() => {
+    const fromList = allChats.find((c) => c.id === chatId)?.folderId
+    if (typeof fromList === "string") return fromList
+    if (typeof conv.folderId === "string") return conv.folderId
+    return null
+  }, [allChats, chatId, conv.folderId])
+  const parentProject = useProject(parentFolderId ?? "")
+  useEffect((): void => {
+    if (parentFolderId) {
+      void projectsStore.loadProject(parentFolderId)
+    }
+  }, [parentFolderId])
+  const breadcrumb =
+    parentFolderId && parentProject ? (
+      <Link
+        to="/projects/$projectId"
+        params={{ projectId: parentFolderId }}
+        title={`In project: ${parentProject.name}`}
+        className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+      >
+        <FolderClosed
+          className="h-3 w-3"
+          aria-hidden
+          strokeWidth={1.75}
+        />
+        <span className="max-w-[160px] truncate font-medium">
+          {parentProject.name}
+        </span>
+        <ChevronRight
+          className="h-3 w-3 opacity-60"
+          aria-hidden
+          strokeWidth={1.75}
+        />
+      </Link>
+    ) : null
+
   return (
     <div className="flex h-full">
       {/* Chat column — shrinks to make room for the CitationPanel when a
@@ -241,6 +290,7 @@ function ChatThreadRoute(): JSX.Element {
       <div className="flex h-full min-w-0 flex-1 flex-col">
       <Topbar
         title={title}
+        {...(breadcrumb ? { leftSlot: breadcrumb } : {})}
         {...(showPanelToggle
           ? {
               rightSlot: (

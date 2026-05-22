@@ -15,6 +15,7 @@ import {
   asConversationId,
   asMessageId,
   asRunId,
+  asFolderId,
   type Cursor,
   type MessageFeedbackRating,
   type StreamEvent,
@@ -92,9 +93,17 @@ router.post("/conversations", (c) =>
   }),
 )
 
-// GET /v2/chat/conversations
+// GET /v2/chat/conversations?folderId=&limit=&cursor=
+// `folderId` scopes the result to conversations inside a specific project.
+// Absent (or empty) = all conversations regardless of folder.
 router.get("/conversations", (c) =>
-  handle(c, async () => service.listConversations(viewer(c), readCursor(c))),
+  handle(c, async () => {
+    const folderIdRaw = (c.req.query("folderId") ?? "").trim()
+    const filter = folderIdRaw
+      ? { folderId: asFolderId(folderIdRaw) }
+      : undefined
+    return service.listConversations(viewer(c), readCursor(c), filter)
+  }),
 )
 
 // GET /v2/chat/conversations/:id

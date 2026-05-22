@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react"
 
 export type Preferences = {
   collapseTools: boolean
+  hideProjectChatsInRecents: boolean
 }
 
 const DEFAULTS: Preferences = {
@@ -9,6 +10,10 @@ const DEFAULTS: Preferences = {
   // collapsible "Thoughts" chip. Users who want to see every chip
   // inline can flip this off in settings.
   collapseTools: true,
+  // Hide conversations that are already filed into a project from the
+  // sidebar's Recents list — projects become the primary surface for those
+  // chats. Flip off if you want every chat in one stream.
+  hideProjectChatsInRecents: true,
 }
 
 const STORAGE_KEY = "ui2.preferences.v1"

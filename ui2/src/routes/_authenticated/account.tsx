@@ -98,6 +98,15 @@ function AccountRoute(): JSX.Element {
                 preferencesStore.set({ collapseTools: v })
               }}
             />
+            <div className="border-t border-border" />
+            <PreferenceRow
+              label="Hide project chats in Recents"
+              description="Conversations already filed into a project drop out of the sidebar's Recents list and live only inside their project."
+              checked={prefs.hideProjectChatsInRecents}
+              onChange={(v): void => {
+                preferencesStore.set({ hideProjectChatsInRecents: v })
+              }}
+            />
           </div>
         </section>
 

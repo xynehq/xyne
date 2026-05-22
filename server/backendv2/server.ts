@@ -20,6 +20,7 @@ import { googleAuthMiddleware, googleCallback } from "./auth/google"
 import chatRouter from "./agent/routes/chat"
 import kbRouter from "./routes/knowledgeBase"
 import agentsRouter, { usersRouter } from "./routes/agents"
+import foldersRouter from "./routes/folders"
 import { reconcileRunningOnBoot } from "./agent/storage/postgres"
 import { initApiServerQueue } from "@/queue/api-server-queue"
 import {
@@ -159,6 +160,7 @@ app.route("/v2/chat", chatRouter)
 app.route("/v2/kb", kbRouter)
 app.route("/v2/agents", agentsRouter)
 app.route("/v2/users", usersRouter)
+app.route("/v2/folders", foldersRouter)
 
 app.get("/v2/me", (c) => {
   const p = c.get("jwtPayload")

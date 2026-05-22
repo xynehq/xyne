@@ -57,6 +57,9 @@ export type Conversation = {
   title: string
   createdAt: number
   updatedAt: number
+  /** Null/undefined when the conversation isn't in a project. Populated by
+   *  the v2/chat/conversations endpoint after the Projects feature landed. */
+  folderId?: string | null
 }
 
 type ConvStatus = "idle" | "loading" | "streaming" | "error"
@@ -96,6 +99,11 @@ export type ConvState = {
   feedbackByMessageId: Record<string, FeedbackRating>
   status: ConvStatus
   error?: string
+  // Mirrors the server-side folder membership. `null` means "loaded and not
+  // in a project"; `undefined` means "haven't loaded yet". The chat route's
+  // breadcrumb + sidebar auto-expand key off this so they only render when
+  // the active chat actually belongs to a project.
+  folderId?: string | null
 }
 
 const EMPTY: ConvState = {
@@ -725,7 +733,11 @@ export const chatStore = {
       const meta = await apiFetch<Conversation>(
         `/v2/chat/conversations/${convId}`,
       )
-      updateConv(convId, (p) => ({ ...p, title: meta.title }))
+      // Mirror folderId onto the per-conv state so deep-linked chats (not in
+      // convList) still light up the sidebar's auto-expand + chat breadcrumb.
+      // null means "loaded; not in a project" — distinct from `undefined`.
+      const folderId = meta.folderId ?? null
+      updateConv(convId, (p) => ({ ...p, title: meta.title, folderId }))
       const idx = convList.findIndex((c) => c.id === convId)
       if (idx >= 0) {
         const existing = convList[idx]
@@ -904,6 +916,34 @@ export const chatStore = {
     convs.delete(convId)
     notifyList()
     notifyConv(convId)
+  },
+
+  /** Local-only update of a conversation's folder assignment. The HTTP call
+   *  lives in projectsStore (the endpoint is folder-rooted); this just keeps
+   *  the sidebar list in sync so the UI doesn't have to wait for a re-fetch
+   *  before reflecting the move. */
+  setConvFolderLocally(convId: string, folderId: string | null): void {
+    // Per-conv state — the chat route + Topbar breadcrumb subscribe via
+    // useConversation, so this needs to flow even if convList doesn't have
+    // the row (deep-linked chat that wasn't in the loaded 50).
+    updateConv(convId, (p) => ({ ...p, folderId }))
+    const idx = convList.findIndex((c) => c.id === convId)
+    if (idx < 0) return
+    const existing = convList[idx]
+    if (!existing) return
+    const next = convList.slice()
+    next[idx] = { ...existing, folderId, updatedAt: Date.now() }
+    convList = next
+    notifyList()
+  },
+
+  /** Read the current folder of a conversation from local state. Returns
+   *  null if the conversation isn't tracked or isn't in a folder. Used by
+   *  projectsStore.moveConversation to decide between PATCH (assign) and
+   *  DELETE (unassign) without an extra GET. */
+  getConvFolder(convId: string): string | null {
+    const conv = convList.find((c) => c.id === convId)
+    return conv?.folderId ?? null
   },
 }
 

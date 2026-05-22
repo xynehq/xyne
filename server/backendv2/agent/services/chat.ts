@@ -21,6 +21,7 @@ import {
   type Conversation,
   type ConversationId,
   type Cursor,
+  type FolderId,
   type Message,
   type MessageFeedback,
   type MessageFeedbackRating,
@@ -139,8 +140,9 @@ export class ChatService {
   public async listConversations(
     viewer: Viewer,
     page: Cursor,
+    filter?: { folderId?: FolderId },
   ): Promise<Page<Conversation>> {
-    return this.deps.convs.listByOwner(viewer.userId, page)
+    return this.deps.convs.listByOwner(viewer.userId, page, undefined, filter)
   }
 
   public async getConversation(

@@ -17,6 +17,7 @@ import {
   type Conversation,
   type ConversationId,
   type ConversationInit,
+  type ConversationListFilter,
   type ConversationPatch,
   type ConversationRepo,
   type Cursor,
@@ -129,11 +130,14 @@ export class InMemoryConversationRepo implements ConversationRepo {
   public async listByOwner(
     ownerId: UserId,
     page: Cursor,
+    _tx?: unknown,
+    filter?: ConversationListFilter,
   ): Promise<Page<Conversation>> {
     const ids = this.byOwner.get(ownerId) ?? []
     const items = ids
       .map((id) => this.byId.get(id))
       .filter((c): c is Conversation => !!c && !c.archivedAt)
+      .filter((c) => !filter?.folderId || c.folderId === filter.folderId)
     return paginate(items, page, (c) => c.id)
   }
 
@@ -154,6 +158,11 @@ export class InMemoryConversationRepo implements ConversationRepo {
       delete next.archivedAt
     } else if (typeof patch.archivedAt === "number") {
       next.archivedAt = patch.archivedAt
+    }
+    if (patch.folderId === null) {
+      delete next.folderId
+    } else if (typeof patch.folderId === "string") {
+      next.folderId = patch.folderId
     }
     this.byId.set(id, next)
   }

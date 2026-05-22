@@ -527,3 +527,120 @@ export const searchKb = async (
 ): Promise<KbSearchResult[]> => {
   return []
 }
+
+// ── Projects (conversation folders) ─────────────────────────────────────────
+// Folders that group v2 chat conversations. Soft-deleted only (is_deleted on
+// the server); the wire never surfaces deleted folders. All endpoints live
+// under /v2/folders/*. The membership operations (add/remove a conversation
+// to/from a folder) are intentionally nested under the folder id — the
+// folders router is the single owner of that relationship.
+
+export type Project = {
+  id: string
+  ownerId: string
+  workspaceId: string
+  name: string
+  description: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+/** Augmented projection used by the sidebar "most-used" list. Carries the
+ *  derived activity signal so the UI can render "last activity 3m ago" next
+ *  to each project without a second roundtrip. */
+export type ProjectWithActivity = Project & {
+  lastTouchedAt: number | null
+  conversationCount: number
+}
+
+export const listProjects = async (): Promise<Project[]> => {
+  const res = await apiFetch<{ folders: Project[] }>("/v2/folders")
+  return res.folders ?? []
+}
+
+export const listTopProjects = async (
+  limit = 3,
+): Promise<ProjectWithActivity[]> => {
+  const qs = new URLSearchParams({ limit: String(limit) })
+  const res = await apiFetch<{ folders: ProjectWithActivity[] }>(
+    `/v2/folders/most-used?${qs.toString()}`,
+  )
+  return res.folders ?? []
+}
+
+export const getProject = (id: string): Promise<Project> =>
+  apiFetch<Project>(`/v2/folders/${encodeURIComponent(id)}`)
+
+export const createProject = (input: {
+  name: string
+  description?: string | null
+}): Promise<Project> =>
+  apiFetch<Project>("/v2/folders", {
+    method: "POST",
+    body: JSON.stringify(input),
+  })
+
+export const updateProject = (
+  id: string,
+  input: { name?: string; description?: string | null },
+): Promise<Project> =>
+  apiFetch<Project>(`/v2/folders/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  })
+
+export const deleteProject = (id: string): Promise<void> =>
+  apiFetch<void>(`/v2/folders/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  })
+
+/** Place a conversation into a project. Idempotent — re-PATCHing a
+ *  conversation that's already in the destination folder is a no-op
+ *  (besides bumping the folder's updated_at, which feeds "most-used"). */
+export const addConversationToProject = (
+  folderId: string,
+  conversationId: string,
+): Promise<void> =>
+  apiFetch<void>(
+    `/v2/folders/${encodeURIComponent(folderId)}/conversations/${encodeURIComponent(
+      conversationId,
+    )}`,
+    { method: "PATCH", body: "{}" },
+  )
+
+/** Remove a conversation from a project (sets folder_id=null). Scoped to
+ *  the (folder, conversation) tuple so a stale request can't unfile a
+ *  conversation that's since been moved to a different project. */
+export const removeConversationFromProject = (
+  folderId: string,
+  conversationId: string,
+): Promise<void> =>
+  apiFetch<void>(
+    `/v2/folders/${encodeURIComponent(folderId)}/conversations/${encodeURIComponent(
+      conversationId,
+    )}`,
+    { method: "DELETE" },
+  )
+
+/** List conversations inside a project. Uses the existing chat conversations
+ *  endpoint with a folder filter — the server applies it inside the same
+ *  paginated query, so cursor semantics carry over verbatim. */
+export const listProjectConversations = async (
+  folderId: string,
+  params: { limit?: number; cursor?: string } = {},
+): Promise<{
+  items: Array<{
+    id: string
+    title: string
+    folderId?: string
+    createdAt: number
+    updatedAt: number
+  }>
+  nextCursor?: string
+}> => {
+  const qs = new URLSearchParams()
+  qs.set("folderId", folderId)
+  if (params.limit !== undefined) qs.set("limit", String(params.limit))
+  if (params.cursor) qs.set("cursor", params.cursor)
+  return apiFetch(`/v2/chat/conversations?${qs.toString()}`)
+}

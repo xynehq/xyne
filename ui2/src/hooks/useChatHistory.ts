@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useLocation, useNavigate } from "@tanstack/react-router"
 import {
   chatStore,
   useConversationList,
   type Conversation,
 } from "@/lib/chat-store"
+import { usePreferences } from "@/lib/preferences"
 
 type Result = {
   chats: Conversation[]
@@ -19,7 +20,19 @@ type Result = {
 export function useChatHistory(): Result {
   const navigate = useNavigate()
   const { pathname } = useLocation()
-  const chats = useConversationList()
+  const allChats = useConversationList()
+  const { hideProjectChatsInRecents } = usePreferences()
+  // When the user has opted in (default), chats already filed into a project
+  // drop out of the Recents stream — the projects sidebar section + project
+  // pages become the canonical surface for them. Toggle off in /account to
+  // see every chat in one list.
+  const chats = useMemo(
+    () =>
+      hideProjectChatsInRecents
+        ? allChats.filter((c) => !c.folderId)
+        : allChats,
+    [allChats, hideProjectChatsInRecents],
+  )
   const [listLoaded, setListLoaded] = useState(false)
   const activeChatId = pathname.match(/^\/c\/([^/?#]+)/)?.[1]
 
