@@ -12,6 +12,8 @@ import {
   submitMessageFeedback as apiSubmitFeedback,
   type FeedbackRating,
 } from "./api"
+import { appendDebugEvent } from "./debug-store"
+import { preferencesStore } from "./preferences"
 
 // ─── Wire types (match backendv2 storage/types.ts) ──────────────────────────
 export type Block =
@@ -118,7 +120,13 @@ const listListeners = new Set<() => void>()
 
 // EventSource bookkeeping — outside React state on purpose.
 const eventSources = new Map<string, EventSource>()
-const streamReady = new Map<string, Promise<void>>()
+// We track the "ready" promise as a pending-pair so it can survive an
+// EventSource being torn down before it fires. React 19 strict mode
+// double-mounts the chat route synchronously, which closes the ES the
+// composer just opened; without survival, sendMessage's `await
+// openStream(...)` would deadlock and the POST /messages never fires.
+type ReadyPair = { promise: Promise<void>; resolve: () => void }
+const streamReady = new Map<string, ReadyPair>()
 
 // Per-conv resume cursor. We persist the last seq# the client received for
 // each conv to sessionStorage so a page refresh can ask the server for events
@@ -273,6 +281,10 @@ type StreamEvt =
     }
   | { kind: "turn_ended"; turnId: string; status: string; error?: string }
   | { kind: "conversation_renamed"; conversationId: string; title: string }
+  // Per-turn debug capture. Only arrives when the caller opted into
+  // debug mode on POST /messages. We don't narrow `event` further
+  // here — the debug-store does the discrimination at render time.
+  | { kind: "debug_event"; runId: string; messageId: string; event: unknown }
 
 const onMessageAppended = (convId: string, evt: StreamEvt): void => {
   if (evt.kind !== "message_appended" || evt.role !== "assistant") {
@@ -406,6 +418,27 @@ const onThinkingCommitted = (convId: string, evt: StreamEvt): void => {
   })
 }
 
+const onDebugEvent = (convId: string, evt: StreamEvt): void => {
+  if (evt.kind !== "debug_event") return
+  // Trust the server's `kind` discriminant inside `event`. The
+  // debug-store keeps the same shape regardless of verbosity, so
+  // narrowing happens at render time inside DebugPanel.
+  appendDebugEvent(evt.runId, evt.event as Parameters<typeof appendDebugEvent>[1])
+  // Stamp runId on the matching assistant message so MessageBubble's
+  // DebugPanel gate (`debugMode && runId`) fires on the live stream
+  // — chat-store didn't track runId on messages before, only via the
+  // GET /messages refresh which carries `run_id` on the row.
+  updateConv(convId, (p) => {
+    const idx = p.messages.findIndex((m) => m.id === evt.messageId)
+    if (idx < 0) return p
+    const existing = p.messages[idx]
+    if (!existing || existing.runId === evt.runId) return p
+    const next = p.messages.slice()
+    next[idx] = { ...existing, runId: evt.runId }
+    return { ...p, messages: next }
+  })
+}
+
 const onConversationRenamed = (convId: string, evt: StreamEvt): void => {
   if (evt.kind !== "conversation_renamed") {
     return
@@ -496,14 +529,33 @@ const closeStream = (convId: string): void => {
     es.close()
     eventSources.delete(convId)
   }
-  streamReady.delete(convId)
+  // Intentionally NOT deleting streamReady. The pending awaiter (e.g.
+  // sendMessage's `await openStream`) holds the pair's promise; if we
+  // dropped it, the next openStream would create a NEW promise that
+  // never resolves the original awaiter. Strict-mode mount→cleanup→
+  // mount synchronously closes the ES we just opened — keeping the
+  // pair lets the re-mount's openStream attach a fresh ES that
+  // resolves the SAME promise on its "ready". We only drop the pair
+  // when the conversation itself is dropped (deleteConv).
 }
 
 const openStream = (convId: string): Promise<void> => {
-  const cached = streamReady.get(convId)
-  if (cached) {
-    return cached
+  // If we already have a live ES + a still-pending or resolved ready
+  // promise, reuse it. The pair survives closeStream so a fresh ES can
+  // resolve the same awaiter — see ReadyPair comment above.
+  let pair = streamReady.get(convId)
+  if (!pair) {
+    let resolveFn: () => void = (): void => {}
+    const promise = new Promise<void>((res): void => {
+      resolveFn = res
+    })
+    pair = { promise, resolve: resolveFn }
+    streamReady.set(convId, pair)
   }
+  if (eventSources.has(convId)) {
+    return pair.promise
+  }
+  const readyPair = pair
   // Resume from the last seq we persisted for this conv, if any. Each conv
   // has its own cursor — multi-conv tabs don't interfere.
   const since = lastSeqByConv[convId] ?? 0
@@ -548,6 +600,8 @@ const openStream = (convId: string): Promise<void> => {
       clearSeq(convId)
     } else if (evt.kind === "conversation_renamed") {
       onConversationRenamed(convId, evt)
+    } else if (evt.kind === "debug_event") {
+      onDebugEvent(convId, evt)
     }
   }
 
@@ -564,6 +618,7 @@ const openStream = (convId: string): Promise<void> => {
     "run_stats",
     "turn_ended",
     "conversation_renamed",
+    "debug_event",
   ] as const) {
     es.addEventListener(kind, (ev) => {
       const mev = ev as MessageEvent<string>
@@ -578,17 +633,14 @@ const openStream = (convId: string): Promise<void> => {
     // Browser auto-reconnects; v1 doesn't surface terminal failure UI.
   })
 
-  const ready = new Promise<void>((resolve) => {
-    es.addEventListener(
-      "ready",
-      () => {
-        resolve()
-      },
-      { once: true },
-    )
-  })
-  streamReady.set(convId, ready)
-  return ready
+  es.addEventListener(
+    "ready",
+    () => {
+      readyPair.resolve()
+    },
+    { once: true },
+  )
+  return readyPair.promise
 }
 
 // ─── Public actions ─────────────────────────────────────────────────────────
@@ -653,6 +705,14 @@ export const chatStore = {
       // is attached — React 19 strict mode double-fires the route's mount
       // effect (mount → cleanup closes the stream → re-mount), and without
       // this reopen we'd land with state intact but no live SSE feed.
+      // When status is "streaming" we ALWAYS try to reopen if there's no
+      // live ES, regardless of whether the last message is user or
+      // assistant — the composer-initiated flow on `/` lands here with
+      // a user-tail and still needs the stream re-attached.
+      if (!eventSources.has(convId) && prev.status === "streaming") {
+        void openStream(convId)
+        return
+      }
       const last = prev.messages[prev.messages.length - 1]
       if (last?.role === "assistant" && !last.stats) {
         void openStream(convId)
@@ -791,10 +851,20 @@ export const chatStore = {
           model?: string
           agentId?: string
           thinkingLevel?: "minimal" | "low" | "medium" | "high"
+          debug?: boolean
+          debugVerbosity?: "summary" | "detailed"
         } = { text }
         if (options.model) body.model = options.model
         if (options.agentId) body.agentId = options.agentId
         if (options.thinkingLevel) body.thinkingLevel = options.thinkingLevel
+        // Attach the debug flags from the user's persisted preference.
+        // Reading at send-time (not closure capture) keeps the flag in
+        // sync with the toggle if the user flips it between turns.
+        const prefs = preferencesStore.get()
+        if (prefs.debugMode) {
+          body.debug = true
+          body.debugVerbosity = prefs.debugVerbosity
+        }
         await apiFetch<SendResp>(`/v2/chat/conversations/${convId}/messages`, {
           method: "POST",
           body: JSON.stringify(body),
@@ -897,6 +967,7 @@ export const chatStore = {
 
   async deleteConv(convId: string): Promise<void> {
     closeStream(convId)
+    streamReady.delete(convId)
     await apiFetch<{ ok: true }>(`/v2/chat/conversations/${convId}`, {
       method: "DELETE",
     })

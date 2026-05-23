@@ -1,7 +1,22 @@
 import { useSyncExternalStore } from "react"
 
+export type DebugVerbosity = "summary" | "detailed"
+
 export type Preferences = {
   collapseTools: boolean
+  // Per-turn capture of pi-mono / provider activity into the SSE
+  // stream, surfaced in a collapsible Debug panel under each
+  // assistant message. Off by default; flipping it on attaches the
+  // flag to subsequent sendMessage calls. Older turns (sent without
+  // the flag) won't show debug data — captured live only, never
+  // persisted server-side.
+  debugMode: boolean
+  // Verbosity gate. "summary" = boundaries only (request /
+  // response / tool / compaction / agent_end with sampler + totals
+  // but no payloads). "detailed" adds request bodies, response
+  // text, and tool args/results. Per-chunk streaming is not
+  // surfaced any more — it was too noisy.
+  debugVerbosity: DebugVerbosity
 }
 
 const DEFAULTS: Preferences = {
@@ -9,6 +24,8 @@ const DEFAULTS: Preferences = {
   // collapsible "Thoughts" chip. Users who want to see every chip
   // inline can flip this off in settings.
   collapseTools: true,
+  debugMode: false,
+  debugVerbosity: "summary",
 }
 
 const STORAGE_KEY = "ui2.preferences.v1"

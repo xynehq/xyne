@@ -122,6 +122,12 @@ export type RunPiMonoTurnArgs = {
   onThinkingEnd?: () => Promise<void> | void
   onToolCall?: (call: PiMonoToolCall) => Promise<void> | void
   onToolResult?: (result: PiMonoToolResult) => Promise<void> | void
+  /** Optional per-turn debug sink. When set, the runner forwards
+   *  tool-call boundaries + compaction events + agent_end totals into
+   *  it; rag-agent does the same for outbound requests + per-chunk
+   *  responses. The sink itself decides which events to drop based
+   *  on its verbosity setting. */
+  debug?: import("./debug/capture").DebugCapture
 }
 
 export type RunPiMonoTokenUsage = {
@@ -256,6 +262,10 @@ export async function runPiMonoTurn(
         ? { streamOptions: cfg.streamOptions }
         : {}
     })(),
+    // Forward the per-turn debug sink so rag-agent can record outbound
+    // requests + raw provider chunks. The runner's own tool-call wraps
+    // below feed the same sink.
+    ...(args.debug ? { debug: args.debug } : {}),
     thinkingLevel: args.thinkingLevel ?? "medium",
     extensions: [],
     timeoutMs: 10 * 60 * 1000,
@@ -272,6 +282,11 @@ export async function runPiMonoTurn(
   const tokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
   let compactionRounds = 0
   let retryAttempts = 0
+  // Per-toolCallId start timestamp so the debug sink can report
+  // `durationMs` on the tool_result side without each call having to
+  // carry its own timer.
+  const toolStartByCallId = new Map<string, number>()
+  const runStartedAt = Date.now()
 
   const onAbort = (): void => {
     agent.stop().catch(() => {})
@@ -302,6 +317,10 @@ export async function runPiMonoTurn(
           errorMessage?: string
           attempt?: number
           maxAttempts?: number
+          // Compaction events carry pre/post token counts on some
+          // providers; absent on others. Optional so we degrade gracefully.
+          tokensBefore?: number
+          tokensAfter?: number
         }
         if (
           e.type === "message_end" &&
@@ -316,6 +335,15 @@ export async function runPiMonoTurn(
         } else if (e.type === "auto_compaction_start") {
           compactionRounds++
           log.info({ reason: e.reason }, "pi-mono: auto_compaction_start")
+          if (args.debug) {
+            args.debug.emitCompactionStart({
+              reason: e.reason ?? "threshold",
+              ...(typeof e.tokensBefore === "number"
+                ? { tokensBefore: e.tokensBefore }
+                : {}),
+              at: Date.now(),
+            })
+          }
         } else if (e.type === "auto_compaction_end") {
           log.info(
             {
@@ -325,6 +353,23 @@ export async function runPiMonoTurn(
             },
             "pi-mono: auto_compaction_end",
           )
+          if (args.debug) {
+            args.debug.emitCompactionEnd({
+              ...(typeof e.tokensAfter === "number"
+                ? { tokensAfter: e.tokensAfter }
+                : {}),
+              at: Date.now(),
+              aborted: !!e.aborted,
+            })
+            // An aborted compaction is a real failure — the summary
+            // didn't write and the next LLM call will retry with the
+            // same large context. Surface as a top-level error.
+            if (e.aborted) {
+              args.debug.emitError({
+                message: e.errorMessage ?? "compaction aborted",
+              })
+            }
+          }
         } else if (e.type === "auto_retry_start") {
           retryAttempts++
           log.warn(
@@ -371,6 +416,15 @@ export async function runPiMonoTurn(
           break
         }
         case "tool_call": {
+          if (args.debug) {
+            toolStartByCallId.set(event.toolCallId, Date.now())
+            args.debug.emitToolCallStart({
+              toolName: event.toolName,
+              toolCallId: event.toolCallId,
+              args: event.args,
+              startedAt: Date.now(),
+            })
+          }
           if (args.onToolCall) {
             await args.onToolCall({
               toolName: event.toolName,
@@ -381,6 +435,37 @@ export async function runPiMonoTurn(
           break
         }
         case "tool_result": {
+          if (args.debug) {
+            const startedAt = toolStartByCallId.get(event.toolCallId)
+            const durationMs =
+              startedAt !== undefined ? Date.now() - startedAt : 0
+            toolStartByCallId.delete(event.toolCallId)
+            args.debug.emitToolCallEnd({
+              toolName: event.toolName,
+              toolCallId: event.toolCallId,
+              durationMs,
+              isError: event.isError,
+              result: event.result,
+            })
+            // Tool errors fire as a separate `error` event in addition
+            // to `tool_call_end` so the debug timeline highlights them
+            // visually (the panel renders errors in red) without
+            // requiring the user to expand the tool_call_end row to
+            // discover the failure.
+            if (event.isError) {
+              const msg =
+                event.result &&
+                typeof event.result === "object" &&
+                "error" in event.result &&
+                typeof (event.result as { error?: unknown }).error === "string"
+                  ? ((event.result as { error: string }).error)
+                  : `${event.toolName} returned isError=true`
+              args.debug.emitError({
+                message: msg,
+                toolName: event.toolName,
+              })
+            }
+          }
           if (args.onToolResult) {
             await args.onToolResult({
               toolName: event.toolName,
@@ -423,6 +508,9 @@ export async function runPiMonoTurn(
             { errorMessage: event.error.message, code: event.error.code },
             "pi-mono: error event",
           )
+          if (args.debug) {
+            args.debug.emitError({ message: event.error.message })
+          }
           break
         }
         default:
@@ -432,6 +520,9 @@ export async function runPiMonoTurn(
   } catch (err) {
     error = err instanceof Error ? err.message : String(err)
     log.error({ err }, "pi-mono run failed")
+    if (args.debug) {
+      args.debug.emitError({ message: error })
+    }
   } finally {
     args.signal?.removeEventListener("abort", onAbort)
   }
@@ -494,6 +585,18 @@ export async function runPiMonoTurn(
     { stopReason, error, textChars: text.length, ...stats },
     error ? "pi-mono: run errored" : "pi-mono: run completed",
   )
+
+  if (args.debug) {
+    if (error) {
+      args.debug.emitError({ message: error })
+    }
+    args.debug.emitAgentEnd({
+      stopReason: stopReason ?? (error ? "error" : "stop"),
+      tokenUsage,
+      durationMs: Date.now() - runStartedAt,
+    })
+  }
+
   return error
     ? { text, stopReason, error, stats }
     : { text, stopReason, stats }

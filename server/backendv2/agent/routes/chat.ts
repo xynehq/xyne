@@ -139,6 +139,8 @@ router.post("/conversations/:id/messages", (c) =>
       model?: string
       agentId?: string
       thinkingLevel?: string
+      debug?: boolean
+      debugVerbosity?: string
     }
     if (!body.text) {
       throw new HTTPException(400, { message: "text required" })
@@ -150,6 +152,12 @@ router.post("/conversations/:id/messages", (c) =>
     )
       ? (body.thinkingLevel as ThinkingLevel)
       : undefined
+    const allowedVerbosity = ["summary", "detailed"] as const
+    type DebugVerbosity = (typeof allowedVerbosity)[number]
+    const debugVerbosity: DebugVerbosity | undefined =
+      allowedVerbosity.includes(body.debugVerbosity as DebugVerbosity)
+        ? (body.debugVerbosity as DebugVerbosity)
+        : undefined
     // DO NOT forward c.req.raw.signal. We want the pi-mono run to outlive
     // client disconnects (refresh, tab close, network blip) so the user can
     // resume by reattaching to the conversation's SSE stream — they get back
@@ -162,8 +170,23 @@ router.post("/conversations/:id/messages", (c) =>
       ...(body.model ? { model: body.model } : {}),
       ...(body.agentId ? { agentId: body.agentId } : {}),
       ...(thinkingLevel ? { thinkingLevel } : {}),
+      ...(body.debug ? { debug: true } : {}),
+      ...(debugVerbosity ? { debugVerbosity } : {}),
     })
   }),
+)
+
+// GET /v2/chat/conversations/:id/dump
+// Returns the conversation + all messages (incl. nested) + all runs +
+// all tool calls as a single JSON blob. Surface used by the debug
+// panel's "Download conversation dump" action.
+router.get("/conversations/:id/dump", (c) =>
+  handle(c, async () =>
+    service.dumpConversation(
+      viewer(c),
+      asConversationId(c.req.param("id")),
+    ),
+  ),
 )
 
 // POST /v2/chat/conversations/:id/interrupt

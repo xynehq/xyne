@@ -9,6 +9,7 @@ import {
   loadWorkspaceDefaultPromptInputs,
 } from "../agent-scope"
 import { runPiMonoTurn } from "../pi-mono/runner"
+import { DebugCapture } from "../pi-mono/debug/capture"
 import { resolveAgentSystemPrompt } from "../pi-mono/system-prompt"
 import type { NestedRunPersistence } from "../pi-mono/tools/dispatch-subagent"
 import { generateTitle } from "../title/generate"
@@ -198,6 +199,13 @@ export class ChatService {
       /** Reasoning effort for this turn. Maps to pi-ai's ThinkingLevel.
        *  Absent = server default (medium). */
       thinkingLevel?: "minimal" | "low" | "medium" | "high"
+      /** Capture pi-mono + provider activity into the SSE stream so the
+       *  UI can render the debug panel. Off by default — when on, a
+       *  DebugCapture is allocated for this turn and its events are
+       *  fan-out'd through the existing stream.publish channel. */
+      debug?: boolean
+      /** Verbosity gate when `debug` is true. Default "summary". */
+      debugVerbosity?: "summary" | "detailed"
     },
   ): Promise<AppendTurnResult & { assistantMessage: Message }> {
     const conv = await this.getConversation(viewer, input.conversationId)
@@ -388,6 +396,8 @@ export class ChatService {
       text: string
       model?: string
       thinkingLevel?: "minimal" | "low" | "medium" | "high"
+      debug?: boolean
+      debugVerbosity?: "summary" | "detailed"
     }
     viewerUserId: UserId
     viewerWorkspaceId: WorkspaceId
@@ -411,6 +421,22 @@ export class ChatService {
       agentScope,
     } = args
     const text = input.text.trim()
+    // When the caller opted into debug mode for this turn, allocate
+    // a DebugCapture that fans every event out onto the same SSE
+    // channel the rest of the conversation uses. No allocation when
+    // input.debug is false / absent.
+    const debugCapture = input.debug
+      ? new DebugCapture(input.debugVerbosity ?? "summary", (event) => {
+          this.deps.stream
+            .publish(channelFor(conv.id), {
+              kind: "debug_event",
+              runId,
+              messageId: assistantMessage.id,
+              event,
+            })
+            .catch(() => {})
+        })
+      : undefined
     try {
       const pendingToolCalls = new Map<string, ToolCallId>()
       // Diagnostic counters so log shows whether *any* deltas flowed. Logged
@@ -595,6 +621,7 @@ export class ChatService {
             }
           : {}),
         ...(input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
+        ...(debugCapture ? { debug: debugCapture } : {}),
         signal: ctrl.signal,
         onTextDelta: async (delta) => {
           if (textDeltaCount === 0) {
@@ -795,6 +822,26 @@ export class ChatService {
   ): Promise<Page<MessageWithBlocks>> {
     await this.getConversation(viewer, conversationId)
     return this.deps.msgs.listMessages(conversationId, page)
+  }
+
+  /** Full DB-backed snapshot for the debug pane's "Download
+   *  conversation dump" action. Returns the conversation row + every
+   *  message (including nested-run / sub-agent messages that
+   *  listMessages hides), every run (parent + nested), and every
+   *  tool call. Permission gates the same as getConversation. */
+  public async dumpConversation(
+    viewer: Viewer,
+    conversationId: ConversationId,
+  ): Promise<{
+    conversation: Conversation
+    messages: MessageWithBlocks[]
+    runs: import("../storage/types").Run[]
+    toolCalls: import("../storage/types").ToolCall[]
+  }> {
+    const conv = await this.getConversation(viewer, conversationId)
+    const { messages, runs, toolCalls } =
+      await this.deps.msgs.dumpConversation(conversationId)
+    return { conversation: conv, messages, runs, toolCalls }
   }
 
   /** M8 — fetch the full trace of every sub-agent dispatched under a

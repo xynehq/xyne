@@ -94,6 +94,32 @@ export type MessageFeedbackRecord = {
   updatedAt: number
 }
 
+/** Full DB snapshot of a conversation — used by the debug panel's
+ *  "Download conversation dump" action. Returns the conversation row,
+ *  every message (incl. sub-agent messages normally hidden by the
+ *  GET /messages endpoint), every run, and every tool call. */
+export const getConversationDump = (
+  conversationId: string,
+): Promise<unknown> =>
+  apiFetch<unknown>(
+    `/v2/chat/conversations/${encodeURIComponent(conversationId)}/dump`,
+  )
+
+export type VespaDocInspect = {
+  docId: string
+  itemId: string
+  collectionId: string
+  name: string
+  fields: Record<string, unknown>
+}
+
+/** Fetch the raw Vespa fields for a document — used by the "View Vespa
+ *  document" inspector tab in the debug dock. */
+export const getVespaDoc = (docId: string): Promise<VespaDocInspect> =>
+  apiFetch<VespaDocInspect>(
+    `/v2/kb/files/inspect/${encodeURIComponent(docId)}`,
+  )
+
 export const submitMessageFeedback = (
   conversationId: string,
   messageId: string,

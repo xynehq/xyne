@@ -315,6 +315,8 @@ export function CitationPanel(): JSX.Element | null {
                   navSeq={t.navSeq}
                   {...(t.chunkText ? { highlightQuery: t.chunkText } : {})}
                   docName={t.name}
+                  vespaDocId={t.docId}
+                  vespaDocName={t.name}
                   hideDownload
                   // Close *just this tab* from the viewer's toolbar X.
                   // The panel-level close-all lives at the extreme right

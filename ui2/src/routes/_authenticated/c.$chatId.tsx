@@ -11,6 +11,7 @@ import {
   type FeedbackSubmission,
 } from "@/components/FeedbackModal"
 import { CitationPanel } from "@/components/CitationPanel"
+import { DebugDock } from "@/components/DebugDock"
 import {
   setCollapsed as setCitationCollapsed,
   setScope as setCitationScope,
@@ -328,6 +329,7 @@ function ChatThreadRoute(): JSX.Element {
       </main>
       </div>
       <CitationPanel />
+      <DebugDock />
       <FeedbackModal
         open={feedbackTarget !== null}
         initialRating={feedbackTarget?.rating ?? "like"}

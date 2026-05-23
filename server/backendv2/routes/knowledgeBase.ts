@@ -934,6 +934,55 @@ router.get("/files/resolve/:docId", async (c) => {
   })
 })
 
+// ── Vespa document inspector ──────────────────────────────────────────────
+//
+// GET /v2/kb/files/inspect/:docId
+//
+// Returns the raw Vespa document fields the agent's search tools see for
+// this docId — chunks, chunk metadata (page numbers, bbox), title,
+// indexed timestamps, etc. Used by the "View Vespa document" affordance
+// in the PDF viewer toolbar so an operator can inspect exactly what the
+// search index has, vs the rendered PDF.
+//
+// Access: viewer needs read on the parent collection (same gate as the
+// resolve endpoint above).
+router.get("/files/inspect/:docId", async (c) => {
+  const actor = await loadActor(c)
+  const docId = c.req.param("docId")
+
+  const [row] = await db
+    .select({
+      itemId: collectionItems.id,
+      collectionId: collectionItems.collectionId,
+      name: collectionItems.name,
+    })
+    .from(collectionItems)
+    .where(eq(collectionItems.vespaDocId, docId))
+    .limit(1)
+  if (!row) {
+    throw new HTTPException(404, { message: "Unknown docId" })
+  }
+  await loadCollection(row.collectionId, actor)
+
+  const span = getTracer("backendv2-kb").startSpan("vespaInspect")
+  let fields: Record<string, unknown> = {}
+  try {
+    const resp = await GetDocumentsByDocIds([docId], span)
+    const doc = resp?.root?.children?.[0]
+    fields = (doc?.fields ?? {}) as Record<string, unknown>
+  } finally {
+    span.end()
+  }
+
+  return c.json({
+    docId,
+    itemId: row.itemId,
+    collectionId: row.collectionId,
+    name: row.name,
+    fields,
+  })
+})
+
 // ── Global file-name search ───────────────────────────────────────────────
 //
 // GET /v2/kb/search?q=<query>&limit=<n>

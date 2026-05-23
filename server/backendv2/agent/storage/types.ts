@@ -269,6 +269,21 @@ export type StreamEvent =
       conversationId: ConversationId
       title: string
     }
+  // Per-turn debug capture. Only emitted when the caller opted into
+  // debug mode on POST /messages; otherwise this kind never fires.
+  // Payload shape is the union from
+  // server/backendv2/agent/pi-mono/debug/types.ts — kept as `unknown`
+  // here to avoid pulling that module into the storage type graph.
+  // The frontend filters by `runId` / `kind` and rehydrates.
+  | {
+      kind: "debug_event"
+      runId: RunId
+      messageId: MessageId
+      // DebugEvent from pi-mono/debug/types.ts (request / response_chunk
+      // / tool_call_start / tool_call_end / compaction_start /
+      // compaction_end / agent_end / error).
+      event: unknown
+    }
 
 export type Unsubscribe = () => void
 
@@ -414,6 +429,21 @@ export interface MessageRepo {
     page: Cursor,
     tx?: Tx,
   ): Promise<Page<ToolCall>>
+
+  // Debug — full snapshot of a conversation for offline inspection.
+  // Returns every related row regardless of nested-run filtering:
+  // every message (incl. sub-agent runs), every run (parent + nested),
+  // every tool call. Used by /v2/chat/conversations/:id/dump so an
+  // operator can export the entire turn graph as JSON when debugging
+  // a misbehaving agent.
+  dumpConversation(
+    conversationId: ConversationId,
+    tx?: Tx,
+  ): Promise<{
+    messages: MessageWithBlocks[]
+    runs: Run[]
+    toolCalls: ToolCall[]
+  }>
 }
 
 // ─── Message feedback ────────────────────────────────────────────────────────

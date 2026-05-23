@@ -525,6 +525,38 @@ export class InMemoryMessageRepo implements MessageRepo {
 
     return paginate(items, page, (t) => t.id)
   }
+
+  public async dumpConversation(
+    conversationId: ConversationId,
+  ): Promise<{
+    messages: MessageWithBlocks[]
+    runs: Run[]
+    toolCalls: ToolCall[]
+  }> {
+    const messages = [...this.msgsById.values()]
+      .filter((m) => m.conversationId === conversationId)
+      .sort(
+        (a, b) =>
+          a.ordinal - b.ordinal || a.id.localeCompare(b.id),
+      )
+    const runIds = this.runIdsByConv.get(conversationId) ?? []
+    const runs = runIds
+      .map((id) => this.runsById.get(id))
+      .filter((r): r is Run => !!r)
+      .sort(
+        (a, b) =>
+          a.startedAt - b.startedAt || a.id.localeCompare(b.id),
+      )
+    const toolCallIds = this.toolCallIdsByConv.get(conversationId) ?? []
+    const toolCalls = toolCallIds
+      .map((id) => this.toolCallsById.get(id))
+      .filter((t): t is ToolCall => !!t)
+      .sort(
+        (a, b) =>
+          a.startedAt - b.startedAt || a.id.localeCompare(b.id),
+      )
+    return { messages, runs, toolCalls }
+  }
 }
 
 const stripBlocks = (m: MessageWithBlocks): Message => {

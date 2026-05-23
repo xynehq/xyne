@@ -3,7 +3,11 @@ import { LogOut } from "lucide-react"
 import { useState } from "react"
 import { Topbar } from "@/components/Topbar"
 import { PreferenceRow } from "@/components/PreferenceRow"
-import { preferencesStore, usePreferences } from "@/lib/preferences"
+import {
+  preferencesStore,
+  usePreferences,
+  type Preferences,
+} from "@/lib/preferences"
 
 export const Route = createFileRoute("/_authenticated/account")({
   component: AccountRoute,
@@ -98,6 +102,42 @@ function AccountRoute(): JSX.Element {
                 preferencesStore.set({ collapseTools: v })
               }}
             />
+            <div className="border-t border-border" />
+            <PreferenceRow
+              label="Debug mode"
+              description="Show LLM requests, pi-mono events, and tool I/O for new turns. Older turns won't have debug data — events stream live only, never persisted server-side."
+              checked={prefs.debugMode}
+              onChange={(v): void => {
+                preferencesStore.set({ debugMode: v })
+              }}
+            />
+            {prefs.debugMode && (
+              <div className="flex items-start justify-between gap-4 border-t border-border px-4 py-3.5">
+                <div className="min-w-0">
+                  <div className="text-[13.5px] font-medium text-foreground">
+                    Debug verbosity
+                  </div>
+                  <p className="mt-0.5 text-[12px] leading-snug text-muted-foreground">
+                    Summary shows request/response boundaries with sampler +
+                    token totals. Detailed adds the request body, response
+                    text, and tool args/results.
+                  </p>
+                </div>
+                <select
+                  value={prefs.debugVerbosity}
+                  onChange={(e): void => {
+                    preferencesStore.set({
+                      debugVerbosity: e.target.value as Preferences["debugVerbosity"],
+                    })
+                  }}
+                  aria-label="Debug verbosity"
+                  className="h-8 flex-shrink-0 rounded-md border border-border bg-surface-elevated px-2 text-[12.5px] text-foreground transition hover:border-ring focus:border-ring focus:outline-none"
+                >
+                  <option value="summary">Summary</option>
+                  <option value="detailed">Detailed</option>
+                </select>
+              </div>
+            )}
           </div>
         </section>
 

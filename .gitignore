@@ -1,5 +1,14 @@
 # Based on https://raw.githubusercontent.com/github/gitignore/main/Node.gitignore
 
+# Claude Code / playwright MCP working artifacts — local test snapshots,
+# scheduled-task locks, and any binaries dragged in for review. Should
+# never be committed; previous accidental commits have been scrubbed.
+.claude/
+.playwright-mcp/
+*.dmg
+debug-*.png
+message-*.png
+
 # Logs
 
 logs

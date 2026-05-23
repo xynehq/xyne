@@ -220,35 +220,75 @@ export async function createRAGAgent<TState = unknown>(
 
   const { session: piSession } = await createAgentSession(sessionOptions)
 
-  // Apply per-model sampler params. temperature rides on
-  // StreamOptions; top_p is spliced via onPayload (chained so any
-  // existing extension handler still runs).
-  if (
-    config.streamOptions &&
-    (config.streamOptions.temperature !== undefined ||
-      config.streamOptions.topP !== undefined)
-  ) {
-    const wantedTemp = config.streamOptions.temperature
-    const wantedTopP = config.streamOptions.topP
+  // Wrap streamFn for per-model sampler params (`temperature` /
+  // `topP`) AND per-turn debug capture. Both are optional; if neither
+  // is set, we skip the wrapper entirely so there's zero overhead on
+  // the default path. When both are set the chain is:
+  //   inject temperature → mutate payload with top_p → emit request
+  //   event into the debug sink → forward to the inner streamFn.
+  const wantedTemp = config.streamOptions?.temperature
+  const wantedTopP = config.streamOptions?.topP
+  const debug = config.debug
+  if (wantedTemp !== undefined || wantedTopP !== undefined || debug) {
     const innerStreamFn = piSession.agent.streamFn
     piSession.agent.streamFn = async (model, context, options) => {
       const priorOnPayload = options?.onPayload
-      const onPayload =
-        wantedTopP !== undefined
-          ? async (payload: unknown, m: unknown): Promise<unknown> => {
-              const next = priorOnPayload
-                ? await priorOnPayload(payload as never, m as never)
-                : payload
-              if (next && typeof next === "object") {
-                ;(next as Record<string, unknown>)["top_p"] = wantedTopP
-              }
-              return next
-            }
-          : priorOnPayload
+      const onPayload = async (
+        payload: unknown,
+        m: unknown,
+      ): Promise<unknown> => {
+        // Chain the upstream extension hook first (pi-coding-agent
+        // dispatches to before_provider_request handlers there).
+        const next = priorOnPayload
+          ? await priorOnPayload(payload as never, m as never)
+          : payload
+        // Inject top_p (pi-ai's StreamOptions doesn't expose it; the
+        // openai-completions provider reads it from the final body).
+        if (wantedTopP !== undefined && next && typeof next === "object") {
+          ;(next as Record<string, unknown>)["top_p"] = wantedTopP
+        }
+        // Debug capture — recorded post-mutation so what the sink
+        // shows matches what hits the wire. Scrubbing happens inside
+        // the capture itself.
+        if (debug) {
+          const payloadObj =
+            next && typeof next === "object" ? (next as Record<string, unknown>) : {}
+          const msgs = payloadObj["messages"]
+          const systemPromptChars = Array.isArray(msgs)
+            ? msgs.reduce((acc: number, msg: unknown): number => {
+                if (!msg || typeof msg !== "object") return acc
+                const role = (msg as Record<string, unknown>)["role"]
+                if (role !== "system") return acc
+                const content = (msg as Record<string, unknown>)["content"]
+                return acc + (typeof content === "string" ? content.length : 0)
+              }, 0)
+            : 0
+          const modelId =
+            typeof (model as { id?: unknown })?.id === "string"
+              ? ((model as { id: string }).id)
+              : "unknown"
+          debug.emitRequest({
+            sentAt: Date.now(),
+            model: modelId,
+            sampler: {
+              ...(wantedTemp !== undefined ? { temperature: wantedTemp } : {}),
+              ...(wantedTopP !== undefined ? { topP: wantedTopP } : {}),
+              ...(typeof payloadObj["max_tokens"] === "number"
+                ? { maxTokens: payloadObj["max_tokens"] as number }
+                : typeof payloadObj["max_completion_tokens"] === "number"
+                  ? { maxTokens: payloadObj["max_completion_tokens"] as number }
+                  : {}),
+            },
+            systemPromptChars,
+            payload: next,
+          })
+        }
+        return next
+      }
       return innerStreamFn(model, context, {
         ...options,
         ...(wantedTemp !== undefined ? { temperature: wantedTemp } : {}),
-        ...(onPayload ? { onPayload } : {}),
+        onPayload,
       })
     }
   }
@@ -278,8 +318,54 @@ export async function createRAGAgent<TState = unknown>(
           }
         }
 
-        // Subscribe to pi-mono events
+        // Subscribe to pi-mono events. When a debug sink is wired,
+        // tee `message_end` (assistant role) into the sink as a
+        // single `response` event so the panel pairs each request
+        // with its full response. Per-chunk streaming is intentionally
+        // not surfaced — it was too noisy in practice.
+        const debugSink = config.debug
         const unsubscribe = piSession.subscribe((rawEvent) => {
+          if (debugSink) {
+            const e = rawEvent as {
+              type?: string
+              message?: {
+                role?: string
+                content?: unknown
+                stopReason?: string
+                usage?: {
+                  input?: number
+                  output?: number
+                  cacheRead?: number
+                  cacheWrite?: number
+                }
+              }
+            }
+            if (
+              e.type === "message_end" &&
+              e.message?.role === "assistant"
+            ) {
+              const content = e.message.content
+              const text = typeof content === "string" ? content : undefined
+              const usage = e.message.usage
+              debugSink.emitResponse({
+                receivedAt: Date.now(),
+                ...(e.message.stopReason
+                  ? { stopReason: e.message.stopReason }
+                  : {}),
+                ...(text !== undefined ? { text } : {}),
+                ...(usage
+                  ? {
+                      tokenUsage: {
+                        input: usage.input ?? 0,
+                        output: usage.output ?? 0,
+                        cacheRead: usage.cacheRead ?? 0,
+                        cacheWrite: usage.cacheWrite ?? 0,
+                      },
+                    }
+                  : {}),
+              })
+            }
+          }
           const mapped = mapEvent(rawEvent as AgentSessionEvent)
           for (const evt of mapped) {
             push(evt)

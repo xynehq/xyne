@@ -35,6 +35,7 @@ import "pdfjs-dist/web/pdf_viewer.css"
 import {
   ChevronUp,
   ChevronDown,
+  Database,
   Download,
   Loader2,
   Minus,
@@ -44,6 +45,7 @@ import {
 } from "lucide-react"
 
 import { fileContentUrl, getBreadcrumb } from "@/lib/kb"
+import { openVespaDoc } from "@/lib/vespa-doc-store"
 
 // Worker is shipped from ui2/public/. The route-relative resolution
 // fallback inside pdf.js' default workerSrc 404s into the SPA fallback,
@@ -84,6 +86,13 @@ export type PdfViewerProps = {
   onClose?: () => void
   /** Hide the Download link. */
   hideDownload?: boolean
+  /** Vespa docId for the "View Vespa document" inspector button.
+   *  When set, the toolbar shows an extra button that opens a tab
+   *  in the right-side debug dock with the raw Vespa fields. */
+  vespaDocId?: string | null | undefined
+  /** Display name used as the Vespa-doc tab label. Falls back to
+   *  docName / itemId. */
+  vespaDocName?: string | undefined
 }
 
 export function PdfViewer({
@@ -96,6 +105,8 @@ export function PdfViewer({
   leading,
   onClose,
   hideDownload = false,
+  vespaDocId,
+  vespaDocName,
 }: PdfViewerProps): JSX.Element {
   pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_WORKER_URL
 
@@ -490,6 +501,28 @@ export function PdfViewer({
           >
             <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
           </button>
+
+          {vespaDocId && (
+            <>
+              <span className="mx-2 h-4 w-px bg-border" aria-hidden />
+              <button
+                type="button"
+                aria-label="View Vespa document"
+                title="View Vespa document — inspect the raw indexed chunks"
+                onClick={(): void => {
+                  openVespaDoc({
+                    docId: vespaDocId,
+                    name: vespaDocName ?? docNameProp ?? itemId,
+                    itemId,
+                    collectionId: clId,
+                  })
+                }}
+                className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+              >
+                <Database className="h-3.5 w-3.5" strokeWidth={1.75} />
+              </button>
+            </>
+          )}
 
           {!hideDownload && (
             <>

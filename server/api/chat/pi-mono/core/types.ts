@@ -64,6 +64,11 @@ export interface RAGAgentConfig<TState = unknown> {
     temperature?: number
     topP?: number
   }
+  /** Optional per-turn debug sink. When present, the rag-agent
+   *  shadows outbound request bodies + inbound provider chunks into
+   *  the sink's emit methods. Disabled = no allocation, no perf
+   *  impact. See server/backendv2/agent/pi-mono/debug/. */
+  debug?: import("@/backendv2/agent/pi-mono/debug/capture").DebugCapture
 
   // --- Auth & Model Registry ---
   /** Auth storage for credentials */

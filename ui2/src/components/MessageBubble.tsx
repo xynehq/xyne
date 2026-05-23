@@ -18,6 +18,7 @@ const passthroughCiteUrl = (url: string): string =>
 import { ToolCallChip } from "./ToolCallChip"
 import { DispatchSubagentChip } from "./DispatchSubagentChip"
 import { ThinkingChip, type ReasoningItem } from "./ThinkingChip"
+import { DebugPanel } from "./DebugPanel"
 import { CitationChip, CitationNumberProvider } from "./CitationChip"
 import { remarkCitations } from "@/lib/remark-citations"
 import type { Block, MessageStats } from "@/lib/chat-store"
@@ -118,7 +119,7 @@ export function MessageBubble({
   feedback,
   onFeedback,
 }: Props): JSX.Element {
-  const { collapseTools } = usePreferences()
+  const { collapseTools, debugMode } = usePreferences()
   if (role === "user") {
     const body = collectText(blocks)
     return (
@@ -304,6 +305,12 @@ export function MessageBubble({
               }
               return null
             })}
+            {debugMode && runId && role === "assistant" && (
+              <DebugPanel
+                runId={runId}
+                {...(conversationId ? { conversationId } : {})}
+              />
+            )}
           </div>
         )}
         {!pending && stats && <StatsFooter stats={stats} />}

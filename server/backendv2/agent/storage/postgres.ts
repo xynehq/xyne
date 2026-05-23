@@ -994,6 +994,44 @@ export class PostgresMessageRepo implements MessageRepo {
     const nextCursor = rows.length > limit && last ? last.id : undefined
     return nextCursor ? { items, nextCursor } : { items }
   }
+
+  public async dumpConversation(
+    conversationId: ConversationId,
+    tx?: Tx,
+  ): Promise<{
+    messages: MessageWithBlocks[]
+    runs: Run[]
+    toolCalls: ToolCall[]
+  }> {
+    const client = clientOf(tx)
+    // Three parallel scans — each table has the conversation_id index
+    // so this is bounded and fast even on busy conversations.
+    // Importantly we DON'T filter out nested-run messages here (unlike
+    // listMessages) — the dump's job is to give the operator
+    // everything for offline inspection.
+    const [messageRows, runRows, toolCallRows] = await Promise.all([
+      client
+        .select()
+        .from(v2ChatMessages)
+        .where(eq(v2ChatMessages.conversationId, conversationId))
+        .orderBy(asc(v2ChatMessages.ordinal), asc(v2ChatMessages.id)),
+      client
+        .select()
+        .from(v2ChatRuns)
+        .where(eq(v2ChatRuns.conversationId, conversationId))
+        .orderBy(asc(v2ChatRuns.startedAt), asc(v2ChatRuns.id)),
+      client
+        .select()
+        .from(v2ChatToolCalls)
+        .where(eq(v2ChatToolCalls.conversationId, conversationId))
+        .orderBy(asc(v2ChatToolCalls.startedAt), asc(v2ChatToolCalls.id)),
+    ])
+    return {
+      messages: messageRows.map(rowToMessageWithBlocks),
+      runs: runRows.map(rowToRun),
+      toolCalls: toolCallRows.map(rowToToolCall),
+    }
+  }
 }
 
 // ─── MessageFeedbackRepo ────────────────────────────────────────────────────
