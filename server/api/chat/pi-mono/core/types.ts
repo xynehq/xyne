@@ -1,11 +1,11 @@
-import type { ImageContent, Model, ThinkingLevel } from "@mariozechner/pi-ai"
+import type { ImageContent, Model, ThinkingLevel } from "@earendil-works/pi-ai"
 import type {
   AgentSession,
   AgentSessionEvent,
   CreateAgentSessionOptions,
   ExtensionFactory,
   ToolDefinition,
-} from "@mariozechner/pi-coding-agent"
+} from "@earendil-works/pi-coding-agent"
 import type { Static, TSchema } from "@sinclair/typebox"
 
 export interface RAGAgentConfig<TState = unknown> {
@@ -24,8 +24,11 @@ export interface RAGAgentConfig<TState = unknown> {
   // --- Prompt ---
   /** System prompt for the agent */
   systemPrompt: string
-  /** Additional text appended to the system prompt */
-  appendSystemPrompt?: string
+  /** Additional text appended to the system prompt. Upstream became
+   *  `string[]` in 0.74.x — accept either shape from callers and
+   *  normalise at the use-site so existing code that passes a string
+   *  keeps working without a renaming churn. */
+  appendSystemPrompt?: string | string[]
 
   // --- Session persistence ---
   /** Session manager — pass a pi-mono SessionManager directly.

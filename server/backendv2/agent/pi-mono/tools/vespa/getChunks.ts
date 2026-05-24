@@ -9,7 +9,7 @@
 // scan a whole document in chunks (paginate by bumping startChunkIndex by
 // the previous limit).
 
-import { defineTool } from "@mariozechner/pi-coding-agent"
+import { defineTool } from "@earendil-works/pi-coding-agent"
 import { Type } from "@sinclair/typebox"
 
 import { GetDocumentsByDocIds } from "@/search/vespa"

@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs"
 import path from "node:path"
-import type { ImageContent } from "@mariozechner/pi-ai"
+import type { ImageContent } from "@earendil-works/pi-ai"
 import { getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
 import { getErrorMessage } from "@/utils"

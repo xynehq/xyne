@@ -9,7 +9,7 @@
 // process memory keyed by conversationId; they die with the process. A
 // DB-backed SessionStore is the next phase and will plug in here.
 
-import { SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent"
+import { SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent"
 
 import { createRAGAgent, type RAGAgent } from "@/api/chat/pi-mono/core"
 import type { AgentScope, DispatchableSubAgent } from "../agent-scope"
@@ -184,16 +184,19 @@ export async function runPiMonoTurn(
   )
   const startedAt = Date.now()
 
-  // Compaction is env-overridable so we can rehearse it cheaply in dev.
-  // Defaults are realistic production values.
+  // Precedence: env override → modelConfig → global default.
+  const modelCfg = getModelConfiguration(modelId)
   const contextWindow = Number(
-    process.env["BACKENDV2_PI_CONTEXT_WINDOW"] ?? "250000",
+    process.env["BACKENDV2_PI_CONTEXT_WINDOW"] ??
+      String(modelCfg?.contextWindow ?? 250_000),
   )
   const reserveTokens = Number(
-    process.env["BACKENDV2_PI_RESERVE_TOKENS"] ?? String(32000 + 8192),
+    process.env["BACKENDV2_PI_RESERVE_TOKENS"] ??
+      String(modelCfg?.reserveTokens ?? 40_192),
   )
   const keepRecentTokens = Number(
-    process.env["BACKENDV2_PI_KEEP_RECENT_TOKENS"] ?? "50000",
+    process.env["BACKENDV2_PI_KEEP_RECENT_TOKENS"] ??
+      String(modelCfg?.keepRecentTokens ?? 50_000),
   )
 
   const agent: RAGAgent<unknown> = await createRAGAgent({
@@ -317,6 +320,9 @@ export async function runPiMonoTurn(
           errorMessage?: string
           attempt?: number
           maxAttempts?: number
+          // auto_retry_end fields
+          success?: boolean
+          finalError?: string
           // Compaction events carry pre/post token counts on some
           // providers; absent on others. Optional so we degrade gracefully.
           tokensBefore?: number
@@ -380,6 +386,39 @@ export async function runPiMonoTurn(
             },
             "pi-mono: auto_retry_start",
           )
+          if (args.debug) {
+            args.debug.emitRetryAttempt({
+              phase: "start",
+              attempt: e.attempt ?? retryAttempts,
+              ...(typeof e.maxAttempts === "number"
+                ? { maxAttempts: e.maxAttempts }
+                : {}),
+              ...(typeof e.errorMessage === "string"
+                ? { errorMessage: e.errorMessage }
+                : {}),
+              at: Date.now(),
+            })
+          }
+        } else if (e.type === "auto_retry_end") {
+          log.info(
+            {
+              attempt: e.attempt,
+              success: e.success,
+              finalError: e.finalError?.slice(0, 300),
+            },
+            "pi-mono: auto_retry_end",
+          )
+          if (args.debug) {
+            args.debug.emitRetryAttempt({
+              phase: "end",
+              attempt: e.attempt ?? retryAttempts,
+              ...(typeof e.success === "boolean" ? { success: e.success } : {}),
+              ...(typeof e.finalError === "string"
+                ? { errorMessage: e.finalError }
+                : {}),
+              at: Date.now(),
+            })
+          }
         }
         continue
       }

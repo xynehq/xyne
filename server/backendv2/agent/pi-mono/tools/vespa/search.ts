@@ -9,7 +9,7 @@
 // truncation) so the agent gets the same text the document was chunked
 // into at ingest time.
 
-import { defineTool } from "@mariozechner/pi-coding-agent"
+import { defineTool } from "@earendil-works/pi-coding-agent"
 import { Type } from "@sinclair/typebox"
 
 import config from "@/config"

@@ -857,6 +857,23 @@ export interface ModelConfiguration {
     temperature?: number
     topP?: number
   }
+  /** Provider-side context-window cap for this model in tokens.
+   *  Pi-mono uses this as the compaction threshold target — we set
+   *  it BELOW the real provider limit so compaction triggers (and
+   *  the mid-turn `shouldStopAfterTurn` hook fires) before the
+   *  provider rejects oversized requests. Omit to fall back to the
+   *  runner's BACKENDV2_PI_CONTEXT_WINDOW env default. */
+  contextWindow?: number
+  /** Per-model compaction headroom in tokens. The compaction
+   *  threshold = contextWindow − reserveTokens. Thinking models
+   *  need extra headroom because reasoning tokens inflate output
+   *  unpredictably between message_end and the next call. Omit to
+   *  fall back to BACKENDV2_PI_RESERVE_TOKENS env / global default. */
+  reserveTokens?: number
+  /** How many tokens of the most recent transcript survive a
+   *  compaction round (everything older becomes a summary). Omit to
+   *  fall back to BACKENDV2_PI_KEEP_RECENT_TOKENS env / global. */
+  keepRecentTokens?: number
 }
 export const getDocumentSchema = z.object({
   docId: z.string().min(1),

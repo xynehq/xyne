@@ -34,8 +34,8 @@
 //     conditionally by the runner when an agent has ≥1 sub-agent;
 //     sub-agents themselves never receive it (flat hierarchy).
 
-import { defineTool } from "@mariozechner/pi-coding-agent"
-import { SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent"
+import { defineTool } from "@earendil-works/pi-coding-agent"
+import { SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent"
 import { Type } from "@sinclair/typebox"
 
 import { createRAGAgent, type RAGAgent } from "@/api/chat/pi-mono/core"

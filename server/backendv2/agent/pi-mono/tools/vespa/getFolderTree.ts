@@ -7,7 +7,7 @@
 // It returns one line per folder, already prefixed with the collection name,
 // ready to be pasted into vespaSearch / metadataSearch.
 
-import { defineTool } from "@mariozechner/pi-coding-agent"
+import { defineTool } from "@earendil-works/pi-coding-agent"
 import { Type } from "@sinclair/typebox"
 import { and, eq, isNull } from "drizzle-orm"
 

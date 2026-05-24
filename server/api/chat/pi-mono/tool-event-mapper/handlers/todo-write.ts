@@ -1,5 +1,5 @@
 import { ReasoningSteps, emitReasoningEvent } from "@/api/chat/reasoning-steps"
-import type { ToolResultEvent } from "@mariozechner/pi-coding-agent"
+import type { ToolResultEvent } from "@earendil-works/pi-coding-agent"
 import type { ToDoWriteDetails, ToolCallContext, ToolHandler } from "../types"
 
 export const todoWriteHandler: ToolHandler = {

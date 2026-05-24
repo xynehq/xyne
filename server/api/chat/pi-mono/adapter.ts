@@ -1,5 +1,5 @@
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent"
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent"
 import type { Static, TSchema } from "@sinclair/typebox"
 import type {
   Clarification,

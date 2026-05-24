@@ -2,7 +2,7 @@ import { ReasoningSteps } from "@/api/chat/reasoning-steps"
 import type {
   ToolCallEvent,
   ToolResultEvent,
-} from "@mariozechner/pi-coding-agent"
+} from "@earendil-works/pi-coding-agent"
 
 import type { ToolCallContext, ToolHandler } from "../types"
 

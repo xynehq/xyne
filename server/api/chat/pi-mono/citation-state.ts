@@ -1,5 +1,5 @@
 import type { Citation, MinimalAgentFragment } from "@/api/chat/types"
-import type { CustomEntry, SessionEntry } from "@mariozechner/pi-coding-agent"
+import type { CustomEntry, SessionEntry } from "@earendil-works/pi-coding-agent"
 import type { XyneAgentState } from "./adapter"
 
 export const CITATION_ENTRY_TYPE = "xyne_citation_state"

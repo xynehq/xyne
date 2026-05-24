@@ -38,6 +38,7 @@ export type DebugEvent =
       receivedAt: number
       stopReason?: string
       text?: string
+      thinking?: string
       tokenUsage?: DebugTokenUsage
     }
   | {
@@ -74,6 +75,26 @@ export type DebugEvent =
       durationMs: number
     }
   | { kind: "error"; message: string; llmCall?: number; toolName?: string }
+  // Fires when our `shouldStopAfterTurn` halted the loop mid-turn
+  // because context usage crossed the compaction threshold.
+  | {
+      kind: "mid_turn_stop"
+      reason: "threshold"
+      contextTokens: number
+      contextWindow: number
+      reserveTokens: number
+      at: number
+    }
+  // Pi-mono retry lifecycle (auto_retry_start / auto_retry_end).
+  | {
+      kind: "retry_attempt"
+      phase: "start" | "end"
+      attempt: number
+      maxAttempts?: number
+      success?: boolean
+      errorMessage?: string
+      at: number
+    }
 
 // One slot per runId. Empty array = run is debug-enabled but no
 // events have arrived yet (header still renders). Missing key =

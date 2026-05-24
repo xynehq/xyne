@@ -9,7 +9,7 @@ import type {
   ToolCallEvent,
   ToolCallEventResult,
   ToolResultEvent,
-} from "@mariozechner/pi-coding-agent"
+} from "@earendil-works/pi-coding-agent"
 import type { XyneAgentState } from "./adapter"
 import { trackFragments } from "./citation-state"
 import { toolEventRegistry } from "./tool-event-mapper/index"

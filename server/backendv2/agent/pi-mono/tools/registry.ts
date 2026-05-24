@@ -18,7 +18,7 @@
 // when the agent has sub-agents) are still declared here but filtered by the
 // runner before being passed to pi-mono.
 
-import { defineTool } from "@mariozechner/pi-coding-agent"
+import { defineTool } from "@earendil-works/pi-coding-agent"
 
 import type { AgentScope } from "../../agent-scope"
 import type { Log } from "../../log"

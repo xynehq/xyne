@@ -13,6 +13,9 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     websearch: true,
     deepResearch: false,
     description: "Designed for quick responses while ensuring solid reasoning.",
+    contextWindow: 200_000,
+    reserveTokens: 40_192,
+    keepRecentTokens: 50_000,
   },
   [Models.Claude_3_5_Sonnet]: {
     actualName: "anthropic.claude-3-5-sonnet-20240620-v1:0",
@@ -22,6 +25,9 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     websearch: true,
     deepResearch: true,
     description: "Designed for quick responses while ensuring solid reasoning.",
+    contextWindow: 200_000,
+    reserveTokens: 40_192,
+    keepRecentTokens: 50_000,
   },
   [Models.Claude_3_5_SonnetV2]: {
     actualName: "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
@@ -31,6 +37,9 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     websearch: true,
     deepResearch: true,
     description: "Designed for quick responses while ensuring solid reasoning.",
+    contextWindow: 200_000,
+    reserveTokens: 40_192,
+    keepRecentTokens: 50_000,
   },
   [Models.Claude_3_7_Sonnet]: {
     actualName: "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
@@ -41,6 +50,9 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     deepResearch: true,
     description:
       "Advanced reasoning with enhanced performance and longer context.",
+    contextWindow: 200_000,
+    reserveTokens: 40_192,
+    keepRecentTokens: 50_000,
   },
   [Models.Claude_Opus_4]: {
     actualName: "us.anthropic.claude-opus-4-20250514-v1:0",
@@ -50,6 +62,9 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     websearch: true,
     deepResearch: true,
     description: "Ideal for in-depth research and thorough analysis.",
+    contextWindow: 200_000,
+    reserveTokens: 40_192,
+    keepRecentTokens: 50_000,
   },
   [Models.Claude_Sonnet_4]: {
     actualName: "us.anthropic.claude-sonnet-4-20250514-v1:0",
@@ -59,6 +74,9 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     websearch: true,
     deepResearch: true,
     description: "Balanced for reasoning, long context windows.",
+    contextWindow: 200_000,
+    reserveTokens: 40_192,
+    keepRecentTokens: 50_000,
   },
 
   // AWS Bedrock - Meta Llama Models
@@ -690,6 +708,9 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
       temperature: 1.0,
       topP: 0.95,
     },
+    contextWindow: 200_000,
+    reserveTokens: 40_192,
+    keepRecentTokens: 50_000,
   },
   [Models.GEMMA_4]: {
     actualName: "gemma-4",

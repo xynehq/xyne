@@ -9,7 +9,7 @@
 // - delegateToWriter: SUB-AGENT — spawns a nested pi-mono session for a focused
 //   sub-task, returns its final text. Verifies that an agent-inside-a-tool works.
 
-import { defineTool, SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent"
+import { defineTool, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent"
 import { Type } from "@sinclair/typebox"
 
 import { createRAGAgent } from "@/api/chat/pi-mono/core"

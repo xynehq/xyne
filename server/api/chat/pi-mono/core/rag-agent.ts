@@ -1,7 +1,8 @@
-import type { Model } from "@mariozechner/pi-ai"
+import type { Model } from "@earendil-works/pi-ai"
 import {
   type AgentSessionEvent,
   AuthStorage,
+  calculateContextTokens,
   type CreateAgentSessionOptions,
   DefaultResourceLoader,
   ModelRegistry,
@@ -9,7 +10,9 @@ import {
   SessionManager,
   SettingsManager,
   createAgentSession,
-} from "@mariozechner/pi-coding-agent"
+  estimateTokens,
+  shouldCompact,
+} from "@earendil-works/pi-coding-agent"
 
 import type { RAGAgent, RAGAgentConfig, RAGEvent, RunOptions } from "./types"
 
@@ -181,9 +184,21 @@ export async function createRAGAgent<TState = unknown>(
   let resourceLoader = config.resourceLoader
   if (!resourceLoader) {
     resourceLoader = new DefaultResourceLoader({
+      // `agentDir` became a required field in 0.74.x — it's where
+      // pi-coding-agent looks for on-disk extensions / skills / themes.
+      // We disable all of those with `noExtensions/noSkills/noThemes/
+      // noPromptTemplates` below, so the directory never actually has
+      // to exist; /tmp is a safe always-present sentinel.
       cwd: "/tmp",
+      agentDir: "/tmp",
+      noExtensions: true,
       systemPrompt: config.systemPrompt,
-      appendSystemPrompt: config.appendSystemPrompt,
+      appendSystemPrompt:
+        config.appendSystemPrompt === undefined
+          ? undefined
+          : Array.isArray(config.appendSystemPrompt)
+            ? config.appendSystemPrompt
+            : [config.appendSystemPrompt],
       extensionFactories: config.extensions ?? [],
       noSkills: true,
       noPromptTemplates: true,
@@ -205,9 +220,13 @@ export async function createRAGAgent<TState = unknown>(
     })
 
   // --- Create pi-mono session ---
+  // `tools: []` in 0.74+ is an empty *allowlist* that suppresses
+  // every tool including customTools. `noTools: "builtin"` disables
+  // pi's defaults (read/bash/edit/write) but leaves customTools
+  // registered.
   const sessionOptions: CreateAgentSessionOptions = {
     model: model,
-    tools: [],
+    noTools: "builtin",
     customTools: config.tools,
     resourceLoader,
     authStorage,
@@ -219,6 +238,82 @@ export async function createRAGAgent<TState = unknown>(
   }
 
   const { session: piSession } = await createAgentSession(sessionOptions)
+
+  // Mid-turn compaction workaround for earendil-works/pi#4325.
+  //
+  // Pi-mono's auto-compaction only fires after a full agent_end. In a
+  // tool loop with many LLM calls, the context can balloon well past
+  // contextWindow before any compaction check runs — the provider may
+  // then reject the request, or pi-mono's silent-overflow path strips
+  // a valid response and retries (#2871). The upstream fix is to wire
+  // pi-agent-core's `shouldStopAfterTurn` hook into the coding-agent
+  // layer's compaction trigger; that primitive exists in 0.74+ but is
+  // not exposed on `Agent` and not yet wired by coding-agent.
+  //
+  // We work around it by monkey-patching `agent.createLoopConfig` to
+  // inject `shouldStopAfterTurn` ourselves. When it returns true the
+  // loop emits `agent_end` cleanly; pi-coding-agent's existing
+  // `_runAgentPrompt → _handlePostAgentRun → _checkCompaction →
+  // agent.continue()` machinery (agent-session.js:642) then runs
+  // compaction and resumes the loop on the compacted history.
+  //
+  // Kill-switch: `BACKENDV2_PI_MID_TURN_COMPACTION=false` skips the
+  // patch entirely so we can disable instantly without redeploying.
+  if (process.env["BACKENDV2_PI_MID_TURN_COMPACTION"] !== "false") {
+    type ShouldStopCtx = {
+      message: { stopReason?: string; usage?: unknown }
+      toolResults?: unknown[]
+    }
+    type LoopCfg = { shouldStopAfterTurn?: (ctx: ShouldStopCtx) => boolean }
+    const agent = piSession.agent as unknown as {
+      createLoopConfig: (opts?: unknown) => LoopCfg
+      state: { model?: { contextWindow?: number } }
+    }
+    const origCreateLoopConfig = agent.createLoopConfig.bind(agent)
+    const debugSink = config.debug
+    agent.createLoopConfig = (opts?: unknown): LoopCfg => {
+      const cfg = origCreateLoopConfig(opts)
+      cfg.shouldStopAfterTurn = (ctx): boolean => {
+        const settings = piSession.settingsManager.getCompactionSettings()
+        if (!settings.enabled) return false
+        const { message } = ctx
+        if (message.stopReason === "error" || message.stopReason === "aborted") {
+          return false
+        }
+        const ctxWindow = agent.state.model?.contextWindow ?? 0
+        if (ctxWindow <= 0) return false
+
+        // Assistant usage covers the input PROCESSED by this call.
+        // The tool results that just executed are NOT in that usage
+        // — they'll be in the NEXT call's input. Estimate their cost
+        // here and add to the threshold check so a huge tool result
+        // (e.g. 30k of chunks) triggers compaction BEFORE the next
+        // call is built.
+        if (!message.usage) return false
+        const baseTokens = calculateContextTokens(
+          message.usage as Parameters<typeof calculateContextTokens>[0],
+        )
+        const toolResults = Array.isArray(ctx.toolResults) ? ctx.toolResults : []
+        let trailing = 0
+        for (const t of toolResults) {
+          trailing += estimateTokens(t as Parameters<typeof estimateTokens>[0])
+        }
+        const contextTokens = baseTokens + trailing
+
+        const stop = shouldCompact(contextTokens, ctxWindow, settings)
+        if (stop && debugSink) {
+          debugSink.emitMidTurnStop({
+            contextTokens,
+            contextWindow: ctxWindow,
+            reserveTokens: settings.reserveTokens,
+            at: Date.now(),
+          })
+        }
+        return stop
+      }
+      return cfg
+    }
+  }
 
   // Wrap streamFn for per-model sampler params (`temperature` /
   // `topP`) AND per-turn debug capture. Both are optional; if neither
@@ -345,14 +440,48 @@ export async function createRAGAgent<TState = unknown>(
               e.message?.role === "assistant"
             ) {
               const content = e.message.content
-              const text = typeof content === "string" ? content : undefined
+              // Anthropic-style content: string OR array of blocks like
+              //   { type: "text", text }
+              //   { type: "thinking", thinking }
+              //   { type: "tool_use", ... }
+              // Sum text + thinking from blocks; fall back to plain
+              // string for non-block content shapes.
+              let text: string | undefined
+              let thinking: string | undefined
+              if (typeof content === "string") {
+                text = content
+              } else if (Array.isArray(content)) {
+                const textParts: string[] = []
+                const thinkingParts: string[] = []
+                for (const b of content as Array<{
+                  type?: string
+                  text?: string
+                  thinking?: string
+                }>) {
+                  if (b && typeof b === "object") {
+                    if (b.type === "text" && typeof b.text === "string") {
+                      textParts.push(b.text)
+                    } else if (
+                      b.type === "thinking" &&
+                      typeof b.thinking === "string"
+                    ) {
+                      thinkingParts.push(b.thinking)
+                    }
+                  }
+                }
+                if (textParts.length > 0) text = textParts.join("\n")
+                if (thinkingParts.length > 0) thinking = thinkingParts.join("\n")
+              }
               const usage = e.message.usage
               debugSink.emitResponse({
                 receivedAt: Date.now(),
                 ...(e.message.stopReason
                   ? { stopReason: e.message.stopReason }
                   : {}),
-                ...(text !== undefined ? { text } : {}),
+                ...(text !== undefined && text.length > 0 ? { text } : {}),
+                ...(thinking !== undefined && thinking.length > 0
+                  ? { thinking }
+                  : {}),
                 ...(usage
                   ? {
                       tokenUsage: {

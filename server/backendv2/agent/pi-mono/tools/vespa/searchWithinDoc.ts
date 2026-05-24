@@ -11,7 +11,7 @@
 // NOTE: SEBI docs live in `KbItemsSchema`, not `FileSchema`, so we must NOT use
 // `searchVespaInFiles` here — that path always returns 0 hits for KB docs.
 
-import { defineTool } from "@mariozechner/pi-coding-agent"
+import { defineTool } from "@earendil-works/pi-coding-agent"
 import { Type } from "@sinclair/typebox"
 
 import { searchCollectionRAG } from "@/search/vespa"

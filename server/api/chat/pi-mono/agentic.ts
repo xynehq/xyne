@@ -6,7 +6,7 @@ import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { streamSSE } from "hono/streaming"
 
-import { SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent"
+import { SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent"
 
 import {
   getModelValueFromLabel,

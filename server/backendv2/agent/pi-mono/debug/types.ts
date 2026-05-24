@@ -42,17 +42,15 @@ export type DebugEvent =
     }
   | {
       kind: "response"
-      // Final response for `llmCall` — emitted once per provider
-      // round-trip (request → assembled response). Carries the
-      // assistant message text, the stop reason, and the round's
-      // token usage. Replaces the old per-chunk firehose.
       llmCall: number
       receivedAt: number
       stopReason?: string
-      // Assembled text content from the assistant message. Only at
-      // `detailed`. Thinking lives separately in pi-mono and is
-      // surfaced via the message itself; we don't duplicate it here.
+      // Assembled text content from the assistant message (only
+      // populated at "detailed" verbosity). Omitted when empty.
       text?: string
+      // Assembled thinking/reasoning content from any thinking blocks
+      // in the assistant message. Omitted when empty.
+      thinking?: string
       tokenUsage?: DebugTokenUsage
     }
   | {
@@ -101,6 +99,34 @@ export type DebugEvent =
       // flight when the error fired.
       llmCall?: number
       toolName?: string
+    }
+  // Fires when our `shouldStopAfterTurn` hook decided to halt the
+  // agent loop mid-turn because context usage crossed the compaction
+  // threshold. Pi-mono then emits agent_end cleanly and the existing
+  // post-agent-run path runs compaction + resumes via agent.continue
+  // — surfacing this event lets the timeline show the cause of the
+  // mid-turn compaction round that follows.
+  | {
+      kind: "mid_turn_stop"
+      reason: "threshold"
+      contextTokens: number
+      contextWindow: number
+      reserveTokens: number
+      at: number
+    }
+  // Pi-mono fires `auto_retry_start` when an LLM call returned a
+  // retryable error and the runner is about to retry. The matching
+  // `auto_retry_end` reports success or the final error message.
+  // Surfacing these makes "the answer flickered and was retried"
+  // visible in the timeline without diffing the run_stats footer.
+  | {
+      kind: "retry_attempt"
+      phase: "start" | "end"
+      attempt: number
+      maxAttempts?: number
+      success?: boolean
+      errorMessage?: string
+      at: number
     }
 
 export const isDetailed = (v: DebugVerbosity): boolean => v === "detailed"

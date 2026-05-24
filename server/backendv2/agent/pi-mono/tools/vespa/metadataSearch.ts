@@ -15,7 +15,7 @@
 // my semantic query" knob. Keeping them split makes the LLM's choice clear
 // and avoids muddling the semantic-search prompt with filter syntax.
 
-import { defineTool } from "@mariozechner/pi-coding-agent"
+import { defineTool } from "@earendil-works/pi-coding-agent"
 import { Type } from "@sinclair/typebox"
 
 import config from "@/config"

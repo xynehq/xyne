@@ -73,12 +73,12 @@ export class DebugCapture {
     receivedAt: number
     stopReason?: string
     text?: string
+    thinking?: string
     tokenUsage?: DebugTokenUsage
   }): void {
-    // One response event per LLM round-trip. `text` is gated to
-    // `detailed` because it can be long; the boundary itself (with
-    // stopReason + tokens) always fires so even `summary` users see
-    // every request paired with its response.
+    // text + thinking are gated to "detailed" — both can be long.
+    // Empty strings are omitted so the panel doesn't render an
+    // empty "Response text" / "Reasoning" section.
     const includeText = isDetailed(this.verbosity)
     this.publish({
       kind: "response",
@@ -86,6 +86,7 @@ export class DebugCapture {
       receivedAt: args.receivedAt,
       ...(args.stopReason ? { stopReason: args.stopReason } : {}),
       ...(includeText && args.text ? { text: args.text } : {}),
+      ...(includeText && args.thinking ? { thinking: args.thinking } : {}),
       ...(args.tokenUsage ? { tokenUsage: args.tokenUsage } : {}),
     })
   }
@@ -181,6 +182,46 @@ export class DebugCapture {
       message: args.message,
       ...(args.llmCall !== undefined ? { llmCall: args.llmCall } : {}),
       ...(args.toolName !== undefined ? { toolName: args.toolName } : {}),
+    })
+  }
+
+  /** Surfaced when our `shouldStopAfterTurn` hook halts the loop
+   *  because context crossed the compaction threshold mid-turn. */
+  public emitMidTurnStop(args: {
+    contextTokens: number
+    contextWindow: number
+    reserveTokens: number
+    at: number
+  }): void {
+    this.publish({
+      kind: "mid_turn_stop",
+      reason: "threshold",
+      contextTokens: args.contextTokens,
+      contextWindow: args.contextWindow,
+      reserveTokens: args.reserveTokens,
+      at: args.at,
+    })
+  }
+
+  /** Pi-mono `auto_retry_start` / `auto_retry_end` lifecycle. */
+  public emitRetryAttempt(args: {
+    phase: "start" | "end"
+    attempt: number
+    maxAttempts?: number
+    success?: boolean
+    errorMessage?: string
+    at: number
+  }): void {
+    this.publish({
+      kind: "retry_attempt",
+      phase: args.phase,
+      attempt: args.attempt,
+      ...(args.maxAttempts !== undefined ? { maxAttempts: args.maxAttempts } : {}),
+      ...(args.success !== undefined ? { success: args.success } : {}),
+      ...(args.errorMessage !== undefined
+        ? { errorMessage: args.errorMessage }
+        : {}),
+      at: args.at,
     })
   }
 }
