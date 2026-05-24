@@ -6,6 +6,7 @@
 
 import { Hono, type Context } from "hono"
 import { HTTPException } from "hono/http-exception"
+import { streamSSE } from "hono/streaming"
 import { z } from "zod"
 
 import {
@@ -27,6 +28,13 @@ import {
   DEFAULT_SYSTEM_PROMPT_TOOLS,
 } from "../agent/pi-mono/system-prompt"
 import { TOOL_REGISTRY } from "../agent/pi-mono/tools/registry"
+import {
+  ExtractorAgentNotFoundError,
+  MissingResponseSchemaError,
+  NotAnExtractorError,
+  runExtract,
+} from "../agent/extractor/extract"
+import { agentDeps } from "../agent/wiring"
 import subAgentsRouter from "./subAgents"
 
 type Vars = {
@@ -57,6 +65,21 @@ const handle = async (
     if (err instanceof AgentNotFoundOrForbiddenError) {
       throw new HTTPException(404, {
         message: "Agent not found or access denied",
+      })
+    }
+    if (err instanceof ExtractorAgentNotFoundError) {
+      throw new HTTPException(404, {
+        message: "Extractor not found or access denied",
+      })
+    }
+    if (err instanceof NotAnExtractorError) {
+      throw new HTTPException(400, {
+        message: "This agent is not an extractor",
+      })
+    }
+    if (err instanceof MissingResponseSchemaError) {
+      throw new HTTPException(400, {
+        message: "Extractor has no response schema configured",
       })
     }
     if (err instanceof OwnerUserOverlapError) {
@@ -147,10 +170,12 @@ router.put("/default", (c) =>
 // GET /v2/agents?limit=&offset=&filter=
 router.get("/", (c) =>
   handle(c, async () => {
+    const isExtractorRaw = c.req.query("isExtractor")
     const query = listAgentsQuerySchema.parse({
       limit: c.req.query("limit"),
       offset: c.req.query("offset"),
       filter: c.req.query("filter"),
+      ...(isExtractorRaw !== undefined ? { isExtractor: isExtractorRaw } : {}),
     })
     const agents = await service.list(authOf(c), query)
     // v1 returns a bare array here; the UI tolerates both shapes (see
@@ -237,6 +262,122 @@ router.delete("/:agentExternalId", (c) =>
     return { message: "Agent deleted successfully", agent: deleted }
   }),
 )
+
+// POST /v2/agents/:agentExternalId/extract — programmatic extractor.
+// Runs the agent's pi-mono loop on the caller's input, validates the
+// returned JSON against the agent's responseSchema, and re-prompts on
+// failure up to extractorMaxRetries. Returns either { ok: true, value }
+// or { ok: false, errors, lastRawText } plus per-attempt debug.
+const extractInputSchema = z.object({
+  input: z.string().min(1),
+  maxRetries: z.number().int().min(0).max(10).optional(),
+  modelLabel: z.string().optional(),
+  thinkingLevel: z
+    .enum(["minimal", "low", "medium", "high"])
+    .optional(),
+  debug: z.boolean().optional(),
+  debugVerbosity: z.enum(["summary", "detailed"]).optional(),
+})
+
+router.post("/:agentExternalId/extract", (c) =>
+  handle(c, async () => {
+    const id = c.req.param("agentExternalId")
+    const body = await c.req.json().catch(() => ({}))
+    const payload = extractInputSchema.parse(body)
+    const auth = authOf(c)
+    const result = await runExtract(
+      agentDeps(),
+      { email: auth.email, workspaceExternalId: auth.workspaceExternalId },
+      id,
+      {
+        input: payload.input,
+        ...(payload.maxRetries !== undefined
+          ? { maxRetries: payload.maxRetries }
+          : {}),
+        ...(payload.modelLabel ? { modelLabel: payload.modelLabel } : {}),
+        ...(payload.thinkingLevel
+          ? { thinkingLevel: payload.thinkingLevel }
+          : {}),
+        ...(payload.debug !== undefined ? { debug: payload.debug } : {}),
+        ...(payload.debugVerbosity
+          ? { debugVerbosity: payload.debugVerbosity }
+          : {}),
+      },
+    )
+    if (!result.ok) c.status(422)
+    return result
+  }),
+)
+
+// Streaming variant of /extract — emits each captured DebugEvent as
+// an SSE frame as it fires, then a final `result` frame with the
+// ExtractResult envelope. The UI subscribes here so the chat
+// DebugPanel lights up live during a long extraction; the plain
+// JSON /extract endpoint stays for programmatic callers.
+router.post("/:agentExternalId/extract/stream", (c) => {
+  return streamSSE(c, async (stream) => {
+    let payload: z.infer<typeof extractInputSchema>
+    try {
+      const body = await c.req.json().catch(() => ({}))
+      payload = extractInputSchema.parse(body)
+    } catch (err) {
+      await stream.writeSSE({
+        event: "error",
+        data: JSON.stringify({
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      })
+      return
+    }
+
+    const id = c.req.param("agentExternalId")
+    const auth = authOf(c)
+    await stream.writeSSE({ event: "ready", data: "" })
+
+    try {
+      const result = await runExtract(
+        agentDeps(),
+        { email: auth.email, workspaceExternalId: auth.workspaceExternalId },
+        id,
+        {
+          input: payload.input,
+          ...(payload.maxRetries !== undefined
+            ? { maxRetries: payload.maxRetries }
+            : {}),
+          ...(payload.modelLabel ? { modelLabel: payload.modelLabel } : {}),
+          ...(payload.thinkingLevel
+            ? { thinkingLevel: payload.thinkingLevel }
+            : {}),
+          ...(payload.debug !== undefined ? { debug: payload.debug } : {}),
+          ...(payload.debugVerbosity
+            ? { debugVerbosity: payload.debugVerbosity }
+            : {}),
+        },
+        c.req.raw.signal,
+        (event): void => {
+          stream
+            .writeSSE({
+              event: event.kind,
+              data: JSON.stringify(event),
+            })
+            .catch(() => {
+              /* client may have closed */
+            })
+        },
+      )
+      await stream.writeSSE({
+        event: "result",
+        data: JSON.stringify(result),
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      await stream.writeSSE({
+        event: "error",
+        data: JSON.stringify({ message: msg }),
+      })
+    }
+  })
+})
 
 // Sub-agents CRUD lives under each parent agent. Mounting at
 // /:agentExternalId/sub-agents so the parent id is implicit in the URL

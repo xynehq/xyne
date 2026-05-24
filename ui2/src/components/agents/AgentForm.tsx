@@ -32,6 +32,12 @@ import { EmailMultiInput } from "./EmailMultiInput"
 import { KbPickerModal, type KbSelection } from "./KbPickerModal"
 import { SubAgentsSection } from "./SubAgentsSection"
 import { ToolPicker } from "./ToolPicker"
+import { SchemaBuilder } from "./schemaBuilder/SchemaBuilder"
+import {
+  type ExtractorSchema,
+  fromJsonSchema,
+  toJsonSchema,
+} from "./schemaBuilder/types"
 
 export type AgentFormValues = AgentCreateInput
 
@@ -74,6 +80,9 @@ type Props = {
    *  slice. KB scoping is a custom-agent concept; the General agent
    *  intentionally has no docId allowlist. */
   hideKnowledge?: boolean
+  /** When true, the form renders the Extractor section (visual schema
+   *  builder + retry-count) and submits with isExtractor=true. */
+  extractor?: boolean
 }
 
 // `model` is intentionally not exposed in the form — v1's UI hardcodes
@@ -133,6 +142,7 @@ export const AgentForm = forwardRef<AgentFormHandle, Props>(function AgentForm(
     hideSharing = false,
     prefillSectionsFromDefaults = false,
     hideKnowledge = false,
+    extractor = false,
   },
   ref,
 ): JSX.Element {
@@ -145,6 +155,17 @@ export const AgentForm = forwardRef<AgentFormHandle, Props>(function AgentForm(
     initial ? kbFromAgent(initial) : [],
   )
   const [kbPickerOpen, setKbPickerOpen] = useState(false)
+  // Extractor-only state. responseSchema is round-tripped through the
+  // SchemaBuilder's internal model; toJsonSchema serialises at submit
+  // time. Both default to "empty" / 2 retries for new extractors.
+  const [extractorSchema, setExtractorSchema] = useState<ExtractorSchema>(() =>
+    fromJsonSchema(
+      (initial?.responseSchema ?? null) as Record<string, unknown> | null,
+    ),
+  )
+  const [extractorMaxRetries, setExtractorMaxRetries] = useState<number>(
+    initial?.extractorMaxRetries ?? 2,
+  )
 
   // Lazy-fetched defaults + tool catalog. Both are pure data the form
   // needs once; fetched in parallel on mount so subsequent renders are
@@ -417,6 +438,16 @@ export const AgentForm = forwardRef<AgentFormHandle, Props>(function AgentForm(
         entity: s.entity,
       })),
       appIntegrations: mergeKbIntegration(values.appIntegrations, kbSources),
+      // Extractor mode: send isExtractor + serialised JSON Schema +
+      // retry budget. Plain-agent submits leave responseSchema null
+      // and isExtractor false (server default).
+      ...(extractor
+        ? {
+            isExtractor: true,
+            responseSchema: toJsonSchema(extractorSchema),
+            extractorMaxRetries,
+          }
+        : {}),
     })
   }
 
@@ -474,6 +505,37 @@ export const AgentForm = forwardRef<AgentFormHandle, Props>(function AgentForm(
           />
         </Field>
       </Section>
+      )}
+
+      {/* Extractor — visual schema builder + retry budget. Rendered
+          only when the form is mounted in extractor mode (the
+          /extractors routes pass extractor={true}). */}
+      {extractor && (
+        <Section
+          title="Response schema"
+          hint="Define what the LLM must return. The chat service validates the response against this schema and re-prompts on mismatch."
+        >
+          <SchemaBuilder
+            value={extractorSchema}
+            onChange={setExtractorSchema}
+          />
+          <Field
+            label="Max retries on validation failure"
+            hint="How many times to re-prompt the LLM with the validation errors before giving up."
+          >
+            <input
+              type="number"
+              min={0}
+              max={10}
+              value={extractorMaxRetries}
+              onChange={(e): void => {
+                const n = Number.parseInt(e.target.value, 10)
+                setExtractorMaxRetries(Number.isFinite(n) ? Math.max(0, Math.min(10, n)) : 0)
+              }}
+              className="w-24 rounded-md border border-border bg-surface-elevated px-2 py-1 text-[13px] text-foreground focus:border-ring focus:outline-none"
+            />
+          </Field>
+        </Section>
       )}
 
       {/* Behaviour — three independently-editable prompt sections plus

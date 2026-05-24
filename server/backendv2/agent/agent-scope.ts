@@ -121,6 +121,17 @@ export type AgentScope = {
    *  for the assembler's `<subagents>` catalog. Empty array = the
    *  sub-agents section is suppressed entirely from the prompt. */
   subAgents: DispatchableSubAgent[]
+  /** Extractor flag — true when the agent must emit JSON conforming to
+   *  `responseSchema`. Drives the validator + retry loop in the extract
+   *  endpoint; chat treats extractor agents as plain agents until the
+   *  hidden retry loop lands. */
+  isExtractor: boolean
+  /** JSON Schema the extractor must satisfy. Null when isExtractor is
+   *  false, or for extractor agents whose schema is still empty. */
+  responseSchema: Record<string, unknown> | null
+  /** Max times to re-prompt the LLM with validation errors before
+   *  surfacing a final failure. */
+  extractorMaxRetries: number
 }
 
 // ─── Internal helpers ───────────────────────────────────────────────────────
@@ -495,6 +506,15 @@ export const loadAgentScope = async (
     systemPromptSubagents: agent.systemPromptSubagents ?? null,
     tools: toolNames,
     subAgents: subAgentRows,
+    isExtractor: agent.isExtractor === true,
+    responseSchema:
+      agent.responseSchema && typeof agent.responseSchema === "object"
+        ? (agent.responseSchema as Record<string, unknown>)
+        : null,
+    extractorMaxRetries:
+      typeof agent.extractorMaxRetries === "number"
+        ? agent.extractorMaxRetries
+        : 2,
   }
 }
 

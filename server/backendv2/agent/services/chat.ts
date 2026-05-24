@@ -21,6 +21,7 @@ import {
   type Block,
   type Conversation,
   type ConversationId,
+  type ConversationOrigin,
   type Cursor,
   type Message,
   type MessageFeedback,
@@ -140,8 +141,9 @@ export class ChatService {
   public async listConversations(
     viewer: Viewer,
     page: Cursor,
+    originKind: ConversationOrigin = "chat",
   ): Promise<Page<Conversation>> {
-    return this.deps.convs.listByOwner(viewer.userId, page)
+    return this.deps.convs.listByOwner(viewer.userId, page, undefined, originKind)
   }
 
   public async getConversation(

@@ -64,6 +64,11 @@ export type Block =
 
 export type BlockKind = Block["kind"]
 
+// What produced this conversation. `chat` is the normal user-driven
+// chat surface; `extract` is the programmatic extractor endpoint —
+// same tables, filtered out of the chat sidebar.
+export type ConversationOrigin = "chat" | "extract"
+
 // ─── Entities ────────────────────────────────────────────────────────────────
 export type Conversation = {
   id: ConversationId
@@ -74,6 +79,7 @@ export type Conversation = {
   createdAt: number
   updatedAt: number
   archivedAt?: number
+  originKind: ConversationOrigin
 }
 
 export type ConversationInit = {
@@ -81,6 +87,7 @@ export type ConversationInit = {
   workspaceId: WorkspaceId
   title: string
   agentId?: AgentId
+  originKind?: ConversationOrigin
 }
 
 export type ConversationPatch = {
@@ -339,6 +346,9 @@ export interface ConversationRepo {
     ownerId: UserId,
     page: Cursor,
     tx?: Tx,
+    /** When set, only conversations of this origin are returned. The chat
+     *  sidebar passes "chat" so extract-origin convs stay hidden by default. */
+    originKind?: ConversationOrigin,
   ): Promise<Page<Conversation>>
   patch(id: ConversationId, patch: ConversationPatch, tx?: Tx): Promise<void>
   softDelete(id: ConversationId, tx?: Tx): Promise<void>

@@ -60,6 +60,14 @@ export const listAgentsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional().default(50),
   offset: z.coerce.number().int().nonnegative().optional().default(0),
   filter: z.enum(["all", "madeByMe", "sharedToMe"]).optional().default("all"),
+  // Extractors are agents with isExtractor=true. Same table, separate
+  // UI surface — the list endpoint filters when the param is present.
+  // Omit → return all (back-compat with callers that don't pass it).
+  isExtractor: z.preprocess((v) => {
+    if (v === "true") return true
+    if (v === "false") return false
+    return v
+  }, z.boolean().optional()),
 })
 export type ListAgentsQuery = z.infer<typeof listAgentsQuerySchema>
 
@@ -123,6 +131,21 @@ export const createAgentSchema = z.object({
   // the runner's `undefined` path). The route layer validates that every
   // name exists in the registry in M5.
   tools: z.array(z.string()).optional(),
+
+  // ── Extractors: structured-response agents ─────────────────────────────
+  // isExtractor flips an agent into Extractor mode — same table, same
+  // shape, except the chat service validates the LLM's final text
+  // against `responseSchema` and re-prompts on failure (up to
+  // extractorMaxRetries times). responseSchema is JSON Schema; the
+  // visual builder on the form serialises to it.
+  // No `.default(…)` on the extractor fields — zod's `.partial()` keeps
+  // defaults around, which would silently demote `isExtractor` back to
+  // false (and reset `extractorMaxRetries` to 2) on any update that
+  // omits them. The service layer fills the defaults at the value-write
+  // site instead, so create-without-these-fields still works.
+  isExtractor: z.boolean().optional(),
+  responseSchema: z.record(z.string(), z.unknown()).nullable().optional(),
+  extractorMaxRetries: z.number().int().min(0).max(10).optional(),
   // Note: `isDefault` is intentionally NOT exposed on this schema. The
   // per-workspace default agent is created/maintained by M4b's
   // ensureDefaultAgent path; flipping the flag via PATCH would let a user
@@ -197,15 +220,36 @@ export class AgentsService {
     query: ListAgentsQuery,
   ): Promise<SelectPublicAgent[]> {
     const { userId, workspaceId } = await this.resolveAuth(auth)
-    const { filter, limit, offset } = query
+    const { filter, limit, offset, isExtractor } = query
     switch (filter) {
       case "madeByMe":
-        return getAgentsMadeByMe(db, userId, workspaceId, limit, offset)
+        return getAgentsMadeByMe(
+          db,
+          userId,
+          workspaceId,
+          limit,
+          offset,
+          isExtractor,
+        )
       case "sharedToMe":
-        return getAgentsSharedToMe(db, userId, workspaceId, limit, offset)
+        return getAgentsSharedToMe(
+          db,
+          userId,
+          workspaceId,
+          limit,
+          offset,
+          isExtractor,
+        )
       case "all":
       default:
-        return getAgentsAccessibleToUser(db, userId, workspaceId, limit, offset)
+        return getAgentsAccessibleToUser(
+          db,
+          userId,
+          workspaceId,
+          limit,
+          offset,
+          isExtractor,
+        )
     }
   }
 
@@ -285,6 +329,13 @@ export class AgentsService {
         payload.tools && payload.tools.length > 0
           ? payload.tools
           : allRegisteredToolNames(),
+      // Extractor mode + retry budget. responseSchema only forwards
+      // when isExtractor is true to keep plain-agent rows clean.
+      isExtractor: payload.isExtractor ?? false,
+      ...(payload.isExtractor && payload.responseSchema !== undefined
+        ? { responseSchema: payload.responseSchema }
+        : {}),
+      extractorMaxRetries: payload.extractorMaxRetries ?? 2,
     }
 
     const created = await db.transaction(async (tx) => {

@@ -119,6 +119,7 @@ export const getUserAccessibleAgents = async (
   workspaceId: number,
   limit: number = 50,
   offset: number = 0,
+  isExtractor?: boolean,
 ): Promise<SelectPublicAgent[]> => {
   const agentsArr = await trx
     .selectDistinct({
@@ -142,6 +143,9 @@ export const getUserAccessibleAgents = async (
       systemPromptSubagents: agents.systemPromptSubagents,
       tools: agents.tools,
       isDefault: agents.isDefault,
+      isExtractor: agents.isExtractor,
+      responseSchema: agents.responseSchema,
+      extractorMaxRetries: agents.extractorMaxRetries,
     })
     .from(agents)
     .leftJoin(userAgentPermissions, eq(agents.id, userAgentPermissions.agentId))
@@ -157,6 +161,9 @@ export const getUserAccessibleAgents = async (
           // Agent is public (accessible to all workspace members)
           eq(agents.isPublic, true),
         ),
+        ...(isExtractor !== undefined
+          ? [eq(agents.isExtractor, isExtractor)]
+          : []),
       ),
     )
     .orderBy(desc(agents.updatedAt))
@@ -175,6 +182,7 @@ export const getAgentsMadeByMe = async (
   workspaceId: number,
   limit: number = 50,
   offset: number = 0,
+  isExtractor?: boolean,
 ): Promise<SelectPublicAgent[]> => {
   const agentsArr = await trx
     .selectDistinct({
@@ -195,6 +203,9 @@ export const getAgentsMadeByMe = async (
       systemPromptSubagents: agents.systemPromptSubagents,
       tools: agents.tools,
       isDefault: agents.isDefault,
+      isExtractor: agents.isExtractor,
+      responseSchema: agents.responseSchema,
+      extractorMaxRetries: agents.extractorMaxRetries,
     })
     .from(agents)
     .innerJoin(
@@ -209,6 +220,9 @@ export const getAgentsMadeByMe = async (
         isNull(agents.deletedAt),
         eq(userAgentPermissions.userId, userId),
         eq(userAgentPermissions.role, UserAgentRole.Owner),
+        ...(isExtractor !== undefined
+          ? [eq(agents.isExtractor, isExtractor)]
+          : []),
       ),
     )
     .orderBy(desc(agents.updatedAt))
@@ -227,6 +241,7 @@ export const getAgentsSharedToMe = async (
   workspaceId: number,
   limit: number = 50,
   offset: number = 0,
+  isExtractor?: boolean,
 ): Promise<SelectPublicAgent[]> => {
   const agentsArr = await trx
     .selectDistinct({
@@ -247,6 +262,9 @@ export const getAgentsSharedToMe = async (
       systemPromptSubagents: agents.systemPromptSubagents,
       tools: agents.tools,
       isDefault: agents.isDefault,
+      isExtractor: agents.isExtractor,
+      responseSchema: agents.responseSchema,
+      extractorMaxRetries: agents.extractorMaxRetries,
     })
     .from(agents)
     .innerJoin(
@@ -261,6 +279,9 @@ export const getAgentsSharedToMe = async (
         eq(agents.isDefault, false),
         eq(userAgentPermissions.userId, userId),
         eq(userAgentPermissions.role, UserAgentRole.Shared),
+        ...(isExtractor !== undefined
+          ? [eq(agents.isExtractor, isExtractor)]
+          : []),
       ),
     )
     .orderBy(desc(agents.updatedAt))

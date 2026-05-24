@@ -212,6 +212,12 @@ export type Agent = {
   // identity / sharing on this row because they don't apply (the default
   // is workspace-wide and the row's name/visibility are fixed).
   isDefault?: boolean
+  // Extractors — agents with a required structured response. The chat
+  // service validates the LLM's final text against `responseSchema`
+  // and re-prompts up to `extractorMaxRetries` times on failure.
+  isExtractor?: boolean
+  responseSchema?: Record<string, unknown> | null
+  extractorMaxRetries?: number
 }
 
 export type AgentListFilter = "all" | "madeByMe" | "sharedToMe"
@@ -220,6 +226,9 @@ export type ListAgentsParams = {
   limit?: number
   offset?: number
   filter?: AgentListFilter
+  // Filter by Extractor flag. Omit → both. Used by /extractors page
+  // to hide plain agents and vice-versa.
+  isExtractor?: boolean
 }
 
 export type AgentCreateInput = {
@@ -245,6 +254,11 @@ export type AgentCreateInput = {
   systemPromptTools?: string | null
   systemPromptSubagents?: string | null
   tools?: string[]
+  // Extractors. responseSchema is JSON Schema (Record-shaped) — the
+  // visual builder on the form serialises to it. Omit on plain agents.
+  isExtractor?: boolean
+  responseSchema?: Record<string, unknown> | null
+  extractorMaxRetries?: number
 }
 
 export type AgentUpdateInput = Partial<AgentCreateInput>
@@ -256,6 +270,8 @@ export const listAgents = async (
   if (params.limit !== undefined) qs.set("limit", String(params.limit))
   if (params.offset !== undefined) qs.set("offset", String(params.offset))
   if (params.filter !== undefined) qs.set("filter", params.filter)
+  if (params.isExtractor !== undefined)
+    qs.set("isExtractor", String(params.isExtractor))
   const q = qs.toString()
   const res = await apiFetch<{ agents: Agent[] }>(
     `/v2/agents${q ? `?${q}` : ""}`,
@@ -311,6 +327,200 @@ export const deleteAgent = (externalId: string): Promise<void> =>
   apiFetch<void>(`/v2/agents/${encodeURIComponent(externalId)}`, {
     method: "DELETE",
   })
+
+// ── Extractor run (POST /v2/agents/:id/extract) ─────────────────────────────
+export type ValidationError = { path: string; message: string }
+
+export type ExtractAttemptDebug = {
+  attempt: number
+  /** v2_chat_runs.id of the attempt — used as the key into the shared
+   *  debug-event store so the chat DebugPanel can render this run. */
+  runId: string
+  durationMs: number
+  rawText: string
+  rawJson?: string
+  ok: boolean
+  errors?: ValidationError[]
+  /** DebugEvent[] captured server-side. Typed as `unknown` here to
+   *  avoid a type-import cycle with debug-store; the use page narrows
+   *  to DebugEvent when seeding the store. */
+  debugEvents: unknown[]
+}
+
+export type ExtractTokenUsage = {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+}
+
+export type ExtractResult =
+  | {
+      ok: true
+      conversationId: string
+      value: unknown
+      attempts: number
+      tokenUsage: ExtractTokenUsage
+      debug: ExtractAttemptDebug[]
+    }
+  | {
+      ok: false
+      conversationId: string
+      errors: ValidationError[]
+      lastRawText: string
+      attempts: number
+      tokenUsage: ExtractTokenUsage
+      debug: ExtractAttemptDebug[]
+    }
+
+export type ExtractInput = {
+  input: string
+  maxRetries?: number
+  modelLabel?: string
+  thinkingLevel?: "minimal" | "low" | "medium" | "high"
+  /** Opt-in debug capture — same model as chat. When true, the
+   *  backend allocates a DebugCapture at the chosen verbosity and
+   *  emits events over the stream (and into the JSON response). */
+  debug?: boolean
+  debugVerbosity?: "summary" | "detailed"
+}
+
+/** A block on a persisted v2_chat_message — same shape used by the
+ *  chat viewer. The extract use-page renders these to show the agent's
+ *  tool trace and thinking inline. */
+export type TraceBlock =
+  | { kind: "text"; text: string }
+  | { kind: "thinking"; text: string }
+  | {
+      kind: "tool_use"
+      toolCallId: string
+      toolName: string
+      args: unknown
+    }
+  | {
+      kind: "tool_result"
+      toolCallId: string
+      output: unknown
+      isError?: boolean
+    }
+  | { kind: "error"; code: string; message: string }
+
+export type TraceMessage = {
+  id: string
+  role: "user" | "assistant" | "system"
+  blocks: TraceBlock[]
+}
+
+/** Fetch every persisted message for a conversation. Used by the
+ *  extract use-page to show the agent's tool trace + thinking after
+ *  the run completes (the /extract response only carries final text
+ *  and validator errors; tool calls live in v2_chat_blocks). */
+export const getConversationTrace = (
+  conversationId: string,
+): Promise<{ items: TraceMessage[] }> =>
+  apiFetch<{ items: TraceMessage[] }>(
+    `/v2/chat/conversations/${encodeURIComponent(conversationId)}/messages?limit=200`,
+  )
+
+export type ExtractStreamFrame =
+  | { kind: "debug_event"; runId: string; event: unknown }
+  | { kind: "result"; result: ExtractResult }
+  | { kind: "error"; message: string }
+  | { kind: "ready" }
+
+/**
+ * Run the extractor over SSE. Each captured DebugEvent is streamed
+ * live as a `debug_event` frame so the UI's DebugChip lights up
+ * mid-run; the final `result` frame carries the ExtractResult
+ * envelope (success or post-retry failure). On transport / parse
+ * errors the returned promise rejects.
+ *
+ * Callers consume frames via the `onFrame` callback and resolve
+ * with the final ExtractResult.
+ */
+export const runExtractor = async (
+  externalId: string,
+  input: ExtractInput,
+  onFrame: (frame: ExtractStreamFrame) => void,
+  signal?: AbortSignal,
+): Promise<ExtractResult> => {
+  const send = (): Promise<Response> =>
+    fetch(`/v2/agents/${encodeURIComponent(externalId)}/extract/stream`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      body: JSON.stringify(input),
+      ...(signal ? { signal } : {}),
+    })
+  let res = await send()
+  if (res.status === 401) {
+    const refreshed = await tryRefresh()
+    if (refreshed) res = await send()
+  }
+  if (!res.ok || !res.body) {
+    let message = `HTTP ${String(res.status)}`
+    try {
+      const body = (await res.json()) as { error?: string; message?: string }
+      message = body.error ?? body.message ?? message
+    } catch {
+      // ignore
+    }
+    throw new ApiError(res.status, message)
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ""
+  let finalResult: ExtractResult | null = null
+  let streamError: string | null = null
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    // SSE event framing: events separated by a blank line.
+    let sepIdx: number
+    while ((sepIdx = buffer.indexOf("\n\n")) !== -1) {
+      const raw = buffer.slice(0, sepIdx)
+      buffer = buffer.slice(sepIdx + 2)
+      let eventName = "message"
+      let data = ""
+      for (const line of raw.split("\n")) {
+        if (line.startsWith("event:")) eventName = line.slice(6).trim()
+        else if (line.startsWith("data:")) data += line.slice(5).trim()
+      }
+      if (eventName === "ready") {
+        onFrame({ kind: "ready" })
+      } else if (eventName === "debug_event" && data) {
+        const parsed = JSON.parse(data) as {
+          runId: string
+          event: unknown
+        }
+        onFrame({
+          kind: "debug_event",
+          runId: parsed.runId,
+          event: parsed.event,
+        })
+      } else if (eventName === "result" && data) {
+        finalResult = JSON.parse(data) as ExtractResult
+        onFrame({ kind: "result", result: finalResult })
+      } else if (eventName === "error" && data) {
+        const parsed = JSON.parse(data) as { message: string }
+        streamError = parsed.message
+        onFrame({ kind: "error", message: streamError })
+      }
+    }
+  }
+
+  if (streamError) throw new ApiError(500, streamError)
+  if (!finalResult) {
+    throw new ApiError(500, "Extract stream ended without a result")
+  }
+  return finalResult
+}
 
 // ── Workspace-wide default agent (M4b) ──────────────────────────────────────
 // The default agent is created lazily on first GET. Every workspace member

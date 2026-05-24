@@ -33,6 +33,7 @@ import {
   type AppendTurnResult,
   type Block,
   type Conversation,
+  type ConversationOrigin,
   type ConversationId,
   type ConversationInit,
   type ConversationPatch,
@@ -122,6 +123,7 @@ const rowToConversation = (row: ConvRow): Conversation => {
     title: row.title,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    originKind: row.originKind === "extract" ? "extract" : "chat",
   }
   if (row.agentId) c.agentId = asAgentId(row.agentId)
   if (row.archivedAt !== null) c.archivedAt = row.archivedAt
@@ -286,6 +288,7 @@ export class PostgresConversationRepo implements ConversationRepo {
         updatedAt: ts,
         nextOrdinal: 0,
         idemKey,
+        originKind: init.originKind ?? "chat",
       })
       .returning()
     const row = rows[0]
@@ -313,6 +316,7 @@ export class PostgresConversationRepo implements ConversationRepo {
     ownerId: UserId,
     page: Cursor,
     tx?: Tx,
+    originKind?: ConversationOrigin,
   ): Promise<Page<Conversation>> {
     const client = clientOf(tx)
     const limit = clampLimit(page.limit)
@@ -341,6 +345,9 @@ export class PostgresConversationRepo implements ConversationRepo {
       eq(v2ChatConversations.ownerId, ownerId),
       isNull(v2ChatConversations.archivedAt),
     ]
+    if (originKind) {
+      conditions.push(eq(v2ChatConversations.originKind, originKind))
+    }
     if (cursorCreatedAt !== null && cursorId !== null) {
       const tupleAfter = or(
         lt(v2ChatConversations.createdAt, cursorCreatedAt),

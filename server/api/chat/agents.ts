@@ -163,6 +163,9 @@ const createMockAgentFromFormData = (
       systemPromptSubagents: formData.systemPromptSubagents ?? null,
       tools: formData.tools ?? [],
       isDefault: false,
+      isExtractor: false,
+      responseSchema: null,
+      extractorMaxRetries: 2,
     }
 
     const agentPromptForLLM = JSON.stringify(agentForDb)

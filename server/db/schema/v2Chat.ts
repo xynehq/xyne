@@ -58,6 +58,15 @@ export const v2ChatMessageFeedbackRatingEnum = pgEnum(
   ["like", "dislike"],
 )
 
+// What produced this conversation. `chat` is the normal user-driven chat
+// surface; `extract` is the programmatic extractor endpoint, which writes
+// to the same tables so its run is replayable and debug-inspectable but is
+// filtered out of the default chat sidebar.
+export const v2ChatConversationOriginEnum = pgEnum(
+  "v2_chat_conversation_origin",
+  ["chat", "extract"],
+)
+
 // ─── Conversations ──────────────────────────────────────────────────────────
 export const v2ChatConversations = pgTable(
   "v2_chat_conversations",
@@ -72,6 +81,9 @@ export const v2ChatConversations = pgTable(
     archivedAt: bigint("archived_at", { mode: "number" }),
     nextOrdinal: integer("next_ordinal").notNull().default(0),
     idemKey: text("idem_key").notNull(),
+    originKind: v2ChatConversationOriginEnum("origin_kind")
+      .notNull()
+      .default("chat"),
   },
   (table) => ({
     idemUnique: uniqueIndex("v2_chat_conv_idem_unique").on(table.idemKey),
@@ -79,6 +91,7 @@ export const v2ChatConversations = pgTable(
       table.ownerId,
       table.createdAt,
     ),
+    originIndex: index("v2_chat_conv_origin_index").on(table.originKind),
   }),
 )
 

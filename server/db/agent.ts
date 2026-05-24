@@ -214,8 +214,9 @@ export const getAgentsAccessibleToUser = async (
   workspaceId: number,
   limit: number = 50,
   offset: number = 0,
+  isExtractor?: boolean,
 ): Promise<SelectPublicAgent[]> => {
-  return getUserAccessibleAgents(trx, userId, workspaceId, limit, offset)
+  return getUserAccessibleAgents(trx, userId, workspaceId, limit, offset, isExtractor)
 }
 
 // to list all the agent which are there is respective of who has created it

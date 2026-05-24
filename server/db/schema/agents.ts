@@ -79,6 +79,17 @@ export const agents = pgTable(
     // to when a turn has no agent scope. Enforced as "at most one per
     // workspace" via the partial unique index below.
     isDefault: boolean("is_default").notNull().default(false),
+
+    // Extractor agents are custom agents with a required structured
+    // response. The chat service validates the final assistant text
+    // against `responseSchema` after the run completes; on failure it
+    // re-prompts the agent (up to `extractorMaxRetries`) with the
+    // validation errors so it can self-correct.
+    isExtractor: boolean("is_extractor").notNull().default(false),
+    responseSchema: jsonb("response_schema"),
+    extractorMaxRetries: integer("extractor_max_retries")
+      .notNull()
+      .default(2),
   },
   (table) => ({
     agentWorkspaceIdIndex: index("agent_workspace_id_index").on(
