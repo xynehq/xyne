@@ -313,6 +313,12 @@ router.get("/collections/:clId/items/:itemId/breadcrumb", async (c) => {
 
   const chain: { id: string; name: string }[] = []
   let cur: CollectionItem | null = await getCollectionItemById(db, itemId)
+  // Capture the leaf's vespaDocId on the way up so the UI can show
+  // the "View Vespa document" affordance in the PDF viewer toolbar
+  // (chat citations already pass it through CitationTab; KB route
+  // doesn't have it and needs to read it from here).
+  const leafVespaDocId =
+    cur && cur.collectionId === clId ? (cur.vespaDocId ?? null) : null
   while (cur && cur.collectionId === clId) {
     chain.unshift({ id: cur.id, name: cur.name })
     if (!cur.parentId) {
@@ -320,7 +326,7 @@ router.get("/collections/:clId/items/:itemId/breadcrumb", async (c) => {
     }
     cur = await getCollectionItemById(db, cur.parentId)
   }
-  return c.json({ chain })
+  return c.json({ chain, vespaDocId: leafVespaDocId })
 })
 
 // POST /v2/kb/collections/:clId/folders  body: { name, parentId? }

@@ -32,7 +32,10 @@ export type ItemRow = {
 
 type ListItemsResponse = { items: ItemRow[] }
 type ListCollectionsResponse = { collections: CollectionRow[] }
-type BreadcrumbResponse = { chain: { id: string; name: string }[] }
+type BreadcrumbResponse = {
+  chain: { id: string; name: string }[]
+  vespaDocId?: string | null
+}
 type UploadResponse = {
   results: Array<
     | { success: true; itemId: string; name: string }
@@ -144,6 +147,18 @@ export const getBreadcrumb = async (
   )
   return res.chain
 }
+
+// Same call as getBreadcrumb but exposes the leaf file's
+// vespaDocId — used by the PdfViewer to enable the "View Vespa
+// document" toolbar button when the host route didn't pass one in
+// (KB file route doesn't have docId on hand; citation panel does).
+export const getBreadcrumbWithDocId = (
+  clId: string,
+  itemId: string,
+): Promise<BreadcrumbResponse> =>
+  apiFetch<BreadcrumbResponse>(
+    `/v2/kb/collections/${clId}/items/${itemId}/breadcrumb`,
+  )
 
 export const fileContentUrl = (clId: string, itemId: string): string =>
   `/v2/kb/collections/${clId}/files/${itemId}/content`

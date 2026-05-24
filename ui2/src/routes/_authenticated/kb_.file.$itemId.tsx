@@ -7,6 +7,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { ArrowLeft } from "lucide-react"
 
+import { DebugDock } from "@/components/DebugDock"
 import { PdfViewer } from "@/components/PdfViewer"
 
 type ViewerSearch = { cl?: string; page?: number }
@@ -59,6 +60,11 @@ function PdfViewerRoute(): JSX.Element {
       clId={cl}
       itemId={itemId}
       {...(page !== undefined ? { initialPage: page } : {})}
+      // Render the DebugDock INSIDE the PdfViewer as rightSlot so
+      // the toolbar above spans the union of PDF + DebugDock —
+      // the user wanted the toolbar to claim the full width even
+      // when the Vespa-document inspector opens on the right.
+      rightSlot={<DebugDock />}
       leading={
         <button
           type="button"

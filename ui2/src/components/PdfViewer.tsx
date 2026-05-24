@@ -44,7 +44,7 @@ import {
   X,
 } from "lucide-react"
 
-import { fileContentUrl, getBreadcrumb } from "@/lib/kb"
+import { fileContentUrl, getBreadcrumbWithDocId } from "@/lib/kb"
 import { openVespaDoc } from "@/lib/vespa-doc-store"
 
 // Worker is shipped from ui2/public/. The route-relative resolution
@@ -93,6 +93,12 @@ export type PdfViewerProps = {
   /** Display name used as the Vespa-doc tab label. Falls back to
    *  docName / itemId. */
   vespaDocName?: string | undefined
+  /** Optional right-side companion (e.g. <DebugDock />) rendered
+   *  alongside the scroll area, INSIDE the viewer's body. Lets the
+   *  toolbar at the top span the whole PdfViewer including this
+   *  slot, which the KB file route relies on so the Vespa-document
+   *  inspector tab sits under the same toolbar bar. */
+  rightSlot?: React.ReactNode
 }
 
 export function PdfViewer({
@@ -107,6 +113,7 @@ export function PdfViewer({
   hideDownload = false,
   vespaDocId,
   vespaDocName,
+  rightSlot,
 }: PdfViewerProps): JSX.Element {
   pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_WORKER_URL
 
@@ -132,6 +139,13 @@ export function PdfViewer({
   const [currentPage, setCurrentPage] = useState<number>(1)
   const [scalePct, setScalePct] = useState<number>(110)
   const [docName, setDocName] = useState<string>(docNameProp ?? "Document")
+  // Self-resolved Vespa docId for the toolbar inspector button when
+  // the host route didn't pass one (KB file route). Prefer the prop
+  // when set; fall back to whatever the breadcrumb returns. null
+  // suppresses the button until we have an answer.
+  const [resolvedVespaDocId, setResolvedVespaDocId] = useState<string | null>(
+    vespaDocId ?? null,
+  )
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">(
     "loading",
   )
@@ -164,18 +178,29 @@ export function PdfViewer({
 
   const fileUrl = `${window.location.origin}${fileContentUrl(clId, itemId)}`
 
-  // ── Breadcrumb-name fallback ────────────────────────────────────────
+  // ── Breadcrumb-name + vespaDocId fallback ───────────────────────────
+  // One round-trip resolves both: the file's display name (when the
+  // host didn't pass docName) AND the leaf's vespaDocId (when the host
+  // didn't pass vespaDocId). The KB file route needs both; the citation
+  // panel passes both as props so this becomes a no-op there.
   useEffect((): (() => void) | undefined => {
-    if (docNameProp) {
-      setDocName(docNameProp)
+    if (docNameProp) setDocName(docNameProp)
+    if (vespaDocId) setResolvedVespaDocId(vespaDocId)
+    if (docNameProp && vespaDocId !== undefined && vespaDocId !== null) {
+      // Both already provided — skip the network call.
       return undefined
     }
     let cancelled = false
-    void getBreadcrumb(clId, itemId)
-      .then((chain): void => {
+    void getBreadcrumbWithDocId(clId, itemId)
+      .then((res): void => {
         if (cancelled) return
-        const last = chain[chain.length - 1]
-        if (last?.name) setDocName(last.name)
+        if (!docNameProp) {
+          const last = res.chain[res.chain.length - 1]
+          if (last?.name) setDocName(last.name)
+        }
+        if (!vespaDocId && res.vespaDocId) {
+          setResolvedVespaDocId(res.vespaDocId)
+        }
       })
       .catch((): void => {
         /* keep fallback */
@@ -183,7 +208,7 @@ export function PdfViewer({
     return (): void => {
       cancelled = true
     }
-  }, [clId, itemId, docNameProp])
+  }, [clId, itemId, docNameProp, vespaDocId])
 
   // ── Viewer lifecycle ────────────────────────────────────────────────
   //
@@ -219,7 +244,13 @@ export function PdfViewer({
 
     eventBus.on("pagesinit", () => {
       // Default to a comfortable fit. Users can override via zoom controls.
-      viewer.currentScaleValue = "page-width"
+      // Default to literal 100% zoom in every host. The page will
+      // be narrower than the panel on wide monitors; the centering
+      // CSS on the scroll container (.pdfViewer { min-width: 100% }
+      // + .page { margin: 0 auto }) puts the page in the middle so
+      // the empty space is equal on both sides. The toolbar above
+      // stays full-width regardless.
+      viewer.currentScaleValue = "1"
       setScalePct(Math.round((viewer.currentScale ?? 1) * 100))
     })
     eventBus.on("pagechanging", (evt: { pageNumber: number }) => {
@@ -502,7 +533,7 @@ export function PdfViewer({
             <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
           </button>
 
-          {vespaDocId && (
+          {resolvedVespaDocId && (
             <>
               <span className="mx-2 h-4 w-px bg-border" aria-hidden />
               <button
@@ -511,8 +542,8 @@ export function PdfViewer({
                 title="View Vespa document — inspect the raw indexed chunks"
                 onClick={(): void => {
                   openVespaDoc({
-                    docId: vespaDocId,
-                    name: vespaDocName ?? docNameProp ?? itemId,
+                    docId: resolvedVespaDocId,
+                    name: vespaDocName ?? docName,
                     itemId,
                     collectionId: clId,
                   })
@@ -558,10 +589,13 @@ export function PdfViewer({
           place the viewer div inside this scroll wrapper. The wrapper
           itself owns the scrollbar; the inner `.pdfViewer` div is what
           PDFViewer mutates. */}
-      <div className="relative flex-1 overflow-hidden">
+      {/* Body row: PDF scroll area on the left, optional rightSlot
+          on the right. Toolbar above spans the union of both. */}
+      <div className="flex min-h-0 flex-1">
+      <div className="relative min-w-0 flex-1 overflow-hidden">
         <div
           ref={containerRef}
-          className="pdf-host absolute inset-0 overflow-auto bg-surface-muted/30"
+          className="pdf-host absolute inset-0 overflow-auto bg-surface-muted/30 [&_.pdfViewer]:min-w-full [&_.pdfViewer_.page]:!mx-auto"
         >
           <div ref={viewerInnerRef} className="pdfViewer" />
         </div>
@@ -580,6 +614,8 @@ export function PdfViewer({
             <p className="text-[12.5px] text-muted-foreground">{loadError}</p>
           </div>
         )}
+      </div>
+      {rightSlot}
       </div>
     </div>
   )
