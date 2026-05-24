@@ -77,6 +77,8 @@ const KB_COLUMNS: ReadonlyArray<ColumnDef> = [
   { key: "updated", header: "Updated", width: "140px" },
 ]
 
+const ITEMS_PAGE_SIZE = 50
+
 function KnowledgeRoute(): JSX.Element {
   const { cl, parent, q } = Route.useSearch()
   const navigate = useNavigate({ from: Route.fullPath })
@@ -95,6 +97,17 @@ function KnowledgeRoute(): JSX.Element {
   const [dialog, setDialog] = useState<"collection" | "folder" | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const mainRef = useRef<HTMLElement | null>(null)
+  const [totalItems, setTotalItems] = useState(0)
+  const [serverFolderCount, setServerFolderCount] = useState(0)
+  const [serverFileCount, setServerFileCount] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const sentinelRef = useRef<HTMLDivElement | null>(null)
+  const itemsLenRef = useRef(0)
+  const loadMoreTokenRef = useRef(0)
+  useEffect((): void => {
+    itemsLenRef.current = items.length
+  }, [items.length])
 
   // App-wide uploads scoped to this folder. Survives unmount: navigating
   // away and back leaves the placeholders + XHRs intact.
@@ -114,6 +127,7 @@ function KnowledgeRoute(): JSX.Element {
   // Load collections at root, items inside a collection.
   useEffect((): (() => void) | void => {
     let cancelled = false
+    loadMoreTokenRef.current += 1
     setLoading(true)
     if (currentCl === null) {
       listCollections()
@@ -122,6 +136,10 @@ function KnowledgeRoute(): JSX.Element {
             setCollections(rows)
             setItems([])
             setBreadcrumb([])
+            setTotalItems(0)
+            setServerFolderCount(0)
+            setServerFileCount(0)
+            setHasMore(false)
           }
         })
         .catch((err: unknown): void => {
@@ -142,15 +160,22 @@ function KnowledgeRoute(): JSX.Element {
       // user deep-links straight into /kb?cl=<id>. Cheap call — keeps
       // the lookup robust without a dedicated single-collection fetch.
       Promise.all([
-        listItems(currentCl, currentParent),
+        listItems(currentCl, currentParent, {
+          limit: ITEMS_PAGE_SIZE,
+          offset: 0,
+        }),
         currentParent ? getBreadcrumb(currentCl, currentParent) : Promise.resolve([]),
         listCollections(),
       ])
-        .then(([rows, chain, cols]): void => {
+        .then(([resp, chain, cols]): void => {
           if (cancelled) {
             return
           }
-          setItems(rows)
+          setItems(resp.items)
+          setTotalItems(resp.total)
+          setServerFolderCount(resp.folderCount)
+          setServerFileCount(resp.fileCount)
+          setHasMore(resp.hasMore)
           setBreadcrumb(chain)
           setCollections(cols)
           // Any row present in the server listing means the upload bytes
@@ -158,7 +183,7 @@ function KnowledgeRoute(): JSX.Element {
           // uploadStatus because the processor worker isn't necessarily
           // running (e.g. backendv2 standalone on DGX) and we'd never
           // see "completed".
-          for (const row of rows) {
+          for (const row of resp.items) {
             uploadStore.markSeen(row.id)
           }
         })
@@ -184,6 +209,69 @@ function KnowledgeRoute(): JSX.Element {
       cancelled = true
     }
   }, [currentCl, currentParent, reloadKey, navigate])
+
+  const loadMore = useCallback((): void => {
+    if (!currentCl || loadingMore || !hasMore) {
+      return
+    }
+    setLoadingMore(true)
+    const myToken = ++loadMoreTokenRef.current
+    const offset = itemsLenRef.current
+    listItems(currentCl, currentParent, {
+      limit: ITEMS_PAGE_SIZE,
+      offset,
+    })
+      .then((resp): void => {
+        if (myToken !== loadMoreTokenRef.current) {
+          return
+        }
+        setItems((prev) => [...prev, ...resp.items])
+        setTotalItems(resp.total)
+        setServerFolderCount(resp.folderCount)
+        setServerFileCount(resp.fileCount)
+        setHasMore(resp.hasMore)
+        for (const row of resp.items) {
+          uploadStore.markSeen(row.id)
+        }
+      })
+      .catch((err: unknown): void => {
+        if (myToken !== loadMoreTokenRef.current) {
+          return
+        }
+        const msg = err instanceof Error ? err.message : "Failed to load more"
+        toast.error(`Could not load more — ${msg}`)
+      })
+      .finally((): void => {
+        if (myToken === loadMoreTokenRef.current) {
+          setLoadingMore(false)
+        }
+      })
+  }, [currentCl, currentParent, hasMore, loadingMore])
+
+  useEffect((): (() => void) | undefined => {
+    if (!hasMore) {
+      return undefined
+    }
+    const sentinel = sentinelRef.current
+    const root = mainRef.current
+    if (!sentinel || !root) {
+      return undefined
+    }
+    const io = new IntersectionObserver(
+      (observed) => {
+        for (const entry of observed) {
+          if (entry.isIntersecting) {
+            loadMore()
+          }
+        }
+      },
+      { root, rootMargin: "200px" },
+    )
+    io.observe(sentinel)
+    return (): void => {
+      io.disconnect()
+    }
+  }, [hasMore, loadMore])
 
   // Map rows → BrowserEntry for the browse view. When the search input has
   // a non-empty query we switch the main pane to inline search results
@@ -471,10 +559,13 @@ function KnowledgeRoute(): JSX.Element {
     ? currentCollection?.name ?? "Collection"
     : "Knowledge"
 
-  const folderCount = entries.filter((e) => e.kind === "folder").length
-  const fileCount = entries.length - folderCount
   const isAtRoot = currentCl === null
   const isAtCollectionRoot = currentCl !== null && currentParent === null
+  const folderCount = isAtRoot
+    ? entries.filter((e) => e.kind === "folder").length
+    : serverFolderCount
+  const fileCount = isAtRoot ? entries.length - folderCount : serverFileCount
+  const itemTotal = isAtRoot ? entries.length : totalItems
 
   return (
     <div
@@ -630,7 +721,7 @@ function KnowledgeRoute(): JSX.Element {
                     ? entries.length === 0
                       ? "No collections yet"
                       : `${String(entries.length)} collection${entries.length === 1 ? "" : "s"}`
-                    : entries.length === 0
+                    : itemTotal === 0
                       ? "This folder is empty"
                       : `${String(folderCount)} folder${folderCount === 1 ? "" : "s"} · ${String(fileCount)} file${fileCount === 1 ? "" : "s"}`}
               </p>
@@ -673,6 +764,20 @@ function KnowledgeRoute(): JSX.Element {
                   scrollParentRef={mainRef}
                 />
               )}
+
+              {hasMore ? (
+                <div
+                  ref={sentinelRef}
+                  className="flex h-12 items-center justify-center pt-2 text-[12px] text-muted-foreground"
+                >
+                  {loadingMore ? (
+                    <Loader2
+                      className="h-3.5 w-3.5 animate-spin"
+                      strokeWidth={1.75}
+                    />
+                  ) : null}
+                </div>
+              ) : null}
             </>
           )}
         </div>

@@ -30,7 +30,14 @@ export type ItemRow = {
   createdAt: string
 }
 
-type ListItemsResponse = { items: ItemRow[] }
+export type ListItemsResponse = {
+  items: ItemRow[]
+  total: number
+  folderCount: number
+  fileCount: number
+  hasMore: boolean
+  canWrite?: boolean
+}
 type ListCollectionsResponse = { collections: CollectionRow[] }
 type BreadcrumbResponse = {
   chain: { id: string; name: string }[]
@@ -92,12 +99,22 @@ export const collectionToFolderEntry = (c: CollectionRow): FolderEntry => {
 export const listItems = async (
   clId: string,
   parentId: string | null,
-): Promise<ItemRow[]> => {
-  const qs = parentId ? `?parentId=${encodeURIComponent(parentId)}` : ""
-  const res = await apiFetch<ListItemsResponse>(
-    `/v2/kb/collections/${clId}/items${qs}`,
+  opts: { limit?: number; offset?: number } = {},
+): Promise<ListItemsResponse> => {
+  const params = new URLSearchParams()
+  if (parentId) {
+    params.set("parentId", parentId)
+  }
+  if (opts.limit !== undefined) {
+    params.set("limit", String(opts.limit))
+  }
+  if (opts.offset !== undefined) {
+    params.set("offset", String(opts.offset))
+  }
+  const qs = params.toString()
+  return apiFetch<ListItemsResponse>(
+    `/v2/kb/collections/${clId}/items${qs ? `?${qs}` : ""}`,
   )
-  return res.items
 }
 
 export const createFolder = async (

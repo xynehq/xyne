@@ -29,6 +29,7 @@ import {
   getCollectionFileByItemId,
   getCollectionItemById,
   getCollectionItemsByParent,
+  getCollectionItemsByParentPaginated,
   getCollectionsByOwner,
   softDeleteCollection,
   softDeleteCollectionItem,
@@ -287,16 +288,54 @@ router.delete("/collections/:clId", async (c) => {
 
 // ── Items (folders + files) ────────────────────────────────────────────────
 
-// GET /v2/kb/collections/:clId/items?parentId=...
+// GET /v2/kb/collections/:clId/items?parentId=...&limit=&offset=
 router.get("/collections/:clId/items", async (c) => {
   const actor = await loadActor(c)
   const clId = c.req.param("clId")
   const { canWrite } = await loadCollection(clId, actor)
   const parentRaw = c.req.query("parentId")
   const parentId = parentRaw && parentRaw !== "" ? parentRaw : null
+
+  const limitRaw = c.req.query("limit")
+  if (limitRaw !== undefined && limitRaw !== "") {
+    const parsedLimit = Number.parseInt(limitRaw, 10)
+    const limit = Number.isFinite(parsedLimit)
+      ? Math.min(Math.max(parsedLimit, 1), 200)
+      : 50
+    const offsetRaw = c.req.query("offset")
+    const parsedOffset = offsetRaw ? Number.parseInt(offsetRaw, 10) : 0
+    const offset = Number.isFinite(parsedOffset) ? Math.max(parsedOffset, 0) : 0
+    const { items, total, folderCount, fileCount } =
+      await getCollectionItemsByParentPaginated(db, clId, parentId, {
+        limit,
+        offset,
+      })
+    return c.json({
+      items: items.map(toEntry),
+      total,
+      folderCount,
+      fileCount,
+      hasMore: offset + items.length < total,
+      canWrite,
+    })
+  }
+
   const items = await getCollectionItemsByParent(db, clId, parentId)
+  let folderCount = 0
+  let fileCount = 0
+  for (const it of items) {
+    if (it.type === "folder") {
+      folderCount += 1
+    } else {
+      fileCount += 1
+    }
+  }
   return c.json({
     items: items.map(toEntry),
+    total: items.length,
+    folderCount,
+    fileCount,
+    hasMore: false,
     // Echo write capability so a UI that deep-links into a collection
     // (without hitting /collections first) can hide owner-only buttons.
     canWrite,

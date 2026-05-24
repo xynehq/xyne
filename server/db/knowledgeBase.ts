@@ -284,6 +284,54 @@ export const getCollectionItemsByParent = async (
     )
 }
 
+export const getCollectionItemsByParentPaginated = async (
+  trx: TxnOrClient,
+  collectionId: string,
+  parentId: string | null,
+  opts: { limit: number; offset: number },
+): Promise<{
+  items: CollectionItem[]
+  total: number
+  folderCount: number
+  fileCount: number
+}> => {
+  const whereClause = and(
+    eq(collectionItems.collectionId, collectionId),
+    parentId
+      ? eq(collectionItems.parentId, parentId)
+      : isNull(collectionItems.parentId),
+    isNull(collectionItems.deletedAt),
+  )
+  const [items, countRows] = await Promise.all([
+    trx
+      .select()
+      .from(collectionItems)
+      .where(whereClause)
+      .orderBy(
+        desc(collectionItems.type),
+        asc(collectionItems.position),
+        asc(collectionItems.name),
+      )
+      .limit(opts.limit)
+      .offset(opts.offset),
+    trx
+      .select({
+        folderCount: sql<number>`COUNT(*) FILTER (WHERE ${collectionItems.type} = 'folder')::int`,
+        fileCount: sql<number>`COUNT(*) FILTER (WHERE ${collectionItems.type} = 'file')::int`,
+      })
+      .from(collectionItems)
+      .where(whereClause),
+  ])
+  const folderCount = countRows[0]?.folderCount ?? 0
+  const fileCount = countRows[0]?.fileCount ?? 0
+  return {
+    items,
+    total: folderCount + fileCount,
+    folderCount,
+    fileCount,
+  }
+}
+
 export const getCollectionItemByPath = async (
   trx: TxnOrClient,
   collectionId: string,
