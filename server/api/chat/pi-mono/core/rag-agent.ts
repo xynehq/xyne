@@ -271,6 +271,13 @@ export async function createRAGAgent<TState = unknown>(
     }
     const origCreateLoopConfig = agent.createLoopConfig.bind(agent)
     const debugSink = config.debug
+
+    // Stashed between shouldStopAfterTurn and the patched
+    // _checkCompaction: the trailing tool-results token estimate from
+    // the just-finished turn. Set when our hook decides to halt,
+    // consumed (and cleared) by _checkCompaction so its threshold
+    // math agrees with ours. Cleared on read.
+    let pendingTrailingTokens = 0
     agent.createLoopConfig = (opts?: unknown): LoopCfg => {
       const cfg = origCreateLoopConfig(opts)
       cfg.shouldStopAfterTurn = (ctx): boolean => {
@@ -282,13 +289,6 @@ export async function createRAGAgent<TState = unknown>(
         }
         const ctxWindow = agent.state.model?.contextWindow ?? 0
         if (ctxWindow <= 0) return false
-
-        // Assistant usage covers the input PROCESSED by this call.
-        // The tool results that just executed are NOT in that usage
-        // — they'll be in the NEXT call's input. Estimate their cost
-        // here and add to the threshold check so a huge tool result
-        // (e.g. 30k of chunks) triggers compaction BEFORE the next
-        // call is built.
         if (!message.usage) return false
         const baseTokens = calculateContextTokens(
           message.usage as Parameters<typeof calculateContextTokens>[0],
@@ -299,19 +299,62 @@ export async function createRAGAgent<TState = unknown>(
           trailing += estimateTokens(t as Parameters<typeof estimateTokens>[0])
         }
         const contextTokens = baseTokens + trailing
-
         const stop = shouldCompact(contextTokens, ctxWindow, settings)
-        if (stop && debugSink) {
-          debugSink.emitMidTurnStop({
-            contextTokens,
-            contextWindow: ctxWindow,
-            reserveTokens: settings.reserveTokens,
-            at: Date.now(),
-          })
+        if (stop) {
+          pendingTrailingTokens = trailing
+          if (debugSink) {
+            debugSink.emitMidTurnStop({
+              contextTokens,
+              contextWindow: ctxWindow,
+              reserveTokens: settings.reserveTokens,
+              at: Date.now(),
+            })
+          }
         }
         return stop
       }
       return cfg
+    }
+
+    // Patch _checkCompaction to agree with our hook. Pi-mono's
+    // default uses assistantMessage.usage only — that misses tool
+    // results that landed AFTER the assistant call. When our hook
+    // forced agent_end with a trailing-tokens > 0, fold those into
+    // the threshold check here so compaction actually fires. See
+    // earendil-works/pi#4550 (auto-closed) for the equivalent
+    // upstream fix.
+    const session = piSession as unknown as {
+      _checkCompaction: (
+        msg: { stopReason?: string; usage?: unknown },
+        skipAbortedCheck?: boolean,
+      ) => Promise<boolean>
+      _runAutoCompaction: (
+        reason: string,
+        willRetry: boolean,
+      ) => Promise<boolean>
+      settingsManager: typeof piSession.settingsManager
+    }
+    const origCheckCompaction = session._checkCompaction.bind(session)
+    session._checkCompaction = async (msg, skipAbortedCheck = true): Promise<boolean> => {
+      const trailing = pendingTrailingTokens
+      pendingTrailingTokens = 0
+      // First try the native path. If it triggers compaction, done.
+      const ranNative = await origCheckCompaction(msg, skipAbortedCheck)
+      if (ranNative) return ranNative
+      // Native skipped. If our hook had stashed trailing tokens,
+      // re-evaluate with the combined estimate.
+      if (trailing <= 0) return false
+      const settings = session.settingsManager.getCompactionSettings()
+      if (!settings.enabled) return false
+      if (msg.stopReason === "error" || msg.stopReason === "aborted") return false
+      if (!msg.usage) return false
+      const ctxWindow = agent.state.model?.contextWindow ?? 0
+      if (ctxWindow <= 0) return false
+      const base = calculateContextTokens(
+        msg.usage as Parameters<typeof calculateContextTokens>[0],
+      )
+      if (!shouldCompact(base + trailing, ctxWindow, settings)) return false
+      return await session._runAutoCompaction("threshold", false)
     }
   }
 
