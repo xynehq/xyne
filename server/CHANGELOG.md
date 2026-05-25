@@ -1,3 +1,10 @@
+## [3.60.2](https://github.com/xynehq/xyne/compare/v3.60.1...v3.60.2) (2026-05-25)
+
+
+### Bug Fixes
+
+* **db:** use tx db instance within transactions ([daece0f](https://github.com/xynehq/xyne/commit/daece0feffdabb4276265f1de16be98990dce630))
+
 ## [3.60.1](https://github.com/xynehq/xyne/compare/v3.60.0...v3.60.1) (2026-05-25)
 
 
