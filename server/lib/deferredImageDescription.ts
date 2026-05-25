@@ -3,7 +3,7 @@ import { promises as fs } from "fs"
 import path from "path"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
-import pLimit from "p-limit"
+import { globalImageDescribeLimiter } from "./globalImageDescribeLimiter"
 import { describeImageWithllm } from "./describeImageWithllm"
 
 /** Stable content key for deduping image bytes across chunkers. */
@@ -40,6 +40,8 @@ function resolveRetries(explicit?: number): number {
   const fromEnv = parseInt(process.env.IMAGE_DESCRIBE_RETRIES || "2", 10)
   return Math.max(0, Number.isFinite(fromEnv) ? fromEnv : 2)
 }
+
+const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms))
 
 /**
  * Runs fn with an AbortSignal; on timeout aborts the signal so the underlying
@@ -185,10 +187,9 @@ export class DeferredImageDescriptionBatch {
    */
   async flushDescribeQueue(describeEnabled: boolean): Promise<void> {
     if (!describeEnabled || this.pendingPathByHash.size === 0) return
-    const limit = pLimit(this.concurrency)
     await Promise.all(
       [...this.pendingPathByHash.entries()].map(([hash, filePath]) =>
-        limit(async () => {
+        globalImageDescribeLimiter(async () => {
           if (this.hashDescriptions.has(hash)) return
           let rawDescription = "No description returned."
           try {
@@ -211,9 +212,11 @@ export class DeferredImageDescriptionBatch {
               } catch (e) {
                 lastErr = e
                 if (attempt < this.describeRetries) {
+                  const backoff = 500 * Math.pow(2, attempt) // 500ms, 1s, 2s...
                   Logger.warn(
-                    `describeImage retry ${attempt + 1}/${this.describeRetries} for hash ${hash.slice(0, 8)}: ${e instanceof Error ? e.message : e}`,
+                    `describeImage retry ${attempt + 1}/${this.describeRetries} for hash ${hash.slice(0, 8)}: ${e instanceof Error ? e.message : e} (backing off ${backoff}ms)`,
                   )
+                  await sleep(backoff)
                 }
               }
             }

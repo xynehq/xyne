@@ -31,6 +31,7 @@ import {
   isDataSourceError,
 } from "./errors"
 import { describeImageWithllm } from "@/lib/describeImageWithllm"
+import { globalImageDescribeLimiter } from "@/lib/globalImageDescribeLimiter"
 import { promises as fsPromises } from "fs"
 import { PdfProcessor } from "@/lib/pdfProcessor"
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
@@ -180,10 +181,12 @@ const processImageContent = async (
   options: ProcessingOptions,
 ): Promise<VespaDataSourceFile> => {
   try {
-    const image_chunk: string = await describeImageWithllm(
-      imageBuffer,
-      options.fileName,
-      "provide only a concise and detailed description of the image",
+    const image_chunk: string = await globalImageDescribeLimiter(() =>
+      describeImageWithllm(
+        imageBuffer,
+        options.fileName,
+        "provide only a concise and detailed description of the image",
+      ),
     )
     return createVespaDataSourceFile(
       [],
