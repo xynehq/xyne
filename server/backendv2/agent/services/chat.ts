@@ -10,6 +10,11 @@ import {
 } from "../agent-scope"
 import { runPiMonoTurn } from "../pi-mono/runner"
 import { DebugCapture } from "../pi-mono/debug/capture"
+import {
+  appendPersistedEvent,
+  readPersistedEvents,
+} from "../pi-mono/debug/persist"
+import type { DebugEvent } from "../pi-mono/debug/types"
 import { resolveAgentSystemPrompt } from "../pi-mono/system-prompt"
 import type { NestedRunPersistence } from "../pi-mono/tools/dispatch-subagent"
 import { generateTitle } from "../title/generate"
@@ -437,6 +442,13 @@ export class ChatService {
               event,
             })
             .catch(() => {})
+          // Tee the same event to disk so the DebugPanel can re-seed
+          // itself after a page reload / redeploy (the SSE stream and
+          // the client-side debug-store are both ephemeral). This is
+          // fire-and-forget by contract — appendPersistedEvent returns
+          // void synchronously and swallows all IO errors internally,
+          // so a disk failure can never break the live publish above.
+          appendPersistedEvent(runId, event)
         })
       : undefined
     try {
@@ -844,6 +856,16 @@ export class ChatService {
     const { messages, runs, toolCalls } =
       await this.deps.msgs.dumpConversation(conversationId)
     return { conversation: conv, messages, runs, toolCalls }
+  }
+
+  /** Read back the debug events persisted for a run so the DebugPanel
+   *  can re-seed after a page reload (or after a redeploy — the files
+   *  live on the bind-mounted sessions volume). The route layer gates
+   *  ownership via getConversation before calling this, same as the
+   *  dump endpoint; this method just reads the JSONL file off disk and
+   *  returns [] if debug was never on for the run (no file). */
+  public async readDebugEvents(runId: string): Promise<DebugEvent[]> {
+    return readPersistedEvents(runId)
   }
 
   /** M8 — fetch the full trace of every sub-agent dispatched under a

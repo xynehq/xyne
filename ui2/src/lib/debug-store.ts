@@ -128,6 +128,25 @@ export const appendDebugEvent = (runId: string, event: DebugEvent): void => {
   notify(runId)
 }
 
+/** Seed a run's bucket from the server-persisted events (fetched once
+ *  on DebugPanel mount after a reload). Only seeds when the store has
+ *  NO entry for the runId yet — if live SSE events have already started
+ *  landing for this run we must not clobber them with a stale snapshot
+ *  (the live stream is authoritative for an in-flight run; the persisted
+ *  copy could be behind by a few events). The presence of a key (even
+ *  an empty array) means "this run is already tracked" — we leave it. */
+export const seedDebugEvents = (
+  runId: string,
+  events: DebugEvent[],
+): void => {
+  if (store.has(runId)) return
+  // Copy the incoming array so the caller can't mutate our slot, and so
+  // future appends produce a fresh reference for useSyncExternalStore.
+  store.set(runId, events.slice())
+  snapshots.delete(runId)
+  notify(runId)
+}
+
 /** Drop a run's events. Not called today; provided so a future
  *  "clear" affordance can wipe a single panel without reloading. */
 export const clearDebugEvents = (runId: string): void => {

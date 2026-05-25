@@ -189,6 +189,36 @@ router.get("/conversations/:id/dump", (c) =>
   ),
 )
 
+// GET /v2/chat/conversations/:id/debug-events?runId=...
+// Returns the debug events persisted server-side for a single run as a
+// flat JSON array. The DebugPanel calls this once on mount to re-seed
+// its in-memory store after a page reload / redeploy — the live SSE
+// stream and the client store are both ephemeral, so without this the
+// captured timeline is lost on refresh.
+//
+// Ownership is gated the same way as the dump route: getConversation
+// (run inside the service method) throws ConversationNotFoundError /
+// ForbiddenError for viewers who can't see the conversation, which
+// `handle` maps to 404 / 403. `runId` is required — a missing query
+// param is a client bug, so 400 rather than silently returning [].
+router.get("/conversations/:id/debug-events", (c) =>
+  handle(c, async () => {
+    const runId = c.req.query("runId")
+    if (!runId) {
+      throw new HTTPException(400, { message: "runId query param is required" })
+    }
+    // Gate ownership on the conversation before touching the file — a
+    // viewer who can't see the conversation must not be able to probe
+    // arbitrary runIds.
+    await service.getConversation(
+      viewer(c),
+      asConversationId(c.req.param("id")),
+    )
+    const events = await service.readDebugEvents(runId)
+    return { runId, events }
+  }),
+)
+
 // POST /v2/chat/conversations/:id/interrupt
 router.post("/conversations/:id/interrupt", (c) =>
   handle(c, async () =>

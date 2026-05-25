@@ -28,10 +28,16 @@ import {
 
 import {
   getDebugEvents,
+  seedDebugEvents,
   useDebugEvents,
   type DebugEvent,
 } from "@/lib/debug-store"
-import { getConversationDump } from "@/lib/api"
+import {
+  getConversationDump,
+  // Aliased to avoid colliding with the debug-store's getDebugEvents
+  // (the store one reads the in-memory bucket; this one hits the API).
+  getDebugEvents as fetchPersistedDebugEvents,
+} from "@/lib/api"
 import {
   openDebugDock,
   useDebugDock,
@@ -2035,6 +2041,37 @@ export function DebugChip({
 }: Props): JSX.Element | null {
   const events = useDebugEvents(runId)
   const dock = useDebugDock()
+
+  // Re-seed the in-memory store from server-persisted events once on
+  // mount. After a page reload the SSE stream and the client store are
+  // both empty, so without this the captured timeline is lost. We only
+  // fetch when the store currently has NO events for this run (a fresh
+  // load) and a conversationId is available to scope the request — for
+  // an in-flight run the live SSE events are already accumulating and
+  // seedDebugEvents would no-op anyway, so we skip the network call.
+  // Keyed on runId/conversationId; an unmount/runId-change flag guards
+  // against a late response seeding a panel that's no longer mounted.
+  useEffect(() => {
+    if (!conversationId) return
+    if (getDebugEvents(runId).length > 0) return
+    let cancelled = false
+    void fetchPersistedDebugEvents(conversationId, runId)
+      .then((res) => {
+        if (cancelled) return
+        if (res.events.length === 0) return
+        // seedDebugEvents itself no-ops if live events arrived while
+        // the request was in flight, so this can't clobber the stream.
+        seedDebugEvents(runId, res.events as DebugEvent[])
+      })
+      .catch(() => {
+        // Best-effort re-seed — a failed fetch just leaves the panel
+        // empty (same as today's no-persistence behaviour).
+      })
+    return (): void => {
+      cancelled = true
+    }
+  }, [runId, conversationId])
+
   const summary = useMemo(() => {
     let llmCalls = 0
     for (const e of events) {

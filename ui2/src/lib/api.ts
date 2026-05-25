@@ -105,6 +105,24 @@ export const getConversationDump = (
     `/v2/chat/conversations/${encodeURIComponent(conversationId)}/dump`,
   )
 
+/** Server-persisted debug events for a single run — used by the
+ *  DebugPanel to re-seed its in-memory store after a page reload /
+ *  redeploy. The live SSE stream and the client-side debug-store are
+ *  both ephemeral; this endpoint reads the JSONL the server tees to its
+ *  bind-mounted sessions volume. Returns an empty `events` array when
+ *  debug was never on for the run. Events are typed `unknown` here —
+ *  the debug-store narrows them at its boundary the same way it does
+ *  for SSE events. */
+export const getDebugEvents = (
+  conversationId: string,
+  runId: string,
+): Promise<{ runId: string; events: unknown[] }> =>
+  apiFetch<{ runId: string; events: unknown[] }>(
+    `/v2/chat/conversations/${encodeURIComponent(
+      conversationId,
+    )}/debug-events?runId=${encodeURIComponent(runId)}`,
+  )
+
 export type VespaDocInspect = {
   docId: string
   itemId: string
