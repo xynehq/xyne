@@ -180,6 +180,7 @@ import {
   mapCitationsForAgentDocument,
   parseAgentAppIntegrations,
 } from "./tools/utils"
+import { insertCitations } from "@/api/chat/insertCitations"
 import {
   documentMemoryToRawDocuments,
   getFragmentsForSynthesis,
@@ -944,6 +945,84 @@ async function finalizeMainRunResponse(args: {
     lastPersistedMessageId,
     lastPersistedMessageExternalId,
   }
+}
+
+/**
+ * Run the cite-pass after synthesis: retrieve fragments, call the focused
+ * citation-grammar LLM pass, then emit CitationsUpdate + ResponseCited so
+ * the frontend renders inline `K[N_M]` markers as clickable pills.
+ *
+ * Citations emitted are ONLY those whose source index actually appears in
+ * the cited answer's `K[N_M]` markers — otherwise the Sources panel would
+ * fill with every retrieved fragment regardless of what the model cited.
+ *
+ * On any failure (closed stream, no fragments, cite-pass error) the
+ * original answer is returned and no `cu`/`rcc` from this helper land on
+ * the wire (the legacy text-scanner's `cu` events, if any, still stand).
+ */
+async function runCitePassAndEmit(args: {
+  answer: string
+  agentContext: AgentRunContext
+  modelId: Models
+  email: string
+  stream: MainRunSSEStream
+  pathLabel: "tool_call_end" | "run_end"
+}): Promise<string> {
+  const { answer, agentContext, modelId, email, stream, pathLabel } = args
+
+  const fragments = await getFragmentsForSynthesis(agentContext.documentMemory, {
+    email: agentContext.user?.email,
+    userId: agentContext.user?.numericId ?? undefined,
+    workspaceId: agentContext.user?.workspaceNumericId ?? undefined,
+  })
+  const citedAnswer = await insertCitations({
+    answer,
+    fragments,
+    modelId,
+    email,
+  })
+  if (stream.closed) return citedAnswer
+
+  // Parse K[N_M] markers from the cited text. `citationMap` maps the 1-based
+  // source index (as it appears in K[N_M]) to its 0-based position in the
+  // emitted `contextChunks` array so the frontend can resolve each marker
+  // to a real URL.
+  const markerRegex = /K\[(\d+)_\d+\]/g
+  const referencedSources = new Set<number>()
+  let match: RegExpExecArray | null
+  while ((match = markerRegex.exec(citedAnswer)) !== null) {
+    referencedSources.add(parseInt(match[1], 10))
+  }
+  const contextChunks: Citation[] = []
+  const citationMap: Record<number, number> = {}
+  for (const sourceIdx of [...referencedSources].sort((a, b) => a - b)) {
+    const frag = fragments[sourceIdx - 1]
+    if (!frag || (!frag.source?.docId && !frag.source?.url)) continue
+    citationMap[sourceIdx] = contextChunks.length
+    contextChunks.push(frag.source)
+  }
+  if (contextChunks.length > 0) {
+    await stream.writeSSE({
+      event: ChatSSEvents.CitationsUpdate,
+      data: JSON.stringify({ contextChunks, citationMap }),
+    })
+  }
+  loggerWithChild({ email }).info(
+    {
+      pathLabel,
+      changed: citedAnswer !== answer,
+      answerLen: answer.length,
+      citedLen: citedAnswer.length,
+      referencedSourcesCount: referencedSources.size,
+      citeFragmentsEmitted: contextChunks.length,
+    },
+    "[MessageAgents] Emitting ResponseCited",
+  )
+  await stream.writeSSE({
+    event: ChatSSEvents.ResponseCited,
+    data: citedAnswer,
+  })
+  return citedAnswer
 }
 
 function formatClarificationsForPrompt(
@@ -6038,6 +6117,14 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   },
                   "[MessageAgents][FinalSynthesis] Persist + End at tool_call_end",
                 )
+                const citedAnswer = await runCitePassAndEmit({
+                  answer,
+                  agentContext,
+                  modelId: agenticModelId,
+                  email,
+                  stream,
+                  pathLabel: "tool_call_end",
+                })
                 const finalizedState = await finalizeMainRunResponse({
                   db,
                   persistContext: {
@@ -6050,7 +6137,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     requestStartMs,
                   },
                   persistData: {
-                    answer,
+                    answer: citedAnswer,
                     citations,
                     imageCitations,
                     citationMap,
@@ -6378,6 +6465,14 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   }
                 }
 
+                const citedAnswer2 = await runCitePassAndEmit({
+                  answer,
+                  agentContext,
+                  modelId: agenticModelId,
+                  email,
+                  stream,
+                  pathLabel: "run_end",
+                })
                 const finalizedState = await finalizeMainRunResponse({
                   db,
                   persistContext: {
@@ -6390,7 +6485,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     requestStartMs,
                   },
                   persistData: {
-                    answer,
+                    answer: citedAnswer2,
                     citations,
                     imageCitations,
                     citationMap,

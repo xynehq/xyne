@@ -76,6 +76,15 @@ interface PdfViewerProps {
   showNavigation?: boolean
   /** Ref to expose document operations */
   documentOperationsRef?: React.RefObject<DocumentOperations>
+  /**
+   * Fires once, the first time ANY page canvas finishes rendering. This is
+   * a "the viewer is now actually drawn on screen" signal — distinct from
+   * `pdf.js` finishing the *document* fetch/parse, which happens earlier
+   * while the canvas is still being painted. Consumers can use this to
+   * defer downstream work (e.g. replaying a chunk highlight) until the
+   * canvas is stable enough to anchor an overlay.
+   */
+  onFirstPageRendered?: () => void
 }
 
 export const PdfViewer: React.FC<PdfViewerProps> = ({
@@ -89,7 +98,16 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   displayMode = "continuous",
   showNavigation = true,
   documentOperationsRef,
+  onFirstPageRendered,
 }) => {
+  // Latch so onFirstPageRendered fires at most once per PdfViewer instance.
+  // (Each render-success on every page would otherwise fire it repeatedly.)
+  const firstPageRenderedFiredRef = useRef(false)
+  const fireFirstPageRendered = useCallback(() => {
+    if (firstPageRenderedFiredRef.current) return
+    firstPageRenderedFiredRef.current = true
+    onFirstPageRendered?.()
+  }, [onFirstPageRendered])
   const [numPages, setNumPages] = useState<number | null>(null)
   const [pageNumber, setPageNumber] = useState<number>(initialPage)
   const [currentVisiblePage, setCurrentVisiblePage] =
@@ -1054,7 +1072,10 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 key={`page_${pageNumber}`}
                 pageNumber={pageNumber}
                 scale={scale}
-                onRenderSuccess={() => mark(pageNumber, "canvas")}
+                onRenderSuccess={() => {
+                  mark(pageNumber, "canvas")
+                  fireFirstPageRendered()
+                }}
                 onRenderTextLayerSuccess={() => {
                   // ensure it's actually painted:
                   requestAnimationFrame(() => mark(pageNumber, "text"))
@@ -1114,7 +1135,10 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                           <PageWrapper
                             pageNumber={pageNum}
                             scale={scale}
-                            onRenderSuccess={() => mark(pageNum, "canvas")}
+                            onRenderSuccess={() => {
+                              mark(pageNum, "canvas")
+                              fireFirstPageRendered()
+                            }}
                             onRenderTextLayerSuccess={() => {
                               // ensure it's actually painted:
                               requestAnimationFrame(() => mark(pageNum, "text"))
