@@ -1,3 +1,10 @@
+## [3.60.1](https://github.com/xynehq/xyne/compare/v3.60.0...v3.60.1) (2026-05-25)
+
+
+### Bug Fixes
+
+* **chats:** citation regex compute ([#1335](https://github.com/xynehq/xyne/issues/1335)) ([cc02a6d](https://github.com/xynehq/xyne/commit/cc02a6dc995dc5dded736537a064b196e12a3b51))
+
 # [3.60.0](https://github.com/xynehq/xyne/compare/v3.59.2...v3.60.0) (2026-05-14)
 
 
