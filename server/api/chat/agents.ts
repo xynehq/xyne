@@ -490,7 +490,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           // we are updating the chat and getting it's value in one call itself
 
           let existingChat = await updateChatByExternalIdWithAuth(
-            db,
+            tx,
             chatId,
             email,
             {},
@@ -1430,7 +1430,7 @@ export const AgentMessageApi = async (c: Context) => {
           // we are updating the chat and getting it's value in one call itself
 
           let existingChat = await updateChatByExternalIdWithAuth(
-            db,
+            tx,
             chatId,
             email,
             {},
