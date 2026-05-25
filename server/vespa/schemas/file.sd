@@ -4,6 +4,14 @@ schema file {
     field chunk_index type int {}
     field page_numbers type array<int> {}
     field block_labels type array<string> {}
+    field bbox_l type double {}
+    field bbox_t type double {}
+    field bbox_r type double {}
+    field bbox_b type double {}
+    field bboxes_json type string {}
+    field width type int {}
+    field height type int {}
+    field headings type array<string> {}
   }
   
   document file {

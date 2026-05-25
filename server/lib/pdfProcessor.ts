@@ -266,6 +266,7 @@ export class PdfProcessor {
     fileName: string,
     vespaDocId: string,
     preflight: DoclingPreflight,
+    priority: boolean = false,
   ): Promise<ProcessingResult> {
     Logger.info(
       {
@@ -282,7 +283,7 @@ export class PdfProcessor {
       buffer,
       fileName,
       vespaDocId,
-      { timeoutMs: preflight.timeoutMs },
+      { timeoutMs: preflight.timeoutMs, priority },
     )
     return this.finalizeProcessingResult(
       {
@@ -323,6 +324,7 @@ export class PdfProcessor {
     extractImages: boolean = false,
     describeImages: boolean = false,
     useOCR: boolean = true,
+    priority: boolean = false,
   ): Promise<ProcessingResult> {
     const pageCount = await this.getPdfPageCount(buffer)
     if (pageCount !== null && pageCount > MAX_PDF_PAGE_COUNT) {
@@ -349,6 +351,7 @@ export class PdfProcessor {
             fileName,
             vespaDocId,
             doclingPreflight,
+            priority,
           )
           Logger.info(`Docling processing successful for ${fileName}`)
           return doclingResult

@@ -55,6 +55,7 @@ export class FileProcessorService {
     extractImages: boolean = false,
     describeImages: boolean = false,
     useOCR: boolean = true,
+    priority: boolean = false,
   ): Promise<ProcessingResultArray> {
     const baseMimeType = getBaseMimeType(mimeType || "text/plain")
     let chunks: string[] = []
@@ -73,6 +74,7 @@ export class FileProcessorService {
           extractImages,
           describeImages,
           useOCR,
+          priority,
         )
         // Wrap in array to match return type
         return [pdfResult]

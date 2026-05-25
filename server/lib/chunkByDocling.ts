@@ -21,6 +21,7 @@ const STATUS_FETCH_TIMEOUT_MS = 10_000
 
 type DoclingCallOptions = {
   timeoutMs?: number
+  priority?: boolean
 }
 
 function parsePositiveInteger(
@@ -37,6 +38,13 @@ function parsePositiveInteger(
 
 // Configuration from environment or config
 const DOCLING_BASE_URL = config.doclingServiceUrl || "http://localhost:8000"
+
+function resolveDoclingBaseUrl(priority?: boolean): string {
+  if (priority && config.priorityDoclingServiceUrl) {
+    return config.priorityDoclingServiceUrl
+  }
+  return DOCLING_BASE_URL
+}
 const DOCLING_TIMEOUT_MS = parsePositiveInteger(
   process.env.DOCLING_TIMEOUT_MS,
   DEFAULT_DOCLING_TIMEOUT_MS,
@@ -250,7 +258,7 @@ async function callDoclingService(
   docId: string,
   options?: DoclingCallOptions,
 ): Promise<DoclingResponse> {
-  const baseUrl = DOCLING_BASE_URL.replace(/\/+$/, "")
+  const baseUrl = resolveDoclingBaseUrl(options?.priority).replace(/\/+$/, "")
   const apiUrl = `${baseUrl}/process`
   // currentTimeoutMs grows on every "done while we were timed out" race or
   // "still running" outcome — that's direct evidence the calculated timeout
