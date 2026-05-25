@@ -1,10 +1,10 @@
 import { promises as fsPromises } from "fs"
 import * as path from "path"
-import { getLogger } from "@/logger"
-import { Subsystem, type ChunkMetadata } from "@/types"
-import type { ProcessingResult } from "@/services/fileProcessor"
-import config from "@/config"
 import { chunkTextByParagraph } from "@/chunks"
+import config from "@/config"
+import { getLogger } from "@/logger"
+import type { ProcessingResult } from "@/services/fileProcessor"
+import { type ChunkMetadata, Subsystem } from "@/types"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "chunkByDocling",
@@ -21,6 +21,13 @@ const STATUS_FETCH_TIMEOUT_MS = 10_000
 
 type DoclingCallOptions = {
   timeoutMs?: number
+}
+
+type BunFetchInit = Omit<RequestInit, "timeout"> & {
+  // Bun has a runtime-only fetch option for its HTTP socket idle timeout.
+  // Keep our AbortController deadline, but do not let Bun's default 300s idle
+  // timeout abort long-running Docling requests first.
+  timeout?: false | number
 }
 
 function parsePositiveInteger(
@@ -285,11 +292,16 @@ async function callDoclingService(
         `Calling docling service (attempt ${attempt}/${MAX_RETRIES}) timeoutMs=${currentTimeoutMs} fileSize=${buffer.length} docId=${docId}`,
       )
 
-      const response = await fetch(apiUrl, {
+      const fetchOptions: BunFetchInit = {
         method: "POST",
         body: formData,
         signal: controller.signal,
-      })
+        timeout: false,
+      }
+
+      const response = await fetch(apiUrl, {
+        ...fetchOptions,
+      } as RequestInit)
 
       clearTimeout(timer)
 
@@ -318,7 +330,10 @@ async function callDoclingService(
       lastError = error instanceof Error ? error : new Error(String(error))
 
       const isTimeout =
-        lastError.name === "AbortError" || controller.signal.aborted
+        controller.signal.aborted ||
+        lastError.name === "AbortError" ||
+        lastError.name === "TimeoutError" ||
+        (lastError as Error & { code?: unknown }).code === 23
 
       if (isTimeout) {
         // One-shot check of docling's view of this doc_id before we retry.
@@ -496,12 +511,18 @@ function transformChunks(doclingChunks: DoclingChunk[]): {
     // Normalize to 0-based to match PDF.js/OCR convention
     const pageNumbers = (chunk.page_numbers || []).map((p) => p - 1)
 
+    const bboxes = chunk.bboxes?.map((bbox) =>
+      typeof bbox.page_no === "number"
+        ? { ...bbox, page_no: bbox.page_no - 1 }
+        : bbox,
+    )
+
     chunks_map.push({
       chunk_index: index,
       page_numbers: pageNumbers,
       block_labels: blockLabels,
       bbox: chunk.bbox,
-      bboxes: chunk.bboxes,
+      bboxes,
       headings: chunk.headings,
     })
   }

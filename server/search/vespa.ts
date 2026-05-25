@@ -1,25 +1,79 @@
+import config from "@/config"
+import { NAMESPACE } from "@/config"
+import { db } from "@/db/client"
+import { getConnectorByAppAndEmailId } from "@/db/connector"
+import { getAppSyncJobsByEmail } from "@/db/syncJob"
+import { isZohoDeskConnected as checkZohoDeskConnected } from "@/integrations/zoho/utils"
 import { getLogger } from "@/logger"
+import { AuthType, ConnectorStatus } from "@/shared/types"
 import { Subsystem } from "@/types"
 import {
   Apps,
   DriveEntity,
-  fileSchema,
   type Entity,
   type GetItemsParams,
   type VespaQueryConfig,
   type VespaSchema,
   type VespaSearchResult,
+  fileSchema,
 } from "@xyne/vespa-ts/types"
-import config from "@/config"
-import { db } from "@/db/client"
-import { getConnectorByAppAndEmailId } from "@/db/connector"
-import { AuthType, ConnectorStatus } from "@/shared/types"
-import { extractDriveIds, extractCollectionVespaIds } from "./utils"
-import { getAppSyncJobsByEmail } from "@/db/syncJob"
+import { extractCollectionVespaIds, extractDriveIds } from "./utils"
 import { sharedVespaService as vespa } from "./vespaService"
-import { isZohoDeskConnected as checkZohoDeskConnected } from "@/integrations/zoho/utils"
 
 const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
+
+type VespaFieldUpdate =
+  | { assign: unknown }
+  | { add: unknown }
+  | { remove: unknown }
+
+export const updateDocumentWithOperations = async (
+  schema: VespaSchema,
+  docId: string,
+  fields: Record<string, VespaFieldUpdate>,
+) => {
+  const url = `${config.vespaEndpoint.feedEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${docId}`
+  let lastError: Error | null = null
+  const maxAttempts = Object.values(fields).some(
+    (operation) => "add" in operation,
+  )
+    ? 1
+    : config.vespaMaxRetryAttempts
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const response = await fetch(url, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ fields }),
+      })
+
+      if (response.ok) {
+        Logger.info(
+          `Updated document ${docId} in ${schema} with operations: ${Object.keys(fields).join(", ")}`,
+        )
+        return
+      }
+
+      const errorText = await response.text().catch(() => response.statusText)
+      lastError = new Error(
+        `Failed to update document ${docId}: ${response.status} ${response.statusText} - ${errorText}`,
+      )
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error))
+    }
+
+    if (attempt < maxAttempts) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, config.vespaRetryDelay * attempt),
+      )
+    }
+  }
+
+  throw lastError || new Error(`Failed to update document ${docId}`)
+}
 
 /**
  * Dedupe Vespa search children by fileHash when app is Attachment (same file re-uploaded → same hash).
@@ -125,18 +179,24 @@ export const searchVespa = async (
   // This allows users to only see tickets from their assigned departments
   const emailOrPermission = options.permissionId || email
 
-  return await vespa.searchVespa.bind(vespa)(query, emailOrPermission, app, entity, {
-    ...options,
-    appFilters: options.appFilters, // Explicitly pass appFilters
-    recencyDecayRate:
-      options.recencyDecayRate || config.defaultRecencyDecayRate,
-    isSlackConnected,
-    isDriveConnected,
-    isGmailConnected,
-    isCalendarConnected,
-    isZohoDeskConnected,
-    processedCollectionSelections,
-  })
+  return await vespa.searchVespa.bind(vespa)(
+    query,
+    emailOrPermission,
+    app,
+    entity,
+    {
+      ...options,
+      appFilters: options.appFilters, // Explicitly pass appFilters
+      recencyDecayRate:
+        options.recencyDecayRate || config.defaultRecencyDecayRate,
+      isSlackConnected,
+      isDriveConnected,
+      isGmailConnected,
+      isCalendarConnected,
+      isZohoDeskConnected,
+      processedCollectionSelections,
+    },
+  )
 }
 
 export const searchVespaAgent = async (
@@ -170,15 +230,20 @@ export const searchVespaAgent = async (
   )
 }
 
-export const searchVespaInFiles = async (...args: Parameters<typeof vespa.searchVespaInFiles>) => {
+export const searchVespaInFiles = async (
+  ...args: Parameters<typeof vespa.searchVespaInFiles>
+) => {
   const result = await vespa.searchVespaInFiles.bind(vespa)(...args)
   return dedupeResponseChildren(result)
 }
-export const searchVespaKnowledgeBase = vespa.searchVespaKnowledgeBase.bind(vespa)
+export const searchVespaKnowledgeBase =
+  vespa.searchVespaKnowledgeBase.bind(vespa)
 export const groupVespaSearch = vespa.groupVespaSearch.bind(vespa)
 export const groupVespaSearchKnowledgeBase =
   vespa.groupVespaSearchKnowledgeBase.bind(vespa)
-export const autocomplete = async (...args: Parameters<typeof vespa.autocomplete>) => {
+export const autocomplete = async (
+  ...args: Parameters<typeof vespa.autocomplete>
+) => {
   const result = await vespa.autocomplete.bind(vespa)(...args)
   return dedupeResponseChildren(result)
 }
@@ -213,11 +278,11 @@ export const getItems = async (
   const processedCollectionSelections = await extractCollectionVespaIds({
     collectionSelections: params.collectionSelections,
   })
-  
+
   // Extract permissionId and use it if available, otherwise use email
   const { permissionId, email, ...restParams } = params
   const emailOrPermission = permissionId || email
-  
+
   return await vespa.getItems.bind(vespa)({
     processedCollectionSelections,
     driveIds,
