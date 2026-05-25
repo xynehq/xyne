@@ -376,8 +376,7 @@ async function collectResolvedCitations(
     answer,
     new Set<number>(),
     fragments,
-    new Map<number, Set<number>>(),
-    "tester@example.com",
+    0, // One-shot scan from beginning
   )) {
     if (event.citation?.item?.docId) {
       citations.push(event.citation.item.docId)

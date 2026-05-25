@@ -476,7 +476,7 @@ const ChangeTokenSchema = z.discriminatedUnion("type", [
 // Define UpdatedAtVal schema
 const UpdatedAtValSchema = z.object({
   type: z.literal("updatedAt"),
-  updatedAt: z.coerce.date(),
+  updatedAt: z.date(),
 })
 
 // Define Config schema (either ChangeToken or UpdatedAtVal)

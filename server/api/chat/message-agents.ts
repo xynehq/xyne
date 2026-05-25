@@ -9,10 +9,7 @@
  * - Task-based sequential execution
  */
 
-import {
-  answerContextMapFromFragments,
-  userContext,
-} from "@/ai/context"
+import { answerContextMapFromFragments, userContext } from "@/ai/context"
 import { getModelValueFromLabel } from "@/ai/modelConfig"
 import {
   extractBestDocumentIndexes,
@@ -28,7 +25,11 @@ import {
 } from "@/db/agent"
 import { insertAgentDocument } from "@/db/agentDocuments"
 import { storeAttachmentMetadata } from "@/db/attachment"
-import { getChatExternalIdsByAgentId, insertChat, updateChatByExternalIdWithAuth } from "@/db/chat"
+import {
+  getChatExternalIdsByAgentId,
+  insertChat,
+  updateChatByExternalIdWithAuth,
+} from "@/db/chat"
 import { insertChatTrace } from "@/db/chatTrace"
 import { db } from "@/db/client"
 import { getConnectorById } from "@/db/connector"
@@ -82,11 +83,7 @@ import {
   type StreamableHTTPClientTransportOptions,
 } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { isCuid } from "@paralleldrive/cuid2"
-import {
-  Apps,
-  SearchModes,
-  type VespaSearchResult,
-} from "@xyne/vespa-ts/types"
+import { Apps, SearchModes, type VespaSearchResult } from "@xyne/vespa-ts/types"
 import {
   type Agent as JAFAgent,
   type Message as JAFMessage,
@@ -259,8 +256,8 @@ function resolveDelegatedAgentName(
     return internalCfg.name
   }
   return (
-    context.availableAgents.find((agent) => agent.agentId === agentId)?.agentName ||
-    agentId
+    context.availableAgents.find((agent) => agent.agentId === agentId)
+      ?.agentName || agentId
   )
 }
 
@@ -980,18 +977,14 @@ function sanitizeChatMemoryForLLMContext(
   if (!chatMemoryText?.trim()) return undefined
   const sanitized = chatMemoryText
     .split("\n")
-    .filter(
-      (line) => !line.trimStart().startsWith("Assistant thinking:"),
-    )
+    .filter((line) => !line.trimStart().startsWith("Assistant thinking:"))
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim()
   return sanitized ? sanitized : undefined
 }
 
-function buildLLMMemoryContextSection(
-  context: AgentRunContext,
-): string {
+function buildLLMMemoryContextSection(context: AgentRunContext): string {
   const parts: string[] = []
   if (context.episodicMemoriesText?.trim()) {
     parts.push(`Relevant Past Experiences:\n${context.episodicMemoriesText}`)
@@ -1021,9 +1014,7 @@ export async function buildFinalSynthesisPayload(
   const agentSystemPromptSection = agentSystemPromptBlock
     ? `Agent System Prompt Context:\n${agentSystemPromptBlock}`
     : ""
-  const formattedFragments = formatFragmentsWithMetadata(
-    fragments,
-  )
+  const formattedFragments = formatFragmentsWithMetadata(fragments)
   const fragmentsSection = formattedFragments
     ? `Context Fragments:\n${formattedFragments}`
     : ""
@@ -1221,7 +1212,11 @@ function buildInitialToolMessage(options: {
     )
   }
   if (options.chatMemoryText?.trim()) {
-    parts.push("## Earlier Conversation Context\n", options.chatMemoryText.trim(), "\n")
+    parts.push(
+      "## Earlier Conversation Context\n",
+      options.chatMemoryText.trim(),
+      "\n",
+    )
   }
   if (parts.length === 0) return null
   const content = parts.join("")
@@ -1496,12 +1491,18 @@ async function handleReviewOutcome(
     ? reviewResult.clarificationQuestions
     : []
 
-  const removedSynthetics = cleanupSyntheticDocsAfterReview(context.documentMemory)
+  const removedSynthetics = cleanupSyntheticDocsAfterReview(
+    context.documentMemory,
+  )
   if (removedSynthetics > 0) {
-    logContextMutation(context, "[MessageAgents][Context] Post-review synthetic doc cleanup", {
-      iteration,
-      removedCount: removedSynthetics,
-    })
+    logContextMutation(
+      context,
+      "[MessageAgents][Context] Post-review synthetic doc cleanup",
+      {
+        iteration,
+        removedCount: removedSynthetics,
+      },
+    )
   }
 
   const hasAnomalies =
@@ -1542,7 +1543,7 @@ async function handleReviewOutcome(
     )
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.anomaliesDetected(reviewResult.anomalies ?? [])
+      ReasoningSteps.anomaliesDetected(reviewResult.anomalies ?? []),
     )
   }
 }
@@ -1719,7 +1720,10 @@ async function prepareInitialAttachmentContext(
 ): Promise<{ rawDocuments: ToolRawDocument[]; summary: string } | null> {
   // We support image-only requests: `fileIds` can be empty while
   // `imageAttachmentFileIds` is non-empty (images extracted from attachments).
-  if ((!fileIds?.length || fileIds.length === 0) && (!imageAttachmentFileIds?.length || imageAttachmentFileIds.length === 0)) {
+  if (
+    (!fileIds?.length || fileIds.length === 0) &&
+    (!imageAttachmentFileIds?.length || imageAttachmentFileIds.length === 0)
+  ) {
     return null
   }
 
@@ -1811,12 +1815,9 @@ async function prepareInitialAttachmentContext(
       }
       fileSearchSpan?.end()
     }
-    
-    if(imageAttachmentFileIds && imageAttachmentFileIds.length > 0) {
-      const direct = await GetDocumentsByDocIds(
-        imageAttachmentFileIds,
-        span,
-      )
+
+    if (imageAttachmentFileIds && imageAttachmentFileIds.length > 0) {
+      const direct = await GetDocumentsByDocIds(imageAttachmentFileIds, span)
       if (direct?.root?.children?.length) {
         attachmentFallbackDocs.push(...direct.root.children)
       }
@@ -1939,18 +1940,12 @@ export async function beforeToolExecutionHook(
     (normalizedArgs as any)?.excludedIds,
   )
   //Todo: santizie args for logging to avoid logging sensitive info; for now we just log excludedIds which are less likely to contain sensitive info and are important for debugging retrieval issues.
-  logContextMutation(context, "[beforeToolExecutionHook] Received tool args", {
-    toolName,
-    args: normalizedArgs,
-    incomingExcludedIds,
-    incomingExcludedIdsCount: incomingExcludedIds.length,
-  })
   // 0. Validate input against schema
   const validation = validateToolInput(toolName, normalizedArgs)
   if (!validation.success) {
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.toolValidationError(toolName, validation.error.message)
+      ReasoningSteps.toolValidationError(toolName, validation.error.message),
     )
     Logger.warn(
       `Tool input validation failed for ${toolName}: ${validation.error.message}`,
@@ -1970,7 +1965,7 @@ export async function beforeToolExecutionHook(
   if (isDuplicate) {
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.toolSkippedDuplicate(toolName)
+      ReasoningSteps.toolSkippedDuplicate(toolName),
     )
     return null // Skip execution
   }
@@ -1983,7 +1978,7 @@ export async function beforeToolExecutionHook(
     const turnsLeft = info.cooldownUntilTurn - context.turnCount
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.toolSkippedCooldown(toolName, turnsLeft)
+      ReasoningSteps.toolSkippedCooldown(toolName, turnsLeft),
     )
     return null // Skip execution — tool is also removed from tool list
   }
@@ -2110,13 +2105,17 @@ export async function afterToolExecutionHook(
     const enteredCooldown = cooldownMgr.recordFailure(
       toolName,
       record.error!.message,
-      context.turnCount
+      context.turnCount,
     )
     if (enteredCooldown) {
       const info = cooldownMgr.getCooldownInfo(toolName)!
       await emitReasoningEvent(
         reasoningEmitter,
-        ReasoningSteps.toolCooldownApplied(toolName, info.count, info.cooldownUntilTurn - context.turnCount)
+        ReasoningSteps.toolCooldownApplied(
+          toolName,
+          info.count,
+          info.cooldownUntilTurn - context.turnCount,
+        ),
       )
     }
   }
@@ -2124,22 +2123,34 @@ export async function afterToolExecutionHook(
   // 5. Extract raw Vespa results only. All tools return rawDocuments.
   const resultData = result?.data
   let rawDocuments: ToolRawDocument[] =
-    (resultData && typeof resultData === "object" && Array.isArray((resultData as { rawDocuments?: unknown }).rawDocuments))
+    resultData &&
+    typeof resultData === "object" &&
+    Array.isArray((resultData as { rawDocuments?: unknown }).rawDocuments)
       ? (resultData as { rawDocuments: ToolRawDocument[] }).rawDocuments
       : []
-  let toolFragments: MinimalAgentFragment[] = (resultData && typeof resultData === "object" && Array.isArray((resultData as { fragments?: unknown }).fragments))
-    ? (resultData as { fragments: MinimalAgentFragment[] }).fragments
-    : []
-  const toolQuery = extractToolQuery(toolName, args as Record<string, unknown>) ?? ""
+  let toolFragments: MinimalAgentFragment[] =
+    resultData &&
+    typeof resultData === "object" &&
+    Array.isArray((resultData as { fragments?: unknown }).fragments)
+      ? (resultData as { fragments: MinimalAgentFragment[] }).fragments
+      : []
+  const toolQuery =
+    extractToolQuery(toolName, args as Record<string, unknown>) ?? ""
   const resultSummary =
-    (result?.data && typeof result.data === "object" && typeof (result.data as { resultSummary?: string }).resultSummary === "string")
+    result?.data &&
+    typeof result.data === "object" &&
+    typeof (result.data as { resultSummary?: string }).resultSummary ===
+      "string"
       ? (result.data as { resultSummary: string }).resultSummary
       : summarizeToolResultPayload(result)
 
   // 5b. Handle synthetic documents for non-Vespa tools (chat memory, ls)
   // These are derived documents, not retrievable truth sources
   if (toolName === XyneTools.searchChatHistory && toolFragments.length > 0) {
-    const chatId = (args as { chatId?: string })?.chatId ?? context.chat?.externalId ?? "unknown"
+    const chatId =
+      (args as { chatId?: string })?.chatId ??
+      context.chat?.externalId ??
+      "unknown"
 
     const syntheticDoc = createSyntheticDocFromChatMemory(toolFragments, {
       chatId,
@@ -2155,7 +2166,10 @@ export async function afterToolExecutionHook(
   }
 
   if (toolName === "ls" && resultData) {
-    const lsData = resultData as { target?: { id?: string; path?: string }; entries?: Array<{ name: string; type: string; id?: string }> }
+    const lsData = resultData as {
+      target?: { id?: string; path?: string }
+      entries?: Array<{ name: string; type: string; id?: string }>
+    }
     if (lsData.entries && lsData.entries.length > 0) {
       const syntheticDoc = createSyntheticDocFromLs(lsData.entries, {
         targetId: lsData.target?.id,
@@ -2171,13 +2185,17 @@ export async function afterToolExecutionHook(
     }
   }
 
-  if (toolName === XyneTools.runPublicAgent && typeof resultSummary === "string" && resultSummary.trim().length > 0) {
+  if (
+    toolName === XyneTools.runPublicAgent &&
+    typeof resultSummary === "string" &&
+    resultSummary.trim().length > 0
+  ) {
     const agentId =
       (resultData as { agentId?: string })?.agentId ||
       (args as { agentId?: string })?.agentId ||
       "unknown"
-    const delegationRunId =
-      (resultData as { delegationRunId?: string })?.delegationRunId
+    const delegationRunId = (resultData as { delegationRunId?: string })
+      ?.delegationRunId
     const agentName = resolveDelegatedAgentName(context, agentId)
     const citationCleanSummary = cleanCitationsFromResponse(resultSummary)
     const syntheticDoc = createSyntheticDocFromAgent(citationCleanSummary, {
@@ -2271,7 +2289,11 @@ export async function afterToolExecutionHook(
         reasoningEmitter,
         ReasoningSteps.planCreated(
           plan.goal || "Goal not specified",
-          plan.subTasks.map((t) => ({ id: t.id, description: t.description, status: t.status })),
+          plan.subTasks.map((t) => ({
+            id: t.id,
+            description: t.description,
+            status: t.status,
+          })),
         ),
       )
     }
@@ -2283,12 +2305,14 @@ export async function afterToolExecutionHook(
     typeof result === "object" &&
     result.status === "success"
   ) {
-    const agents = (result?.data as { agents?: ListCustomAgentsOutput["agents"] })?.agents
+    const agents = (
+      result?.data as { agents?: ListCustomAgentsOutput["agents"] }
+    )?.agents
     const agentCount = Array.isArray(agents) ? agents.length : 0
     const agentNames = agentCount ? agents?.map((a) => a.agentName) : undefined
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.agentsFound(agentCount, agentNames)
+      ReasoningSteps.agentsFound(agentCount, agentNames),
     )
   }
 
@@ -2317,7 +2341,7 @@ export async function afterToolExecutionHook(
       ?.delegationRunId
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.agentCompleted(agentName, delegationRunId)
+      ReasoningSteps.agentCompleted(agentName, delegationRunId),
     )
   }
 
@@ -2330,12 +2354,20 @@ export async function afterToolExecutionHook(
   ) {
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.fallbackCompleted()
+      ReasoningSteps.fallbackCompleted(),
     )
   }
 
-  const imageCitationsForGather = toolName === XyneTools.runPublicAgent ? (resultData as { imageCitations?: ImageCitation[] })?.imageCitations : undefined
-  const { images: extractedImages, fragmentsWithoutImageBlocks } = gatherToolOutputExtractedImages(rawDocuments, toolFragments, imageCitationsForGather)
+  const imageCitationsForGather =
+    toolName === XyneTools.runPublicAgent
+      ? (resultData as { imageCitations?: ImageCitation[] })?.imageCitations
+      : undefined
+  const { images: extractedImages, fragmentsWithoutImageBlocks } =
+    gatherToolOutputExtractedImages(
+      rawDocuments,
+      toolFragments,
+      imageCitationsForGather,
+    )
   toolFragments = fragmentsWithoutImageBlocks
 
   context.currentTurnArtifacts.toolOutputs.push({
@@ -2346,8 +2378,7 @@ export async function afterToolExecutionHook(
     resultSummary,
     query: toolQuery,
     rawDocuments: rawDocuments.length > 0 ? rawDocuments : undefined,
-    extractedImages:
-      extractedImages.length > 0 ? extractedImages : undefined,
+    extractedImages: extractedImages.length > 0 ? extractedImages : undefined,
   })
   logContextMutation(
     context,
@@ -2364,7 +2395,7 @@ export async function afterToolExecutionHook(
   if (toolName !== XyneTools.runPublicAgent) {
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.toolCompleted(toolName, record.status === "error")
+      ReasoningSteps.toolCompleted(toolName, record.status === "error"),
     )
   }
 
@@ -2381,14 +2412,11 @@ export async function buildDelegatedAgentFragments(opts: {
   rawDocuments: ToolRawDocument[]
   agentId: string
   agentName: string
-}): Promise<{ rawDocuments: ToolRawDocument[]; fragments: MinimalAgentFragment[] }> {
-  const {
-    result,
-    rawFragments,
-    rawDocuments,
-    agentId,
-    agentName,
-  } = opts
+}): Promise<{
+  rawDocuments: ToolRawDocument[]
+  fragments: MinimalAgentFragment[]
+}> {
+  const { result, rawFragments, rawDocuments, agentId, agentName } = opts
   const resultData = (result?.data as Record<string, unknown>) || {}
   const citations = resultData.citations as Citation[] | undefined
   const imageCitations = resultData.imageCitations as
@@ -2538,34 +2566,9 @@ function safeJsonParse(text: string): unknown {
   }
 }
 
-function summarizePlan(plan: PlanState | null): string {
-  Logger.debug({ plan }, "summarizePlan input")
-  if (!plan) {
-    Logger.debug({ summary: "No plan available." }, "summarizePlan output")
-    return "No plan available."
-  }
-  const steps = plan.subTasks
-    .map(
-      (task, idx) =>
-        `${idx + 1}. [${task.status}] ${task.description}${
-          task.toolsRequired?.length
-            ? ` (tools: ${task.toolsRequired.join(", ")})`
-            : ""
-        }`,
-    )
-    .join("\n")
-  const summary = `Goal: ${plan.goal}\n${steps}`
-  Logger.debug(
-    { summary, subTaskCount: plan.subTasks.length },
-    "summarizePlan output",
-  )
-  return summary
-}
-
 function formatExpectationsForReview(
   expectations?: ToolExpectationAssignment[],
 ): string {
-  Logger.debug({ expectations }, "formatExpectationsForReview input")
   if (!expectations || expectations.length === 0) {
     Logger.debug({ serialized: "[]" }, "formatExpectationsForReview output")
     return "[]"
@@ -2659,13 +2662,8 @@ function normalizeReviewResult(raw: unknown): unknown {
             : "missed",
         summary: typeof item?.summary === "string" ? item.summary : "",
         expectationGoal:
-          typeof item?.expectationGoal === "string"
-            ? item.expectationGoal
-            : "",
-        followUp:
-          typeof item?.followUp === "string"
-            ? item.followUp
-            : "",
+          typeof item?.expectationGoal === "string" ? item.expectationGoal : "",
+        followUp: typeof item?.followUp === "string" ? item.followUp : "",
       }))
     : []
   const unmetExpectations = Array.isArray(r.unmetExpectations)
@@ -2684,8 +2682,10 @@ function normalizeReviewResult(raw: unknown): unknown {
     notes: typeof r.notes === "string" ? r.notes : "",
     toolFeedback,
     unmetExpectations,
-    planChangeNeeded: typeof r.planChangeNeeded === "boolean" ? r.planChangeNeeded : false,
-    planChangeReason: typeof r.planChangeReason === "string" ? r.planChangeReason : undefined,
+    planChangeNeeded:
+      typeof r.planChangeNeeded === "boolean" ? r.planChangeNeeded : false,
+    planChangeReason:
+      typeof r.planChangeReason === "string" ? r.planChangeReason : undefined,
     anomaliesDetected:
       typeof r.anomaliesDetected === "boolean"
         ? r.anomaliesDetected
@@ -2698,7 +2698,8 @@ function normalizeReviewResult(raw: unknown): unknown {
       r.recommendation === "replan"
         ? r.recommendation
         : "proceed",
-    ambiguityResolved: typeof r.ambiguityResolved === "boolean" ? r.ambiguityResolved : false,
+    ambiguityResolved:
+      typeof r.ambiguityResolved === "boolean" ? r.ambiguityResolved : false,
     clarificationQuestions,
   }
 }
@@ -2753,7 +2754,7 @@ async function batchRankFragments(
   userMessage: string,
   messagesWithNoErrResponse: Message[],
   turnNumber: number,
-  reasoningEmitter?: ReasoningEmitter
+  reasoningEmitter?: ReasoningEmitter,
 ): Promise<MinimalAgentFragment[]> {
   if (allUnrankedWithToolContext.length === 0) return []
 
@@ -2762,10 +2763,19 @@ async function batchRankFragments(
     string,
     { toolName: string; toolQuery: string; signals: RetrievalSignal[] }
   >()
-  for (const { fragment, toolName, toolQuery, signals } of allUnrankedWithToolContext) {
+  for (const {
+    fragment,
+    toolName,
+    toolQuery,
+    signals,
+  } of allUnrankedWithToolContext) {
     const key = getFragmentDedupKey(fragment) || fragment.id || ""
     if (!fragmentKeyToToolContext.has(key)) {
-      fragmentKeyToToolContext.set(key, { toolName, toolQuery, signals: [...signals] })
+      fragmentKeyToToolContext.set(key, {
+        toolName,
+        toolQuery,
+        signals: [...signals],
+      })
       continue
     }
 
@@ -2774,7 +2784,9 @@ async function batchRankFragments(
 
     // Preserve "all" signals for this doc/content key (dedupe by query+turn+toolName).
     const existingSigKeys = new Set(
-      existing.signals.map((s) => `${s.toolName ?? "search"}|${s.query}|${s.turn}`),
+      existing.signals.map(
+        (s) => `${s.toolName ?? "search"}|${s.query}|${s.turn}`,
+      ),
     )
     for (const sig of signals) {
       const k = `${sig.toolName ?? "search"}|${sig.query}|${sig.turn}`
@@ -2784,7 +2796,8 @@ async function batchRankFragments(
     }
   }
 
-  const metadataConstraints = extractMetadataConstraintsFromUserMessage(userMessage)
+  const metadataConstraints =
+    extractMetadataConstraintsFromUserMessage(userMessage)
   const {
     rankedCandidates,
     hasConstraints: hasMetadataConstraints,
@@ -2792,11 +2805,14 @@ async function batchRankFragments(
   } = rankFragmentsByMetadataConstraints(allUnranked, metadataConstraints)
   const rankingCandidates = rankedCandidates.map((c) => c.fragment)
   const strictNoCompliantCandidates =
-    hasMetadataConstraints && metadataConstraints.strict && !hasCompliantCandidates
+    hasMetadataConstraints &&
+    metadataConstraints.strict &&
+    !hasCompliantCandidates
 
   /** Skip ranking LLM when fragments already fit context; use all and record. */
   const RANKING_CONTEXT_WINDOW_CAPACITY = 8
-  const skipRankingLLM = rankingCandidates.length <= RANKING_CONTEXT_WINDOW_CAPACITY
+  const skipRankingLLM =
+    rankingCandidates.length <= RANKING_CONTEXT_WINDOW_CAPACITY
 
   if (!skipRankingLLM) {
     await emitReasoningEvent(
@@ -2805,11 +2821,14 @@ async function batchRankFragments(
     )
     if (hasMetadataConstraints) {
       if (strictNoCompliantCandidates) {
-        await emitReasoningEvent(reasoningEmitter, ReasoningSteps.metadataNoMatch())
+        await emitReasoningEvent(
+          reasoningEmitter,
+          ReasoningSteps.metadataNoMatch(),
+        )
       } else {
         await emitReasoningEvent(
           reasoningEmitter,
-          ReasoningSteps.metadataFilterApplied(hasCompliantCandidates)
+          ReasoningSteps.metadataFilterApplied(hasCompliantCandidates),
         )
       }
     }
@@ -2820,7 +2839,9 @@ async function batchRankFragments(
   if (skipRankingLLM) {
     selectedDocs = strictNoCompliantCandidates
       ? []
-      : hasMetadataConstraints && metadataConstraints.strict && hasCompliantCandidates
+      : hasMetadataConstraints &&
+          metadataConstraints.strict &&
+          hasCompliantCandidates
         ? rankedCandidates.filter((c) => c.compliant).map((c) => c.fragment)
         : rankingCandidates
   } else {
@@ -2835,96 +2856,110 @@ async function batchRankFragments(
           toolContext?.toolQuery,
           toolContext?.signals,
         )
-      }
+      },
     )
 
-  try {
-    const rankingModelId = (context.modelId as Models) || config.defaultBestModel
-    const selectionSpan = getTracer("chat").startSpan("batch_select_best_documents")
-    selectionSpan.setAttribute("total_unranked", allUnrankedWithToolContext.length)
-    selectionSpan.setAttribute("context_count", contextStrings.length)
-
-    let bestDocIndexes: number[] = []
     try {
-      const rankingMessages = withAgentSystemPromptMessage(
-        messagesWithNoErrResponse,
-        context.dedicatedAgentSystemPrompt
+      const rankingModelId =
+        (context.modelId as Models) || config.defaultBestModel
+      const selectionSpan = getTracer("chat").startSpan(
+        "batch_select_best_documents",
       )
       selectionSpan.setAttribute(
-        "has_agent_system_prompt_snapshot",
-        !!sanitizeAgentSystemPromptSnapshot(context.dedicatedAgentSystemPrompt)
+        "total_unranked",
+        allUnrankedWithToolContext.length,
       )
+      selectionSpan.setAttribute("context_count", contextStrings.length)
 
-      bestDocIndexes = await extractBestDocumentIndexes(
-        userMessage,
-        contextStrings,
-        { modelId: rankingModelId, json: false, stream: false },
-        rankingMessages
-      )
-      selectionSpan.setAttribute("selected_count", bestDocIndexes.length)
+      let bestDocIndexes: number[] = []
+      try {
+        const rankingMessages = withAgentSystemPromptMessage(
+          messagesWithNoErrResponse,
+          context.dedicatedAgentSystemPrompt,
+        )
+        selectionSpan.setAttribute(
+          "has_agent_system_prompt_snapshot",
+          !!sanitizeAgentSystemPromptSnapshot(
+            context.dedicatedAgentSystemPrompt,
+          ),
+        )
+
+        bestDocIndexes = await extractBestDocumentIndexes(
+          userMessage,
+          contextStrings,
+          { modelId: rankingModelId, json: false, stream: false },
+          rankingMessages,
+        )
+        selectionSpan.setAttribute("selected_count", bestDocIndexes.length)
+      } catch (error) {
+        selectionSpan.setAttribute("error", true)
+        selectionSpan.setAttribute("error_message", getErrorMessage(error))
+        throw error
+      } finally {
+        selectionSpan.end()
+      }
+
+      if (bestDocIndexes.length > 0) {
+        bestDocIndexes.forEach((idx) => {
+          if (idx >= 1 && idx <= rankingCandidates.length) {
+            selectedDocs.push(rankingCandidates[idx - 1])
+          }
+        })
+        selectedDocs = enforceMetadataConstraintsOnSelection(
+          selectedDocs,
+          rankedCandidates,
+          metadataConstraints,
+        )
+      }
+
+      if (selectedDocs.length === 0) {
+        // Fallback: use all candidates (or compliant-only if strict)
+        selectedDocs = strictNoCompliantCandidates
+          ? []
+          : hasMetadataConstraints &&
+              metadataConstraints.strict &&
+              hasCompliantCandidates
+            ? rankedCandidates.filter((c) => c.compliant).map((c) => c.fragment)
+            : rankingCandidates
+      }
     } catch (error) {
-      selectionSpan.setAttribute("error", true)
-      selectionSpan.setAttribute("error_message", getErrorMessage(error))
-      throw error
-    } finally {
-      selectionSpan.end()
-    }
-
-    if (bestDocIndexes.length > 0) {
-      bestDocIndexes.forEach((idx) => {
-        if (idx >= 1 && idx <= rankingCandidates.length) {
-          selectedDocs.push(rankingCandidates[idx - 1])
-        }
-      })
-      selectedDocs = enforceMetadataConstraintsOnSelection(
-        selectedDocs,
-        rankedCandidates,
-        metadataConstraints
+      loggerWithChild({ email: context.user.email }).error(
+        {
+          error: error instanceof Error ? error.message : String(error),
+          totalUnranked: allUnranked.length,
+        },
+        "[batchRankFragments] Ranking failed — falling back to all candidates",
       )
-    }
-
-    if (selectedDocs.length === 0) {
-      // Fallback: use all candidates (or compliant-only if strict)
+      await emitReasoningEvent(
+        reasoningEmitter,
+        ReasoningSteps.rankingFailed(strictNoCompliantCandidates),
+      )
+      // Apply same metadata-based filtering as success-path fallback so strict mode
+      // does not reintroduce non-compliant fragments.
       selectedDocs = strictNoCompliantCandidates
         ? []
-        : hasMetadataConstraints && metadataConstraints.strict && hasCompliantCandidates
-        ? rankedCandidates.filter((c) => c.compliant).map((c) => c.fragment)
-        : rankingCandidates
+        : hasMetadataConstraints &&
+            metadataConstraints.strict &&
+            hasCompliantCandidates
+          ? rankedCandidates.filter((c) => c.compliant).map((c) => c.fragment)
+          : rankingCandidates
     }
-  } catch (error) {
-    loggerWithChild({ email: context.user.email }).error(
-      {
-        error: error instanceof Error ? error.message : String(error),
-        totalUnranked: allUnranked.length,
-      },
-      "[batchRankFragments] Ranking failed — falling back to all candidates"
-    )
-    await emitReasoningEvent(
-      reasoningEmitter,
-      ReasoningSteps.rankingFailed(strictNoCompliantCandidates)
-    )
-    // Apply same metadata-based filtering as success-path fallback so strict mode
-    // does not reintroduce non-compliant fragments.
-    selectedDocs = strictNoCompliantCandidates
-      ? []
-      : hasMetadataConstraints && metadataConstraints.strict && hasCompliantCandidates
-        ? rankedCandidates.filter((c) => c.compliant).map((c) => c.fragment)
-        : rankingCandidates
-  }
   }
 
   if (selectedDocs.length > 0) {
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.documentsFiltered(selectedDocs.length)
+      ReasoningSteps.documentsFiltered(selectedDocs.length),
     )
 
     // Merge ranked current-turn docs into cross-turn document memory before recording
     const rankedDocIds = new Set(
-      selectedDocs.map((f) => f.source?.docId ?? f.id).filter(Boolean) as string[]
+      selectedDocs
+        .map((f) => f.source?.docId ?? f.id)
+        .filter(Boolean) as string[],
     )
     const rankedDocsFromCurrentTurn = Array.from(
-      context.currentTurnDocumentMemory.values()
+      context.currentTurnDocumentMemory.values(),
     ).filter((d) => rankedDocIds.has(d.docId))
     if (rankedDocsFromCurrentTurn.length > 0) {
       const newChunks = mergeDocumentStatesIntoDocumentMemory(
@@ -3021,28 +3056,26 @@ export async function buildReviewPromptFromContext(
             r.unmetExpectations?.length
               ? `Unmet expectations: ${r.unmetExpectations.join("; ")}`
               : "",
-            r.anomalies?.length
-              ? `Anomalies: ${r.anomalies.join("; ")}`
-              : "",
+            r.anomalies?.length ? `Anomalies: ${r.anomalies.join("; ")}` : "",
           ].filter(Boolean)
           return `Previous review summary (for continuity):\n${parts.join("\n")}`
         })()
       : ""
   const docOrderForImages = newFragments.map((f) => f.id)
   const reviewImageBudget =
-    IMAGE_CONTEXT_CONFIG.maxImagesPerCall && IMAGE_CONTEXT_CONFIG.maxImagesPerCall > 0
+    IMAGE_CONTEXT_CONFIG.maxImagesPerCall &&
+    IMAGE_CONTEXT_CONFIG.maxImagesPerCall > 0
       ? IMAGE_CONTEXT_CONFIG.maxImagesPerCall
       : 8
-  const { imageFileNamesForModel: currentImages, total: totalImages, dropped } = 
-    IMAGE_CONTEXT_CONFIG.enabled 
-    ?
-      getImageFileNamesForLlmFromStores(
-        context.imageMemory ?? new Map(),
-        {
-          docOrder: docOrderForImages,
-          maxImages: reviewImageBudget,
-        },
-      ) 
+  const {
+    imageFileNamesForModel: currentImages,
+    total: totalImages,
+    dropped,
+  } = IMAGE_CONTEXT_CONFIG.enabled
+    ? getImageFileNamesForLlmFromStores(context.imageMemory ?? new Map(), {
+        docOrder: docOrderForImages,
+        maxImages: reviewImageBudget,
+      })
     : { imageFileNamesForModel: [], total: 0, dropped: 0 }
   const imageSection = `Images available (Vespa-ranked, top ${reviewImageBudget} shown to model): ${currentImages.length} of ${totalImages} (${dropped} omitted by budget)`
   const reviewFocus = `Review Focus: ${options?.focus ?? "turn_end"} (evaluating through turn ${
@@ -3556,16 +3589,6 @@ function createListCustomAgentsTool(): Tool<unknown, AgentRunContext> {
 
       const normalizedAgents = Array.isArray(result.agents) ? result.agents : []
       mutableContext.availableAgents = normalizedAgents
-      logContextMutation(
-        mutableContext,
-        "[list_custom_agents] Updated availableAgents in context",
-        {
-          query: validation.data.query,
-          requiredCapabilities: validation.data.requiredCapabilities,
-          availableAgentIds: normalizedAgents.map((agent) => agent.agentId),
-          availableAgentNames: normalizedAgents.map((agent) => agent.agentName),
-        },
-      )
       return ToolResponse.success({
         agents: normalizedAgents.length ? normalizedAgents : null,
         totalEvaluated: result.totalEvaluated,
@@ -3664,9 +3687,10 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
       const toolOutput = await executeCustomAgent({
         agentId: requestedAgentId,
         orchestratorContext: context,
-        query: internalCfg?.rewriteQueryForDelegation === false
-          ? validation.data.query
-          : buildDelegatedAgentQuery(validation.data.query, context),
+        query:
+          internalCfg?.rewriteQueryForDelegation === false
+            ? validation.data.query
+            : buildDelegatedAgentQuery(validation.data.query, context),
         contextSnippet: validation.data.context,
         maxTokens: validation.data.maxTokens,
         userEmail: context.user.email,
@@ -3699,15 +3723,6 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
         "[run_public_agent] tool output",
       )
       context.usedAgents.push(agentCapability.agentId)
-      logContextMutation(
-        context,
-        "[run_public_agent] Added agent to usedAgents",
-        {
-          selectedAgentId: agentCapability.agentId,
-          selectedAgentName: agentCapability.agentName,
-          query: validation.data.query,
-        },
-      )
 
       if (toolOutput.error) {
         return ToolResponse.error("EXECUTION_FAILED", toolOutput.error)
@@ -3765,7 +3780,11 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
  * This ensures the plan shows as fully completed since no toDoWrite will be called after synthesis.
  */
 function autoCompleteRemainingTasks(context: AgentRunContext): boolean {
-  if (!context.plan || !context.plan.subTasks || context.plan.subTasks.length === 0) {
+  if (
+    !context.plan ||
+    !context.plan.subTasks ||
+    context.plan.subTasks.length === 0
+  ) {
     return false
   }
 
@@ -3826,20 +3845,6 @@ async function runFinalSynthesisCall(
   mutableContext.finalSynthesis.requested = true
   mutableContext.finalSynthesis.completed = false
   mutableContext.finalSynthesis.streamedText = ""
-  logContextMutation(
-    mutableContext,
-    "[MessageAgents][FinalSynthesis] Locked review state and marked synthesis requested",
-    {
-      lockedAtTurn: mutableContext.review.lockedAtTurn,
-    },
-  )
-  logger.info(
-    {
-      chatId: context.chat.externalId,
-      turn: mutableContext.review.lockedAtTurn,
-    },
-    "[MessageAgents][FinalSynthesis] Review lock activated after synthesis tool call.",
-  )
 
   let streamedCharacters = 0
   let estimatedCostUsd = 0
@@ -3860,13 +3865,10 @@ async function runFinalSynthesisCall(
       total,
       dropped,
     } = IMAGE_CONTEXT_CONFIG.enabled
-      ? getImageFileNamesForLlmFromStores(
-          context.imageMemory,
-          {
-            docOrder,
-            maxImages: IMAGE_CONTEXT_CONFIG.maxImagesPerCall,
-          },
-        )
+      ? getImageFileNamesForLlmFromStores(context.imageMemory, {
+          docOrder,
+          maxImages: IMAGE_CONTEXT_CONFIG.maxImagesPerCall,
+        })
       : { imageFileNamesForModel: [], total: 0, dropped: 0 }
 
     const attachmentImageCount = [...context.imageMemory.values()].filter(
@@ -3899,21 +3901,6 @@ async function runFinalSynthesisCall(
         hasChatMemory,
       },
       "[MessageAgents][FinalSynthesis] Full context payload",
-    )
-
-    logContextMutation(
-      mutableContext,
-      "[MessageAgents][FinalSynthesis] Updated final synthesis state to requested",
-      {
-        fragmentsCount,
-        selectedImages: selected,
-        totalImages: total,
-        droppedImages: dropped,
-        conversationHistoryCount: context.conversationHistoryMessages.length,
-        hasInsightsUsefulForAnswering: !!insightsUsefulForAnswering,
-        hasEpisodicMemories,
-        hasChatMemory,
-      },
     )
 
     await mutableContext.runtime?.emitReasoning?.(
@@ -3992,15 +3979,6 @@ async function runFinalSynthesisCall(
     }
 
     context.finalSynthesis.completed = true
-    logContextMutation(
-      context,
-      "[MessageAgents][FinalSynthesis] Marked final synthesis as completed",
-      {
-        streamedCharacters,
-        estimatedCostUsd,
-        imagesProvided: selected,
-      },
-    )
     loggerWithChild({ email: context.user.email }).debug(
       {
         chatId: context.chat.externalId,
@@ -4059,13 +4037,6 @@ async function runFinalSynthesisCall(
     mutableContext.finalSynthesis.suppressAssistantStreaming = false
     mutableContext.finalSynthesis.requested = false
     mutableContext.finalSynthesis.completed = false
-    logContextMutation(
-      mutableContext,
-      "[MessageAgents][FinalSynthesis] Reset final synthesis state after failure",
-      {
-        error: error instanceof Error ? error.message : String(error),
-      },
-    )
     logger.error(
       { err: error instanceof Error ? error.message : String(error) },
       "Final synthesis tool failed.",
@@ -4188,14 +4159,21 @@ function buildAgentInstructions(
   agentPrompt?: string,
   delegationEnabled = true,
 ): string {
-  const availableToolNames = enabledToolNames.filter((tool) => context.enabledTools.has(tool))
-  const toolDescriptions = availableToolNames.length > 0
-    ? generateToolDescriptions(availableToolNames)
-    : "No tools available yet. "
+  const availableToolNames = enabledToolNames.filter((tool) =>
+    context.enabledTools.has(tool),
+  )
+  const toolDescriptions =
+    availableToolNames.length > 0
+      ? generateToolDescriptions(availableToolNames)
+      : "No tools available yet. "
 
   const cooldownMgr = new ToolCooldownManager(context.failedTools)
   const toolsInCooldown = enabledToolNames
-    .filter((t) => !context.enabledTools.has(t) && cooldownMgr.isInCooldown(t, context.turnCount))
+    .filter(
+      (t) =>
+        !context.enabledTools.has(t) &&
+        cooldownMgr.isInCooldown(t, context.turnCount),
+    )
     .map((name) => ({ name, info: cooldownMgr.getCooldownInfo(name)! }))
   const cooldownBlock =
     toolsInCooldown.length > 0
@@ -4205,26 +4183,27 @@ function buildAgentInstructions(
           "The following tools are temporarily disabled due to repeated failures. Use other tools or data sources instead.",
           ...toolsInCooldown.map(
             ({ name, info }) =>
-              `- ${name}: failed ${info.count}x (last: ${info.lastError || "error"}), ${info.cooldownUntilTurn - context.turnCount} turn(s) remaining.`
+              `- ${name}: failed ${info.count}x (last: ${info.lastError || "error"}), ${info.cooldownUntilTurn - context.turnCount} turn(s) remaining.`,
           ),
           "</tools_in_cooldown>",
           "",
         ].join("\n")
       : ""
 
-  const agentSection = agentPrompt ? `\n\nAgent Constraints:\n${agentPrompt}` : ""
+  const agentSection = agentPrompt
+    ? `\n\nAgent Constraints:\n${agentPrompt}`
+    : ""
   const attachmentDirective = buildAttachmentDirective(context)
   const internalAgentsContent = formatInternalAgentsForPrompt()
   const promptAddendum = buildAgentPromptAddendum(internalAgentsContent)
-  const reviewResultBlock =
-    context.review.lastReviewResult
-      ? [
-          "<last_review_result>",
-          JSON.stringify(context.review.lastReviewResult, null, 2),
-          "</last_review_result>",
-          "",
-        ].join("\n")
-      : ""
+  const reviewResultBlock = context.review.lastReviewResult
+    ? [
+        "<last_review_result>",
+        JSON.stringify(context.review.lastReviewResult, null, 2),
+        "</last_review_result>",
+        "",
+      ].join("\n")
+    : ""
 
   let planSection = "\n<plan>\n"
   if (context.plan) {
@@ -4259,8 +4238,11 @@ function buildAgentInstructions(
     : ""
 
   const isFirstTurn = context.turnCount === 1
-  const workingMemoryMessages = config.MEMORY_CONFIG?.WORKING_MEMORY_MESSAGES ?? 6
-  const conversationContext = isFirstTurn ? `You are given only the last ${workingMemoryMessages} messages of this chat in context. Use \`searchChatHistory\` when you need to recall or search older messages.` : '';
+  const workingMemoryMessages =
+    config.MEMORY_CONFIG?.WORKING_MEMORY_MESSAGES ?? 6
+  const conversationContext = isFirstTurn
+    ? `You are given only the last ${workingMemoryMessages} messages of this chat in context. Use \`searchChatHistory\` when you need to recall or search older messages.`
+    : ""
 
   const instructionLines: string[] = [
     "You are Xyne, an enterprise search assistant with agentic capabilities.",
@@ -4328,7 +4310,8 @@ function buildAgentInstructions(
           "- Track each `clarificationQuestions` entry as its own sub-task or outbound user question until the ambiguity is resolved inside <last_review_result>.",
           "- If review feedback demands a brand-new approach, rebuild the plan; otherwise refine the existing tasks.",
           "- If no plan change is needed, explicitly mark the tasks `in_progress` or `completed` so the reviewer sees momentum.",
-        ] : []),
+        ]
+      : []),
     "- Maintain one sub-task per concrete goal; list only the tools truly needed for that sub-task.",
     "- Only chain subtasks when real dependencies exist—for example, “fetch the people who messaged me today → gather the emails received from them → summarize the combined thread” keeps later steps paused until earlier outputs arrive.",
     "- After every tool run, immediately update the active sub-task’s status, result, and any newly required tasks so the plan mirrors reality.",
@@ -4378,22 +4361,6 @@ function buildAgentInstructions(
   )
 
   const finalInstructions = instructionLines.join("\n")
-
-  // Logger.debug({
-  //   email: context.user.email,
-  //   chatId: context.chat.externalId,
-  //   turnCount: context.turnCount,
-  //   instructionsLength: finalInstructions.length,
-  //   enabledToolsCount: enabledToolNames.length,
-  //   hasPlan: !!context.plan,
-  //   delegationEnabled,
-  // }, "[MessageAgents] Final agent instructions built")
-
-  // Logger.debug({
-  //   email: context.user.email,
-  //   chatId: context.chat.externalId,
-  //   instructions: finalInstructions,
-  // }, "[MessageAgents] FULL AGENT INSTRUCTIONS")
 
   return finalInstructions
 }
@@ -4472,10 +4439,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
               modelConfig.capabilities.deepResearch === true
           }
         }
-
-        loggerWithChild({ email }).debug(
-          `Parsed model config for MessageAgents: model="${parsedModelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`,
-        )
       } catch (error) {
         loggerWithChild({ email }).warn(
           error,
@@ -4855,8 +4818,12 @@ export async function MessageAgents(c: Context): Promise<Response> {
             : undefined
 
         // Memory retrieval is best-effort; failures should not block message handling
-        let episodicMemories: Awaited<ReturnType<typeof retrieveEpisodicMemories>> = []
-        let chatMemoryChunks: Awaited<ReturnType<typeof retrieveRelevantChatHistory>> = []
+        let episodicMemories: Awaited<
+          ReturnType<typeof retrieveEpisodicMemories>
+        > = []
+        let chatMemoryChunks: Awaited<
+          ReturnType<typeof retrieveRelevantChatHistory>
+        > = []
         try {
           const [episodicResults, chatMemoryResults] = await Promise.all([
             retrieveEpisodicMemories({
@@ -5157,17 +5124,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
           allTools.map((tool) => tool.schema.name),
         )
         agentContext.mcpAgents = mcpAgentCandidates
-        logContextMutation(
-          agentContext,
-          "[MessageAgents][Context] Updated enabled tools and MCP agents",
-          {
-            enabledTools: Array.from(agentContext.enabledTools),
-            mcpAgentIds: agentContext.mcpAgents.map((agent) => agent.agentId),
-            directMcpToolCount: directMcpTools.length,
-            internalToolCount: internalTools.length,
-            customToolCount: customTools.length,
-          },
-        )
+
         loggerWithChild({ email }).debug(
           {
             totalToolBudget,
@@ -5203,7 +5160,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
         if (referencedWithImages.length > 0) {
           await emitReasoningEvent(
             emitReasoningStep,
-            ReasoningSteps.attachmentAnalyzing()
+            ReasoningSteps.attachmentAnalyzing(),
           )
           const prepared = await prepareInitialAttachmentContext(
             allReferencedFileIds,
@@ -5211,12 +5168,12 @@ export async function MessageAgents(c: Context): Promise<Response> {
             userMetadata,
             message,
             email,
-            imageAttachmentFileIds
+            imageAttachmentFileIds,
           )
           if (prepared) {
             await emitReasoningEvent(
               emitReasoningStep,
-              ReasoningSteps.attachmentExtracted(prepared.rawDocuments.length)
+              ReasoningSteps.attachmentExtracted(prepared.rawDocuments.length),
             )
             initialAttachmentContext = {
               rawDocuments: prepared.rawDocuments,
@@ -5246,7 +5203,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
         }
         if (initialAttachmentContext) {
           const attachmentToolCallId = `synthetic-${ATTACHMENT_TOOL_MESSAGE}-${MIN_TURN_NUMBER}`
-          const { rawDocuments, summary: attachmentSummary } = initialAttachmentContext
+          const { rawDocuments, summary: attachmentSummary } =
+            initialAttachmentContext
           if (rawDocuments.length > 0) {
             mergeRawDocumentsIntoDocumentMemory(
               agentContext.documentMemory,
@@ -5262,9 +5220,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
             initialAttachmentPhase: true,
             initialAttachmentSummary: attachmentSummary,
           }
-          const attachmentDocIds = rawDocuments.map(
-            (d) => d.docId,
-          )
+          const attachmentDocIds = rawDocuments.map((d) => d.docId)
           const attachmentDocs = attachmentDocIds
             .map((id) => agentContext.documentMemory.get(id))
             .filter((d): d is DocumentState => d != null)
@@ -5276,18 +5232,20 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   {
                     email: agentContext.user.email,
                     userId: agentContext.user.numericId ?? undefined,
-                    workspaceId: agentContext.user.workspaceNumericId ?? undefined,
+                    workspaceId:
+                      agentContext.user.workspaceNumericId ?? undefined,
                     includeImageBlocks: true,
                   },
                 )
               : []
           // Extract images from attachment fragments and seed into imageMemory
           // so they are available for the first review
-          const { images: attachmentImages, fragmentsWithoutImageBlocks } = gatherToolOutputExtractedImages(
-            initialAttachmentContext.rawDocuments,
-            attachmentFragments,
-            [],
-          )
+          const { images: attachmentImages, fragmentsWithoutImageBlocks } =
+            gatherToolOutputExtractedImages(
+              initialAttachmentContext.rawDocuments,
+              attachmentFragments,
+              [],
+            )
           if (attachmentImages.length > 0) {
             seedImageMemoryFromImages(
               agentContext.imageMemory,
@@ -5485,7 +5443,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
           await runTurnEndPipeline(agentContext, {
             turn,
             useAgenticFiltering: USE_AGENTIC_FILTERING,
-            reviewFrequency: agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY,
+            reviewFrequency:
+              agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY,
             minTurnNumber: MIN_TURN_NUMBER,
             emitter: emitReasoningStep,
 
@@ -5506,20 +5465,25 @@ export async function MessageAgents(c: Context): Promise<Response> {
             // Wiring: batch fragment ranking (one fragment per doc from merged document memory)
             getUnrankedFragmentsForRanking: (ctx, t) =>
               buildUnrankedFragmentsFromDocumentMemory(ctx, t),
-            rankFragments: async (ctx, allUnrankedWithToolContext, t, emitter) => {
+            rankFragments: async (
+              ctx,
+              allUnrankedWithToolContext,
+              t,
+              emitter,
+            ) => {
               return await batchRankFragments(
                 ctx,
                 allUnrankedWithToolContext,
                 message,
                 messagesWithNoErrResponse,
                 t,
-                emitter
+                emitter,
               )
             },
             mergeCurrentTurnIntoCrossTurn: (ctx, t, rankedDocIds) => {
-              const docs = Array.from(ctx.currentTurnDocumentMemory.values()).filter(
-                (doc) => !rankedDocIds || rankedDocIds.has(doc.docId),
-              )
+              const docs = Array.from(
+                ctx.currentTurnDocumentMemory.values(),
+              ).filter((doc) => !rankedDocIds || rankedDocIds.has(doc.docId))
               if (docs.length > 0) {
                 const newChunks = mergeDocumentStatesIntoDocumentMemory(
                   ctx.documentMemory,
@@ -5740,8 +5704,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
         const imageCitations: ImageCitation[] = []
         const citationMap: Record<number, number> = {}
         const yieldedCitations = new Set<number>()
-        const yieldedImageCitations = new Map<number, Set<number>>()
         let assistantMessageId: string | null = null
+        let lastScannedAnswerLength = 0
 
         const streamAnswerText = async (text: string) => {
           if (!text) return
@@ -5758,18 +5722,19 @@ export async function MessageAgents(c: Context): Promise<Response> {
               data: chunk,
             })
 
-            const fragmentsForCitations =
-              await getFragmentsForSynthesis(agentContext.documentMemory, {
+            const fragmentsForCitations = await getFragmentsForSynthesis(
+              agentContext.documentMemory,
+              {
                 email: agentContext.user?.email,
                 userId: agentContext.user?.numericId ?? undefined,
                 workspaceId: agentContext.user?.workspaceNumericId ?? undefined,
-              })
+              },
+            )
             for await (const citationEvent of checkAndYieldCitationsForAgent(
               answer,
               yieldedCitations,
               fragmentsForCitations,
-              yieldedImageCitations,
-              email,
+              lastScannedAnswerLength,
             )) {
               if (stream.closed) return
               if (citationEvent.citation) {
@@ -5784,14 +5749,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   }),
                 })
               }
-              if (citationEvent.imageCitation) {
-                imageCitations.push(citationEvent.imageCitation)
-                await stream.writeSSE({
-                  event: ChatSSEvents.ImageCitationUpdate,
-                  data: JSON.stringify(citationEvent.imageCitation),
-                })
-              }
             }
+            lastScannedAnswerLength = answer.length
           }
         }
         const deliverGeneratedText = async (text: string) => {
@@ -5877,22 +5836,25 @@ export async function MessageAgents(c: Context): Promise<Response> {
               if (recovered.length > 0) {
                 await emitReasoningEvent(
                   emitReasoningStep,
-                  ReasoningSteps.toolRecovered(recovered)
+                  ReasoningSteps.toolRecovered(recovered),
                 )
               }
 
               // Clean up expired synthetic documents (TTL-based eviction)
               const expiredCount = cleanupExpiredSyntheticDocs(
                 agentContext.documentMemory,
-                currentTurn
+                currentTurn,
               )
               if (expiredCount > 0) {
                 Logger.info(
                   { expiredCount, currentTurn, chatId: agentContext.chat.id },
-                  "[MessageAgents][turn_start] Cleaned up expired synthetic documents"
+                  "[MessageAgents][turn_start] Cleaned up expired synthetic documents",
                 )
               }
-              const activeTools = cooldown.getAvailableTools(allTools, currentTurn)
+              const activeTools = cooldown.getAvailableTools(
+                allTools,
+                currentTurn,
+              )
               agentContext.enabledTools = new Set(
                 activeTools.map((t) => t.schema.name)
               )
@@ -5910,7 +5872,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
 
               await emitReasoningEvent(
                 emitReasoningStep,
-                ReasoningSteps.turnStarted(currentTurn)
+                ReasoningSteps.turnStarted(currentTurn),
               )
               break
             }
@@ -5960,31 +5922,37 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 // Emit a tool-specific intent message based on the tool being selected.
                 // toolExecutionId is inlined directly in each payload — no shared scalar,
                 // so parallel tool calls never overwrite each other's group key.
-                const toolQuery = extractToolQuery(toolCall.name, (toolCall.args ?? {}) as Record<string, unknown>)
+                const toolQuery = extractToolQuery(
+                  toolCall.name,
+                  (toolCall.args ?? {}) as Record<string, unknown>,
+                )
                 if (toolCall.name === XyneTools.toDoWrite) {
-                  await emitReasoningEvent(
-                    emitReasoningStep,
-                    { ...ReasoningSteps.toolSelected(toolCall.name), toolExecutionId: normalizedCallId }
-                  )
+                  await emitReasoningEvent(emitReasoningStep, {
+                    ...ReasoningSteps.toolSelected(toolCall.name),
+                    toolExecutionId: normalizedCallId,
+                  })
                 } else if (toolCall.name === XyneTools.listCustomAgents) {
-                  await emitReasoningEvent(
-                    emitReasoningStep,
-                    { ...ReasoningSteps.agentSearching(), toolExecutionId: normalizedCallId, toolName: XyneTools.listCustomAgents, ...(toolQuery ? { toolQuery } : {}) }
-                  )
+                  await emitReasoningEvent(emitReasoningStep, {
+                    ...ReasoningSteps.agentSearching(),
+                    toolExecutionId: normalizedCallId,
+                    toolName: XyneTools.listCustomAgents,
+                    ...(toolQuery ? { toolQuery } : {}),
+                  })
                 } else if (toolCall.name === XyneTools.runPublicAgent) {
                   // agentDelegated emission moved into createRunPublicAgentTool.execute()
                   // so each parallel call generates its own ID in an isolated async scope,
                   // eliminating the shared-scalar overwrite race condition.
                 } else if (toolCall.name === XyneTools.fallBack) {
-                  await emitReasoningEvent(
-                    emitReasoningStep,
-                    { ...ReasoningSteps.fallbackActivated(), toolExecutionId: normalizedCallId, toolName: XyneTools.fallBack }
-                  )
+                  await emitReasoningEvent(emitReasoningStep, {
+                    ...ReasoningSteps.fallbackActivated(),
+                    toolExecutionId: normalizedCallId,
+                    toolName: XyneTools.fallBack,
+                  })
                 } else {
-                  await emitReasoningEvent(
-                    emitReasoningStep,
-                    { ...ReasoningSteps.toolSelected(toolCall.name, toolQuery), toolExecutionId: normalizedCallId }
-                  )
+                  await emitReasoningEvent(emitReasoningStep, {
+                    ...ReasoningSteps.toolSelected(toolCall.name, toolQuery),
+                    toolExecutionId: normalizedCallId,
+                  })
                 }
                 selectionSpan?.end()
               }
@@ -6155,7 +6123,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   )
                   pendingExpectations.push(...extractedExpectations)
                   agentContext.currentTurnArtifacts.expectations.push(
-                    ...extractedExpectations
+                    ...extractedExpectations,
                   )
                   if (currentTurn > 0) {
                     recordExpectationsForTurn(
@@ -6181,7 +6149,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   agentContext.finalSynthesis.ackReceived = true
                   await emitReasoningEvent(
                     emitReasoningStep,
-                    ReasoningSteps.synthesisCompleted()
+                    ReasoningSteps.synthesisCompleted(),
                   )
                 }
                 assistantSpan?.end()
@@ -7185,9 +7153,7 @@ async function runDelegatedAgentWithMessageAgents(
       }
     }
 
-    const runTurnEndReviewAndCleanup = async (
-      turn: number,
-    ): Promise<void> => {
+    const runTurnEndReviewAndCleanup = async (turn: number): Promise<void> => {
       mergeToolOutputsIntoCurrentTurnMemory(agentContext, turn)
       mergeCurrentTurnToolOutputImagesIntoImageMemory(agentContext)
       await runTurnEndPipeline(agentContext, {
@@ -7195,9 +7161,10 @@ async function runDelegatedAgentWithMessageAgents(
         useAgenticFiltering: internalCfg
           ? internalCfg.enableAgenticFiltering
           : USE_AGENTIC_FILTERING,
-        reviewFrequency: internalCfg?.enableReview === false
-          ? MAX_REVIEW_FREQUENCY
-          : (agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY),
+        reviewFrequency:
+          internalCfg?.enableReview === false
+            ? MAX_REVIEW_FREQUENCY
+            : (agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY),
         skipReview: internalCfg?.enableReview === false,
         minTurnNumber: MIN_TURN_NUMBER,
         emitter: emitReasoningStep,
@@ -7225,13 +7192,13 @@ async function runDelegatedAgentWithMessageAgents(
             message,
             messagesWithNoErrResponse,
             t,
-            emitter
+            emitter,
           )
         },
         mergeCurrentTurnIntoCrossTurn: (ctx, t, rankedDocIds) => {
-          const docs = Array.from(ctx.currentTurnDocumentMemory.values()).filter(
-            (doc) => !rankedDocIds || rankedDocIds.has(doc.docId),
-          )
+          const docs = Array.from(
+            ctx.currentTurnDocumentMemory.values(),
+          ).filter((doc) => !rankedDocIds || rankedDocIds.has(doc.docId))
           if (docs.length > 0) {
             const newChunks = mergeDocumentStatesIntoDocumentMemory(
               ctx.documentMemory,
@@ -7475,12 +7442,12 @@ async function runDelegatedAgentWithMessageAgents(
             // Clean up expired synthetic documents (TTL-based eviction)
             const expiredCount = cleanupExpiredSyntheticDocs(
               agentContext.documentMemory,
-              currentTurn
+              currentTurn,
             )
             if (expiredCount > 0) {
               logger.info(
                 { expiredCount, currentTurn, chatId: agentContext.chat.id },
-                "[turn_start] Cleaned up expired synthetic documents"
+                "[turn_start] Cleaned up expired synthetic documents",
               )
             }
 
@@ -7650,9 +7617,7 @@ async function runDelegatedAgentWithMessageAgents(
                   "[DelegatedAgenticRun][FinalSynthesis] Repairing skipped synthesis call at run_end",
                 )
                 const repairResult = await runFinalSynthesisCall(agentContext)
-                if (
-                  (repairResult as { status?: string }).status === "error"
-                ) {
+                if ((repairResult as { status?: string }).status === "error") {
                   runFailedMessage =
                     (repairResult as { error?: { message?: string } }).error
                       ?.message || "Final synthesis tool failed."
@@ -7712,39 +7677,37 @@ async function runDelegatedAgentWithMessageAgents(
     }
 
     const citations: Citation[] = []
-    const imageCitations: ImageCitation[] = []
     const yieldedCitations = new Set<number>()
-    const yieldedImageCitations = new Map<number, Set<number>>()
 
     const answerForCitations =
       answer.trim().length > 0
         ? answer
         : agentContext.finalSynthesis.streamedText || ""
 
-    const fragmentsForCitations =
-    await getFragmentsForSynthesis(agentContext.documentMemory, {
-      email: params.userEmail,
-    })
+    const fragmentsForCitations = await getFragmentsForSynthesis(
+      agentContext.documentMemory,
+      {
+        email: params.userEmail,
+      },
+    )
 
     if (answerForCitations) {
       for await (const event of checkAndYieldCitationsForAgent(
         answerForCitations,
         yieldedCitations,
         fragmentsForCitations,
-        yieldedImageCitations,
-        params.userEmail,
+        0, // One-shot scan, start from beginning
       )) {
         if (event.citation) {
           citations.push(event.citation.item)
-        }
-        if (event.imageCitation) {
-          imageCitations.push(event.imageCitation)
         }
       }
     }
 
     const finalAnswer = answerForCitations || "Agent did not return any text."
-    const rawDocuments = documentMemoryToRawDocuments(agentContext.documentMemory)
+    const rawDocuments = documentMemoryToRawDocuments(
+      agentContext.documentMemory,
+    )
 
     return {
       result: finalAnswer,
@@ -7752,7 +7715,7 @@ async function runDelegatedAgentWithMessageAgents(
         agentId: params.agentId,
         contexts: fragmentsToToolContexts(fragmentsForCitations),
         citations,
-        imageCitations,
+        imageCitations: [],
         rawDocuments,
         cost: agentContext.totalCost,
         tokensUsed:

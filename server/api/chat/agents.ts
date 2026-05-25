@@ -251,7 +251,7 @@ async function* nonRagIterator(
   let thinking = ""
   let reasoning = isReasoning
   let yieldedCitations = new Set<number>()
-  let yieldedImageCitations = new Map<number, Set<number>>()
+  let lastScannedAnswerLength = 0
 
   for await (const chunk of ragOffIterator) {
     try {
@@ -263,9 +263,9 @@ async function* nonRagIterator(
               thinking,
               yieldedCitations,
               results,
-              undefined,
-              email!,
+              lastScannedAnswerLength,
             )
+            lastScannedAnswerLength = thinking.length
             yield { text: chunk.text, reasoning }
           } else {
             const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
@@ -286,9 +286,9 @@ async function* nonRagIterator(
                 thinking,
                 yieldedCitations,
                 results,
-                undefined,
-                email!,
+                lastScannedAnswerLength,
               )
+              lastScannedAnswerLength = thinking.length
               yield { text: token, reasoning }
             }
           }
@@ -306,9 +306,9 @@ async function* nonRagIterator(
             buffer,
             yieldedCitations,
             results,
-            yieldedImageCitations,
-            email ?? "",
+            lastScannedAnswerLength,
           )
+          lastScannedAnswerLength = buffer.length
         }
       }
 
