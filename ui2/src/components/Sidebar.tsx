@@ -2,6 +2,7 @@ import { Link, useLocation } from "@tanstack/react-router"
 import {
   Bot,
   FolderTree,
+  ListChecks,
   MessageSquarePlus,
   Monitor,
   Moon,
@@ -138,6 +139,7 @@ function CollapsedShell({
   const { pathname } = useLocation()
   const onKb = pathname.startsWith("/kb")
   const onAgents = pathname.startsWith("/agents")
+  const onBatches = pathname.startsWith("/batches")
   return (
     <div className="flex h-full w-14 flex-col items-center py-3">
       <button
@@ -190,6 +192,19 @@ function CollapsedShell({
           }
         >
           <Bot className="h-4 w-4" aria-hidden strokeWidth={1.75} />
+        </Link>
+        <Link
+          to="/batches"
+          aria-label="Batches"
+          title="Batches"
+          className={
+            "grid h-9 w-9 place-items-center rounded-lg transition-colors duration-150 " +
+            (onBatches
+              ? "bg-secondary text-foreground"
+              : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground")
+          }
+        >
+          <ListChecks className="h-4 w-4" aria-hidden strokeWidth={1.75} />
         </Link>
       </div>
 
@@ -266,6 +281,7 @@ function ExpandedShell({
   const { pathname } = useLocation()
   const onKb = pathname.startsWith("/kb")
   const onAgents = pathname.startsWith("/agents")
+  const onBatches = pathname.startsWith("/batches")
   return (
     <div className="flex h-full w-[272px] flex-col">
       <header className="flex items-center justify-between px-3 pb-2 pt-3">
@@ -318,6 +334,23 @@ function ExpandedShell({
         >
           <Bot className="h-4 w-4 shrink-0" aria-hidden strokeWidth={1.75} />
           <span className="flex-1 truncate text-left">Agents</span>
+        </Link>
+        <Link
+          to="/batches"
+          aria-current={onBatches ? "page" : undefined}
+          className={
+            "group flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-[13.5px] transition-colors duration-150 " +
+            (onBatches
+              ? "bg-secondary font-medium text-foreground"
+              : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground")
+          }
+        >
+          <ListChecks
+            className="h-4 w-4 shrink-0"
+            aria-hidden
+            strokeWidth={1.75}
+          />
+          <span className="flex-1 truncate text-left">Batches</span>
         </Link>
       </nav>
 

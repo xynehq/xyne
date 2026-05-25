@@ -20,8 +20,13 @@ import { googleAuthMiddleware, googleCallback } from "./auth/google"
 import chatRouter from "./agent/routes/chat"
 import kbRouter from "./routes/knowledgeBase"
 import agentsRouter, { usersRouter } from "./routes/agents"
+import batchesRouter from "./routes/batches"
 import { reconcileRunningOnBoot } from "./agent/storage/postgres"
 import { initApiServerQueue } from "@/queue/api-server-queue"
+import {
+  initBatchQueueOnly,
+  startBatchWorker,
+} from "./agent/batch/worker"
 import {
   ACCESS_COOKIE,
   REFRESH_COOKIE,
@@ -159,6 +164,7 @@ app.route("/v2/chat", chatRouter)
 app.route("/v2/kb", kbRouter)
 app.route("/v2/agents", agentsRouter)
 app.route("/v2/users", usersRouter)
+app.route("/v2/batches", batchesRouter)
 
 app.get("/v2/me", (c) => {
   const p = c.get("jwtPayload")
@@ -277,6 +283,25 @@ Logger.info(`backendv2 listening on port ${PORT}`)
 initApiServerQueue().catch((err) => {
   Logger.error({ err }, "Failed to init pg-boss queue for backendv2")
 })
+
+// Dedicated v2-batch pg-boss instance. Lives entirely under
+// backendv2/agent/batch — own connection pool, own queue, no overlap with
+// v1's `server/queue/*`.
+//
+// In a single-process deploy this also registers the row handler so a single
+// `bun server/backendv2/server.ts` Just Works. For a split deployment (API
+// pod + worker pod), set BACKENDV2_BATCH_RUN_WORKER=false on the API and run
+// `bun server/backendv2/batch-worker.ts` as the worker pod's entrypoint.
+const runEmbeddedWorker =
+  (process.env["BACKENDV2_BATCH_RUN_WORKER"] ?? "true") !== "false"
+;(runEmbeddedWorker ? startBatchWorker() : initBatchQueueOnly()).catch(
+  (err) => {
+    Logger.error(
+      { err, runEmbeddedWorker },
+      "Failed to init v2 batch queue/worker",
+    )
+  },
+)
 
 // Sweep turns/runs left in `running` by a previous process. Only meaningful
 // for the postgres driver — memory state is gone on restart anyway.

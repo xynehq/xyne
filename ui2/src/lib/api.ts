@@ -318,3 +318,126 @@ export const searchKb = async (
 ): Promise<KbSearchResult[]> => {
   return []
 }
+
+// ── Batch processing ───────────────────────────────────────────────────────
+// CSV/XLSX of questions → per-row pi-mono runs → progressive result XLSX.
+// All endpoints live under /v2/batches; routes mirror the chat module's
+// owner-only permission model.
+
+export type BatchStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+
+export type BatchRowStatus = "pending" | "running" | "done" | "error"
+
+export type Batch = {
+  id: string
+  ownerId: string
+  workspaceId: string
+  name: string
+  model: string | null
+  agentId: string | null
+  status: BatchStatus
+  totalRows: number
+  completedRows: number
+  erroredRows: number
+  questionColumn: string
+  createdAt: number
+  startedAt: number | null
+  finishedAt: number | null
+  archivedAt: number | null
+  error: string | null
+  columnOrder: string[]
+}
+
+export type BatchRow = {
+  id: string
+  batchId: string
+  ordinal: number
+  question: string
+  originalColumns: Record<string, unknown>
+  answer: string | null
+  status: BatchRowStatus
+  error: string | null
+  tokensIn: number | null
+  tokensOut: number | null
+  durationMs: number | null
+  startedAt: number | null
+  finishedAt: number | null
+}
+
+export type CreateBatchResult = {
+  batch: Batch
+  preview: {
+    columns: string[]
+    questionColumn: string
+    sampleRows: Array<Record<string, unknown>>
+    totalRows: number
+  }
+}
+
+export const createBatch = (form: FormData): Promise<CreateBatchResult> =>
+  apiFetch<CreateBatchResult>("/v2/batches", { method: "POST", body: form })
+
+export const listBatches = async (): Promise<{ batches: Batch[] }> => {
+  const res = await apiFetch<{ batches: Batch[] }>("/v2/batches?limit=100")
+  return { batches: res.batches ?? [] }
+}
+
+export const getBatch = (id: string): Promise<Batch> =>
+  apiFetch<Batch>(`/v2/batches/${encodeURIComponent(id)}`)
+
+export const listBatchRows = async (
+  id: string,
+  opts: { afterOrdinal?: number; limit?: number } = {},
+): Promise<{ rows: BatchRow[] }> => {
+  const qs = new URLSearchParams()
+  if (opts.afterOrdinal !== undefined) qs.set("after", String(opts.afterOrdinal))
+  qs.set("limit", String(opts.limit ?? 500))
+  const res = await apiFetch<{ rows: BatchRow[] }>(
+    `/v2/batches/${encodeURIComponent(id)}/rows?${qs.toString()}`,
+  )
+  return { rows: res.rows ?? [] }
+}
+
+export const cancelBatch = (id: string): Promise<{ ok: true }> =>
+  apiFetch<{ ok: true }>(`/v2/batches/${encodeURIComponent(id)}/cancel`, {
+    method: "POST",
+    body: "{}",
+  })
+
+export const deleteBatch = (id: string): Promise<{ ok: true }> =>
+  apiFetch<{ ok: true }>(`/v2/batches/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  })
+
+/** Returns the result XLSX as a Blob plus the X-Batch-Partial flag so the
+ *  caller can suffix the saved filename ("_partial.xlsx") and avoid users
+ *  mistaking an in-progress download for the final result. */
+export const downloadBatchResult = async (
+  id: string,
+): Promise<{ blob: Blob; partial: boolean; filename: string }> => {
+  const res = await fetch(
+    `/v2/batches/${encodeURIComponent(id)}/download`,
+    { credentials: "include" },
+  )
+  if (!res.ok) {
+    let message = `HTTP ${String(res.status)}`
+    try {
+      const body = (await res.json()) as { error?: string; message?: string }
+      message = body.error ?? body.message ?? message
+    } catch {
+      // ignore
+    }
+    throw new ApiError(res.status, message)
+  }
+  const partial = res.headers.get("X-Batch-Partial") === "true"
+  const disposition = res.headers.get("Content-Disposition") ?? ""
+  const filenameMatch = /filename="([^"]+)"/.exec(disposition)
+  const filename = filenameMatch?.[1] ?? `${id}.xlsx`
+  const blob = await res.blob()
+  return { blob, partial, filename }
+}

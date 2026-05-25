@@ -26,6 +26,7 @@ export * from "@/db/schema/databaseSyncState"
 export * from "@/db/schema/summaries"
 export * from "@/db/schema/agentDocuments"
 export * from "@/db/schema/v2Chat"
+export * from "@/db/schema/v2Batch"
 
 // Export combined types
 import type { PublicUser, SelectUser } from "@/db/schema/users"
