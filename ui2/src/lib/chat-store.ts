@@ -13,6 +13,7 @@ import {
   type FeedbackRating,
 } from "./api"
 import { appendDebugEvent } from "./debug-store"
+import { generateUUID } from "./uuid"
 import { preferencesStore } from "./preferences"
 
 // ─── Wire types (match backendv2 storage/types.ts) ──────────────────────────
@@ -827,7 +828,7 @@ export const chatStore = {
       messages: [
         ...p.messages,
         {
-          id: `tmp-${crypto.randomUUID().split("-")[0] ?? String(Date.now())}`,
+          id: `tmp-${generateUUID().split("-")[0] ?? String(Date.now())}`,
           conversationId: convId,
           turnId: "",
           role: "user",

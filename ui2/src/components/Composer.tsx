@@ -10,6 +10,7 @@ import { ArrowUp, Paperclip, Square } from "lucide-react"
 import { ModelSelector } from "./ModelSelector"
 import { AgentSelector } from "./AgentSelector"
 import { ThinkingSelector } from "./ThinkingSelector"
+import { generateUUID } from "../lib/uuid"
 
 type Props = {
   autoFocus?: boolean
@@ -48,9 +49,7 @@ type Props = {
 
 const newChatId = (): string => {
   // small, URL-safe id — replace with backendv2's id when wired up
-  return (
-    crypto.randomUUID().split("-")[0] ?? Math.random().toString(36).slice(2)
-  )
+  return generateUUID().split("-")[0] ?? String(Date.now())
 }
 
 export function Composer({
