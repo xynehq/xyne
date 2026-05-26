@@ -913,6 +913,7 @@ export const ChatDeleteApi = async (c: Context) => {
     // @ts-ignore
     const { chatId } = c.req.valid("json")
     const attachmentsToDelete: AttachmentMetadata[] = []
+    const deleteStart = Date.now()
     await db.transaction(async (tx) => {
       // Get the chat's internal ID first
       const chat = await getChatByExternalIdWithAuth(tx, chatId, email)
@@ -939,8 +940,15 @@ export const ChatDeleteApi = async (c: Context) => {
       await deleteMessagesByChatId(tx, chatId)
       await deleteChatByExternalIdWithAuth(tx, chatId, email)
     })
+    loggerWithChild({ email: email }).info(
+      `[TX-TIMING] ChatApi.delete total=${Date.now() - deleteStart}ms messagesToDelete=${attachmentsToDelete.length}`,
+    )
     if (attachmentsToDelete.length) {
+      const attachDeleteStart = Date.now()
       await handleAttachmentDelete(attachmentsToDelete, email)
+      loggerWithChild({ email: email }).info(
+        `[TX-TIMING] ChatApi.delete_attachments total=${Date.now() - attachDeleteStart}ms`,
+      )
     }
     return c.json({ success: true })
   } catch (error) {
@@ -5379,8 +5387,10 @@ export const MessageApi = async (c: Context) => {
     let title = ""
     let attachmentStorageError: Error | null = null
     if (!chatId) {
+      const txStart = Date.now()
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
+          const t0 = Date.now()
           const chat = await insertChat(tx, {
             workspaceId: workspace.id,
             workspaceExternalId: workspace.externalId,
@@ -5391,7 +5401,9 @@ export const MessageApi = async (c: Context) => {
             agentId: agentPromptValue,
             chatType: isMsgWithKbItems ? ChatType.KbChat : ChatType.Default,
           })
+          const t1 = Date.now()
 
+          const t2 = Date.now()
           const insertedMsg = await insertMessage(tx, {
             chatId: chat.id,
             userId: user.id,
@@ -5404,9 +5416,12 @@ export const MessageApi = async (c: Context) => {
             modelId: actualModelId || config.defaultBestModel,
             fileIds: fileIds,
           })
+          const t3 = Date.now()
 
           // Store attachment metadata for user message if attachments exist
+          let attachMs = 0
           if (attachmentMetadata && attachmentMetadata.length > 0) {
+            const t4 = Date.now()
             try {
               await storeAttachmentMetadata(
                 tx,
@@ -5421,10 +5436,17 @@ export const MessageApi = async (c: Context) => {
                 `Failed to store attachment metadata for user message ${insertedMsg.externalId}`,
               )
             }
+            attachMs = Date.now() - t4
           }
 
+          loggerWithChild({ email: email }).info(
+            `[TX-TIMING] ChatApi.new_chat insertChat=${t1 - t0}ms insertMessage=${t3 - t2}ms attachments=${attachMs}ms`,
+          )
           return [chat, insertedMsg]
         },
+      )
+      loggerWithChild({ email: email }).info(
+        `[TX-TIMING] ChatApi.new_chat total=${Date.now() - txStart}ms`,
       )
       loggerWithChild({ email: email }).info(
         "First mesage of the conversation, successfully created the chat",
@@ -5433,18 +5455,21 @@ export const MessageApi = async (c: Context) => {
       messages.push(insertedMsg) // Add the inserted message to messages array
       chatCreationSpan.end()
     } else {
+      const txStart = Date.now()
       let [existingChat, allMessages, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
-          // we are updating the chat and getting it's value in one call itself
-
+          const t0 = Date.now()
           let existingChat = await updateChatByExternalIdWithAuth(
             tx,
             chatId,
             email,
             {},
           )
+          const t1 = Date.now()
           let allMessages = await getChatMessagesWithAuth(tx, chatId, email)
+          const t2 = Date.now()
 
+          const t3 = Date.now()
           let insertedMsg = await insertMessage(tx, {
             chatId: existingChat.id,
             userId: user.id,
@@ -5457,9 +5482,12 @@ export const MessageApi = async (c: Context) => {
             modelId: actualModelId || config.defaultBestModel,
             fileIds,
           })
+          const t4 = Date.now()
 
           // Store attachment metadata for user message if attachments exist
+          let attachMs = 0
           if (attachmentMetadata && attachmentMetadata.length > 0) {
+            const t5 = Date.now()
             try {
               await storeAttachmentMetadata(
                 tx,
@@ -5474,10 +5502,17 @@ export const MessageApi = async (c: Context) => {
                 `Failed to store attachment metadata for user message ${insertedMsg.externalId}`,
               )
             }
+            attachMs = Date.now() - t5
           }
 
+          loggerWithChild({ email: email }).info(
+            `[TX-TIMING] ChatApi.existing_chat updateChat=${t1 - t0}ms getMessages=${t2 - t1}ms(${allMessages.length}) insertMessage=${t4 - t3}ms attachments=${attachMs}ms`,
+          )
           return [existingChat, allMessages, insertedMsg]
         },
+      )
+      loggerWithChild({ email: email }).info(
+        `[TX-TIMING] ChatApi.existing_chat total=${Date.now() - txStart}ms`,
       )
       loggerWithChild({ email: email }).info(
         "Existing conversation, fetched previous messages",
@@ -7205,6 +7240,7 @@ export const MessageRetryApi = async (c: Context) => {
                 `[MessageRetryApi] Stream closed prematurely. Saving partial state.`,
               )
               if (isUserMessage) {
+                const txStart = Date.now()
                 await db.transaction(async (tx) => {
                   await updateMessage(tx, messageId, { errorMessage: "" })
                   const msg = await insertMessage(tx, {
@@ -7228,6 +7264,9 @@ export const MessageRetryApi = async (c: Context) => {
                   })
                   relevantMessageId = msg.externalId
                 })
+                loggerWithChild({ email: email }).info(
+                  `[TX-TIMING] ChatApi.retry_partial total=${Date.now() - txStart}ms`,
+                )
               } else {
                 relevantMessageId = originalMessage.externalId
                 await updateMessage(db, messageId, {
@@ -7242,6 +7281,7 @@ export const MessageRetryApi = async (c: Context) => {
             } else {
               if (answer) {
                 if (isUserMessage) {
+                  const txStart = Date.now()
                   let msg = await db.transaction(async (tx) => {
                     await updateMessage(tx, messageId, { errorMessage: "" })
                     const msg = await insertMessage(tx, {
@@ -7260,15 +7300,15 @@ export const MessageRetryApi = async (c: Context) => {
                       cost: totalCost.toString(),
                       tokensUsed:
                         totalTokens.inputTokens + totalTokens.outputTokens,
-                      // The createdAt for this response which was error before
-                      // should be just 1 unit more than the respective user query's createdAt value
-                      // This is done to maintain order of user-assistant pattern of messages in UI
                       createdAt: new Date(
                         new Date(originalMessage.createdAt).getTime() + 1,
                       ),
                     })
                     return msg
                   })
+                  loggerWithChild({ email: email }).info(
+                    `[TX-TIMING] ChatApi.retry_success total=${Date.now() - txStart}ms`,
+                  )
                   relevantMessageId = msg.externalId
                 } else {
                   loggerWithChild({ email: email }).info(
@@ -7708,6 +7748,7 @@ export const MessageRetryApi = async (c: Context) => {
                 `[MessageRetryApi] Stream closed prematurely. Saving partial state.`,
               )
               if (isUserMessage) {
+                const txStart = Date.now()
                 await db.transaction(async (tx) => {
                   await updateMessage(tx, messageId, { errorMessage: "" })
                   const msg = await insertMessage(tx, {
@@ -7733,6 +7774,9 @@ export const MessageRetryApi = async (c: Context) => {
                   })
                   relevantMessageId = msg.externalId
                 })
+                loggerWithChild({ email: email }).info(
+                  `[TX-TIMING] ChatApi.retryV2_partial total=${Date.now() - txStart}ms`,
+                )
               } else {
                 relevantMessageId = originalMessage.externalId
                 await updateMessage(db, messageId, {
@@ -7746,8 +7790,13 @@ export const MessageRetryApi = async (c: Context) => {
             } else {
               if (answer) {
                 if (isUserMessage) {
+                  const txStart = Date.now()
                   let msg = await db.transaction(async (tx) => {
+                    const t0 = Date.now()
                     await updateMessage(tx, messageId, { errorMessage: "" })
+                    const t1 = Date.now()
+
+                    const t2 = Date.now()
                     const msg = await insertMessage(tx, {
                       chatId: originalMessage.chatId,
                       userId: user.id,
@@ -7772,8 +7821,16 @@ export const MessageRetryApi = async (c: Context) => {
                         new Date(originalMessage.createdAt).getTime() + 1,
                       ),
                     })
+                    const t3 = Date.now()
+
+                    Logger.info(
+                      `[TX-TIMING] ChatApi.retryV2_success updateMessage=${t1 - t0}ms insertMessage=${t3 - t2}ms`,
+                    )
                     return msg
                   })
+                  Logger.info(
+                    `[TX-TIMING] ChatApi.retryV2_success total=${Date.now() - txStart}ms`,
+                  )
                   relevantMessageId = msg.externalId
                 } else {
                   loggerWithChild({ email: email }).info(

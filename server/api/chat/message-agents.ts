@@ -1426,6 +1426,7 @@ async function ensureChatAndPersistUserMessage(
   const userEmail = String(params.user.email)
   const incomingChatId = params.chatId ? String(params.chatId) : undefined
   let attachmentError: Error | null = null
+  const txStart = Date.now()
   return await db.transaction(async (tx) => {
     if (!incomingChatId) {
       const chatInsert = {
@@ -1438,7 +1439,9 @@ async function ensureChatAndPersistUserMessage(
         agentId: params.agentId ?? undefined,
         chatType: ChatType.Default,
       } as unknown as Omit<InsertChat, "externalId">
+      const chatInsertT0 = Date.now()
       const chat = await insertChat(tx, chatInsert)
+      const chatInsertT1 = Date.now()
 
       const messageInsert = {
         chatId: chat.id,
@@ -1452,19 +1455,30 @@ async function ensureChatAndPersistUserMessage(
         modelId: (params.modelId as Models) || defaultBestModel,
         fileIds: params.fileIds,
       } as unknown as Omit<InsertMessage, "externalId">
+      const msgInsertT0 = Date.now()
       const userMessage = await insertMessage(tx, messageInsert)
+      const msgInsertT1 = Date.now()
 
       if (params.attachmentMetadata.length > 0) {
+        const attachT0 = Date.now()
         const storageErr = await storeAttachmentSafely(
           tx,
           userEmail,
           String(userMessage.externalId),
           params.attachmentMetadata,
         )
+        const attachT1 = Date.now()
+        Logger.info(
+          `[TX-TIMING] new_chat_attachments chatId=${chat.externalId} duration=${attachT1 - attachT0}ms count=${params.attachmentMetadata.length}`,
+        )
         if (storageErr) {
           attachmentError = storageErr
         }
       }
+
+      Logger.info(
+        `[TX-TIMING] new_chat tx=${Date.now() - txStart}ms insertChat=${chatInsertT1 - chatInsertT0}ms insertMessage=${msgInsertT1 - msgInsertT0}ms`,
+      )
 
       return {
         chat,
@@ -1474,17 +1488,24 @@ async function ensureChatAndPersistUserMessage(
       }
     }
 
+    const chatUpdateT0 = Date.now()
     const chat = await updateChatByExternalIdWithAuth(
       tx,
       String(incomingChatId),
       String(params.email),
       {},
     )
+    const chatUpdateT1 = Date.now()
+
+    const msgsFetchT0 = Date.now()
     const allMessages = await getChatMessagesWithAuth(
       tx,
       String(incomingChatId),
       String(params.email),
     )
+    const msgsFetchT1 = Date.now()
+
+    const compactT0 = Date.now()
     const conversationHistory = await maybeCompactAndIndex({
       trx: tx,
       chatId: String(incomingChatId),
@@ -1495,6 +1516,7 @@ async function ensureChatAndPersistUserMessage(
       userId,
       modelId: (params.modelId as Models) || defaultBestModel,
     })
+    const compactT1 = Date.now()
 
     const messageInsert = {
       chatId: chat.id,
@@ -1508,19 +1530,30 @@ async function ensureChatAndPersistUserMessage(
       modelId: (params.modelId as Models) || defaultBestModel,
       fileIds: params.fileIds,
     } as unknown as Omit<InsertMessage, "externalId">
+    const msgInsertT0 = Date.now()
     const userMessage = await insertMessage(tx, messageInsert)
+    const msgInsertT1 = Date.now()
 
     if (params.attachmentMetadata.length > 0) {
+      const attachT0 = Date.now()
       const storageErr = await storeAttachmentSafely(
         tx,
         userEmail,
         String(userMessage.externalId),
         params.attachmentMetadata,
       )
+      const attachT1 = Date.now()
+      Logger.info(
+        `[TX-TIMING] existing_chat_attachments chatId=${incomingChatId} duration=${attachT1 - attachT0}ms count=${params.attachmentMetadata.length}`,
+      )
       if (storageErr) {
         attachmentError = storageErr
       }
     }
+
+    Logger.info(
+      `[TX-TIMING] existing_chat tx=${Date.now() - txStart}ms updateChat=${chatUpdateT1 - chatUpdateT0}ms getMessages=${msgsFetchT1 - msgsFetchT0}ms messageCount=${allMessages.length} compact=${compactT1 - compactT0}ms insertMessage=${msgInsertT1 - msgInsertT0}ms`,
+    )
 
     return {
       chat,
