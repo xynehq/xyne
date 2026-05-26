@@ -541,11 +541,14 @@ export async function createRAGAgent<TState = unknown>(
           const mapped = mapEvent(rawEvent as AgentSessionEvent)
           for (const evt of mapped) {
             push(evt)
-
-            // Detect agent end
-            if (evt.type === "agent_end") {
-              done = true
-            }
+            // NOTE: `agent_end` is intentionally NOT treated as terminal here.
+            // The mid-turn compaction workaround above makes pi-coding-agent
+            // emit `agent_end` mid-run (to trigger compaction + `continue()`),
+            // after which more turns — including the final answer — follow. The
+            // run is only truly over when `promptPromise` settles, which marks
+            // `done` (see `.finally` below). Marking `done` on `agent_end` here
+            // would make the generator return on the compaction signal and drop
+            // the post-compaction answer (blank turn).
           }
         })
 
@@ -561,7 +564,20 @@ export async function createRAGAgent<TState = unknown>(
               type: "error",
               error: { message: err?.message ?? String(err) },
             })
+          })
+          .finally(() => {
+            // The run is complete only once `prompt()` settles — i.e. after
+            // every mid-turn compaction cycle and its follow-up turns. Mark
+            // `done` and wake any pending waiter so the generator drains all
+            // remaining events (including the post-compaction final answer)
+            // before it ends.
             done = true
+            if (resolveWaiting) {
+              const r = resolveWaiting
+              resolveWaiting = null
+              rejectWaiting = null
+              r()
+            }
           })
 
         // Timeout timer
@@ -585,9 +601,10 @@ export async function createRAGAgent<TState = unknown>(
             while (eventQueue.length > 0) {
               const evt = eventQueue.shift()!
               yield evt
-              if (evt.type === "agent_end") {
-                return
-              }
+              // Do NOT return on `agent_end` — under mid-turn compaction it is
+              // followed by more turns (the post-compaction answer). The
+              // generator ends below via `done`, set when `promptPromise`
+              // settles, after every remaining event has been drained.
             }
 
             if (done) return
