@@ -29,11 +29,7 @@ import { insertMessage, getChatMessagesWithAuth } from "@/db/message"
 import { type SelectChat, type SelectMessage } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger, getLoggerWithChild } from "@/logger"
-import {
-  ApiKeyScopes,
-  ChatSSEvents,
-  type MessageReqType,
-} from "@/shared/types"
+import { ApiKeyScopes, ChatSSEvents, type MessageReqType } from "@/shared/types"
 import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
 import { getErrorMessage } from "@/utils"
 import {
@@ -42,12 +38,9 @@ import {
 } from "@aws-sdk/client-bedrock-runtime"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
-import { streamSSE } from "hono/streaming" 
+import { streamSSE } from "hono/streaming"
 import { getTracer, type Tracer } from "@/tracer"
-import {
-  GetDocumentsByDocIds,
-  getAllDocumentsForAgent,
-} from "@/search/vespa"
+import { GetDocumentsByDocIds, getAllDocumentsForAgent } from "@/search/vespa"
 import {
   expandSheetIds,
   validateVespaIdInAgentIntegrations,
@@ -92,7 +85,11 @@ import {
   safeDecodeURIComponent,
 } from "./utils"
 import config from "@/config"
-import { getModelValueFromLabel, getActiveProvider, MODEL_CONFIGURATIONS } from "@/ai/modelConfig"
+import {
+  getModelValueFromLabel,
+  getActiveProvider,
+  MODEL_CONFIGURATIONS,
+} from "@/ai/modelConfig"
 import {
   buildUserQuery,
   isContextSelected,
@@ -113,7 +110,6 @@ const {
 } = config
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
-
 
 // Create mock agent from form data for testing
 const createMockAgentFromFormData = (
@@ -320,7 +316,6 @@ export const AgentMessageApiRagOff = async (c: Context) => {
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("AgentMessageApiRagOff")
 
-
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
   const { email, workspaceExternalId: workspaceId, via_apiKey } = getAuth(c)
@@ -416,7 +411,8 @@ export const AgentMessageApiRagOff = async (c: Context) => {
       agentPromptForLLM = JSON.stringify(agentForDb)
     }
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
-    const userRequestsReasoningAndEnabled = isReasoningEnabled && config.isReasoning
+    const userRequestsReasoningAndEnabled =
+      isReasoningEnabled && config.isReasoning
     if (!message) {
       throw new HTTPException(400, {
         message: "Message is required",
@@ -450,8 +446,10 @@ export const AgentMessageApiRagOff = async (c: Context) => {
 
     let title = ""
     if (!chatId) {
+      const txStart = Date.now()
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
+          const t0 = Date.now()
           const chat = await insertChat(tx, {
             workspaceId: workspace.id,
             workspaceExternalId: workspace.externalId,
@@ -462,7 +460,9 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             agentId: agentIdToStore as string,
             via_apiKey,
           })
+          const t1 = Date.now()
 
+          const t2 = Date.now()
           const insertedMsg = await insertMessage(tx, {
             chatId: chat.id,
             userId: user.id,
@@ -475,8 +475,16 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             modelId: (actualModelId as Models) || defaultBestModel,
             fileIds: fileIds,
           })
+          const t3 = Date.now()
+
+          Logger.info(
+            `[TX-TIMING] AgentsApi.new_chat insertChat=${t1 - t0}ms insertMessage=${t3 - t2}ms`,
+          )
           return [chat, insertedMsg]
         },
+      )
+      Logger.info(
+        `[TX-TIMING] AgentsApi.new_chat total=${Date.now() - txStart}ms`,
       )
       Logger.info(
         "First mesage of the conversation, successfully created the chat",
@@ -485,18 +493,21 @@ export const AgentMessageApiRagOff = async (c: Context) => {
       messages.push(insertedMsg) // Add the inserted message to messages array
       chatCreationSpan.end()
     } else {
+      const txStart = Date.now()
       let [existingChat, allMessages, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
-          // we are updating the chat and getting it's value in one call itself
-
+          const t0 = Date.now()
           let existingChat = await updateChatByExternalIdWithAuth(
             tx,
             chatId,
             email,
             {},
           )
+          const t1 = Date.now()
           let allMessages = await getChatMessagesWithAuth(tx, chatId, email)
+          const t2 = Date.now()
 
+          const t3 = Date.now()
           let insertedMsg = await insertMessage(tx, {
             chatId: existingChat.id,
             userId: user.id,
@@ -509,8 +520,16 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             modelId: (actualModelId as Models) || defaultBestModel,
             fileIds,
           })
+          const t4 = Date.now()
+
+          Logger.info(
+            `[TX-TIMING] AgentsApi.existing_chat updateChat=${t1 - t0}ms getMessages=${t2 - t1}ms(${allMessages.length}) insertMessage=${t4 - t3}ms`,
+          )
           return [existingChat, allMessages, insertedMsg]
         },
+      )
+      Logger.info(
+        `[TX-TIMING] AgentsApi.existing_chat total=${Date.now() - txStart}ms`,
       )
       Logger.info("Existing conversation, fetched previous messages")
       messages = allMessages.concat(insertedMsg) // Update messages array
@@ -591,12 +610,13 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             chunksSpan.end()
             if (allChunks?.root?.children) {
               const startIndex = 0
-              const precomputedDbContext = await getPrecomputedDbContextIfNeeded(
-                allChunks.root.children as VespaSearchResults[],
-                message,
-                userMetadata.userId,
-                userMetadata.workspaceId,
-              )
+              const precomputedDbContext =
+                await getPrecomputedDbContextIfNeeded(
+                  allChunks.root.children as VespaSearchResults[],
+                  message,
+                  userMetadata.userId,
+                  userMetadata.workspaceId,
+                )
               fragments = await Promise.all(
                 allChunks.root.children.map(
                   async (child, idx) =>
@@ -1190,7 +1210,8 @@ export const AgentMessageApi = async (c: Context) => {
               // Array format: ["reasoning", "websearch"]
               isReasoningEnabled = config.capabilities.includes("reasoning")
               enableWebSearch = config.capabilities.includes("websearch")
-              isDeepResearchEnabled = config.capabilities.includes("deepResearch")
+              isDeepResearchEnabled =
+                config.capabilities.includes("deepResearch")
             } else if (typeof config.capabilities === "object") {
               // Object format: { reasoning: true, websearch: false }
               isReasoningEnabled = config.capabilities.reasoning === true
@@ -1239,8 +1260,7 @@ export const AgentMessageApi = async (c: Context) => {
         }
       }
     }
-    const resolvedConsumerModelId =
-      actualModelId ?? consumerSelectedModelId
+    const resolvedConsumerModelId = actualModelId ?? consumerSelectedModelId
     const consumerAnswerOrSearchModelId =
       resolvedConsumerModelId ||
       ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId
@@ -1308,7 +1328,8 @@ export const AgentMessageApi = async (c: Context) => {
       }
     }
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
-    const userRequestsReasoningAndEnabled = isReasoningEnabled && config.isReasoning
+    const userRequestsReasoningAndEnabled =
+      isReasoningEnabled && config.isReasoning
     if (!message) {
       throw new HTTPException(400, {
         message: "Message is required",
@@ -1373,8 +1394,10 @@ export const AgentMessageApi = async (c: Context) => {
 
     let title = ""
     if (!chatId) {
+      const txStart = Date.now()
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
+          const t0 = Date.now()
           const chat = await insertChat(tx, {
             workspaceId: workspace.id,
             workspaceExternalId: workspace.externalId,
@@ -1385,7 +1408,9 @@ export const AgentMessageApi = async (c: Context) => {
             agentId: agentIdToStore as string,
             via_apiKey,
           })
+          const t1 = Date.now()
 
+          const t2 = Date.now()
           const insertedMsg = await insertMessage(tx, {
             chatId: chat.id,
             userId: user.id,
@@ -1398,6 +1423,9 @@ export const AgentMessageApi = async (c: Context) => {
             modelId: actualModelId || config.defaultBestModel,
             fileIds: fileIds,
           })
+          const t3 = Date.now()
+
+          const t4 = Date.now()
           // Store attachment metadata for user message if attachments exist
           if (attachmentMetadata && attachmentMetadata.length > 0) {
             try {
@@ -1415,8 +1443,16 @@ export const AgentMessageApi = async (c: Context) => {
               )
             }
           }
+          const t5 = Date.now()
+
+          Logger.info(
+            `[TX-TIMING] AgentsApi_V2.new_chat insertChat=${t1 - t0}ms insertMessage=${t3 - t2}ms storeAttachmentMetadata=${t5 - t4}ms`,
+          )
           return [chat, insertedMsg]
         },
+      )
+      Logger.info(
+        `[TX-TIMING] AgentsApi_V2.new_chat total=${Date.now() - txStart}ms`,
       )
       Logger.info(
         "First mesage of the conversation, successfully created the chat",
@@ -1425,18 +1461,21 @@ export const AgentMessageApi = async (c: Context) => {
       messages.push(insertedMsg) // Add the inserted message to messages array
       chatCreationSpan.end()
     } else {
+      const txStart = Date.now()
       let [existingChat, allMessages, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
-          // we are updating the chat and getting it's value in one call itself
-
+          const t0 = Date.now()
           let existingChat = await updateChatByExternalIdWithAuth(
             tx,
             chatId,
             email,
             {},
           )
+          const t1 = Date.now()
           let allMessages = await getChatMessagesWithAuth(tx, chatId, email)
+          const t2 = Date.now()
 
+          const t3 = Date.now()
           let insertedMsg = await insertMessage(tx, {
             chatId: existingChat.id,
             userId: user.id,
@@ -1449,6 +1488,9 @@ export const AgentMessageApi = async (c: Context) => {
             modelId: actualModelId || config.defaultBestModel,
             fileIds,
           })
+          const t4 = Date.now()
+
+          const t5 = Date.now()
           // Store attachment metadata for user message if attachments exist
           if (attachmentMetadata && attachmentMetadata.length > 0) {
             try {
@@ -1466,8 +1508,16 @@ export const AgentMessageApi = async (c: Context) => {
               )
             }
           }
+          const t6 = Date.now()
+
+          Logger.info(
+            `[TX-TIMING] AgentsApi_V2.existing_chat updateChat=${t1 - t0}ms getMessages=${t2 - t1}ms(${allMessages.length}) insertMessage=${t4 - t3}ms storeAttachmentMetadata=${t6 - t5}ms`,
+          )
           return [existingChat, allMessages, insertedMsg]
         },
+      )
+      Logger.info(
+        `[TX-TIMING] AgentsApi_V2.existing_chat total=${Date.now() - txStart}ms`,
       )
       loggerWithChild({ email: email }).info(
         "Existing conversation, fetched previous messages",
@@ -1607,7 +1657,10 @@ export const AgentMessageApi = async (c: Context) => {
               let citationMap: Record<number, number> = {}
               let thinking = ""
               let reasoning =
-                userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[actualModelId as Models || config.defaultBestModel]?.reasoning ?? true) === true
+                userRequestsReasoningAndEnabled &&
+                (MODEL_CONFIGURATIONS[
+                  (actualModelId as Models) || config.defaultBestModel
+                ]?.reasoning ?? true) === true
               const conversationSpan = streamSpan.startSpan(
                 "conversation_search",
               )
@@ -1854,7 +1907,9 @@ export const AgentMessageApi = async (c: Context) => {
               let citationMap: Record<number, number> = {}
               let thinking = ""
               let reasoning =
-                userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[consumerGivenContextModelId as Models]?.reasoning ?? true) === true
+                userRequestsReasoningAndEnabled &&
+                (MODEL_CONFIGURATIONS[consumerGivenContextModelId as Models]
+                  ?.reasoning ?? true) === true
               const conversationSpan = streamSpan.startSpan(
                 "conversation_search",
               )
@@ -2167,7 +2222,10 @@ export const AgentMessageApi = async (c: Context) => {
                     json: false,
                     agentPrompt: agentPromptForLLM,
                     reasoning:
-                      userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[consumerAnswerOrSearchModelId as Models]?.reasoning ?? true) === true,
+                      userRequestsReasoningAndEnabled &&
+                      (MODEL_CONFIGURATIONS[
+                        consumerAnswerOrSearchModelId as Models
+                      ]?.reasoning ?? true) === true,
                     messages: limitedMessages,
                     agentWithNoIntegrations: true,
                   },
@@ -2183,7 +2241,10 @@ export const AgentMessageApi = async (c: Context) => {
                       stream: true,
                       json: true,
                       reasoning:
-                        userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[consumerAnswerOrSearchModelId as Models]?.reasoning ?? true) === true,
+                        userRequestsReasoningAndEnabled &&
+                        (MODEL_CONFIGURATIONS[
+                          consumerAnswerOrSearchModelId as Models
+                        ]?.reasoning ?? true) === true,
                       messages: limitedMessages,
                       agentPrompt: agentPromptForLLM,
                     },
@@ -2226,7 +2287,9 @@ export const AgentMessageApi = async (c: Context) => {
 
               let thinking = ""
               let reasoning =
-                userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[consumerAnswerOrSearchModelId as Models]?.reasoning ?? true) === true
+                userRequestsReasoningAndEnabled &&
+                (MODEL_CONFIGURATIONS[consumerAnswerOrSearchModelId as Models]
+                  ?.reasoning ?? true) === true
               let buffer = ""
               const conversationSpan = streamSpan.startSpan(
                 "conversation_search",
@@ -2464,13 +2527,20 @@ export const AgentMessageApi = async (c: Context) => {
 
                   if (
                     (fileIds && fileIds.length > 0) ||
-                    (imageAttachmentFileIds && imageAttachmentFileIds.length > 0)
+                    (imageAttachmentFileIds &&
+                      imageAttachmentFileIds.length > 0)
                   ) {
                     loggerWithChild({ email: email }).info(
                       `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify(fileIds)}`,
                     )
-                    const allowedChunkCitations = fileIds.some((fileId) => fileId.startsWith("clf-")) || fileIds.some((fileId) => fileId.startsWith("attf_"))
-                    reasoning = userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[consumerGivenContextModelId as Models]?.reasoning ?? true) === true
+                    const allowedChunkCitations =
+                      fileIds.some((fileId) => fileId.startsWith("clf-")) ||
+                      fileIds.some((fileId) => fileId.startsWith("attf_"))
+                    reasoning =
+                      userRequestsReasoningAndEnabled &&
+                      (MODEL_CONFIGURATIONS[
+                        consumerGivenContextModelId as Models
+                      ]?.reasoning ?? true) === true
                     iterator = UnderstandMessageAndAnswerForGivenContext(
                       email,
                       ctx,
@@ -2497,7 +2567,10 @@ export const AgentMessageApi = async (c: Context) => {
 
                 // If no iterator was set above (non-file-context scenario), use the regular flow with the new classification
                 if (!iterator) {
-                  reasoning = userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[consumerGivenContextModelId as Models]?.reasoning ?? true) === true
+                  reasoning =
+                    userRequestsReasoningAndEnabled &&
+                    (MODEL_CONFIGURATIONS[consumerGivenContextModelId as Models]
+                      ?.reasoning ?? true) === true
                   iterator = UnderstandMessageAndAnswer(
                     email,
                     ctx,
@@ -2606,7 +2679,8 @@ export const AgentMessageApi = async (c: Context) => {
                 ragSpan.end()
               } else if (parsed.answer) {
                 answer = parsed.answer
-                assistantResponseModelId = (actualModelId as Models) || config.defaultBestModel
+                assistantResponseModelId =
+                  (actualModelId as Models) || config.defaultBestModel
               }
 
               if (answer || wasStreamClosedPrematurely) {
@@ -2958,7 +3032,9 @@ export const AgentMessageApi = async (c: Context) => {
             message,
             0.5,
             fileIds,
-            userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[consumerGivenContextModelId as Models]?.reasoning ?? true) === true,
+            userRequestsReasoningAndEnabled &&
+              (MODEL_CONFIGURATIONS[consumerGivenContextModelId as Models]
+                ?.reasoning ?? true) === true,
             understandSpan,
             [],
             imageAttachmentFileIds,
