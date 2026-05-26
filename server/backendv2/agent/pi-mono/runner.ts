@@ -269,7 +269,12 @@ export async function runPiMonoTurn(
     // requests + raw provider chunks. The runner's own tool-call wraps
     // below feed the same sink.
     ...(args.debug ? { debug: args.debug } : {}),
-    thinkingLevel: args.thinkingLevel ?? "medium",
+    // Precedence: explicit caller arg (typically the UI's Low/Medium/High
+    // picker) → per-model default in modelConfig (e.g. Nemotron is
+    // pinned to "low" to dodge its reasoning-truncation cliff) → global
+    // "medium" fallback. Falls back to "medium" only when neither is set.
+    thinkingLevel:
+      args.thinkingLevel ?? modelCfg?.thinkingLevel ?? "medium",
     extensions: [],
     timeoutMs: 10 * 60 * 1000,
   })
@@ -327,6 +332,14 @@ export async function runPiMonoTurn(
           // providers; absent on others. Optional so we degrade gracefully.
           tokensBefore?: number
           tokensAfter?: number
+          // compaction_end payload from pi-coding-agent — the actual
+          // condensed summary text plus pointer to the first kept entry.
+          // Present only on a successful (non-aborted) result.
+          result?: {
+            summary?: string
+            firstKeptEntryId?: string
+            tokensBefore?: number
+          }
         }
         if (
           e.type === "message_end" &&
@@ -338,9 +351,13 @@ export async function runPiMonoTurn(
           tokenUsage.output += u.output ?? 0
           tokenUsage.cacheRead += u.cacheRead ?? 0
           tokenUsage.cacheWrite += u.cacheWrite ?? 0
-        } else if (e.type === "auto_compaction_start") {
+        } else if (e.type === "compaction_start") {
+          // Pi-coding-agent ≥0.74 emits `compaction_start`/`compaction_end`
+          // (agent-session.js:1451, :1569). We previously listened for the
+          // older `auto_compaction_*` names; left silent rounds in the DB
+          // and missed events in the debug sink. Match the upstream name.
           compactionRounds++
-          log.info({ reason: e.reason }, "pi-mono: auto_compaction_start")
+          log.info({ reason: e.reason }, "pi-mono: compaction_start")
           if (args.debug) {
             args.debug.emitCompactionStart({
               reason: e.reason ?? "threshold",
@@ -350,19 +367,41 @@ export async function runPiMonoTurn(
               at: Date.now(),
             })
           }
-        } else if (e.type === "auto_compaction_end") {
+        } else if (e.type === "compaction_end") {
           log.info(
             {
               aborted: e.aborted,
               willRetry: e.willRetry,
               errorMessage: e.errorMessage?.slice(0, 300),
             },
-            "pi-mono: auto_compaction_end",
+            "pi-mono: compaction_end",
           )
           if (args.debug) {
+            // `tokensBefore` shows up in two places on the upstream
+            // event — top-level (older runs) and nested inside `result`
+            // (newer pi-coding-agent). Prefer the nested form when both
+            // are present so the panel reports what compaction actually
+            // saw.
+            const tokensBefore =
+              typeof e.result?.tokensBefore === "number"
+                ? e.result.tokensBefore
+                : typeof e.tokensBefore === "number"
+                  ? e.tokensBefore
+                  : undefined
             args.debug.emitCompactionEnd({
+              ...(tokensBefore !== undefined ? { tokensBefore } : {}),
               ...(typeof e.tokensAfter === "number"
                 ? { tokensAfter: e.tokensAfter }
+                : {}),
+              ...(typeof e.result?.summary === "string" &&
+              e.result.summary.length > 0
+                ? { summary: e.result.summary }
+                : {}),
+              ...(typeof e.result?.firstKeptEntryId === "string"
+                ? { firstKeptEntryId: e.result.firstKeptEntryId }
+                : {}),
+              ...(typeof e.errorMessage === "string" && e.errorMessage.length > 0
+                ? { errorMessage: e.errorMessage }
                 : {}),
               at: Date.now(),
               aborted: !!e.aborted,

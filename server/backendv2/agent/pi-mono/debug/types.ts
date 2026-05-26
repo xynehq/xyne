@@ -80,7 +80,15 @@ export type DebugEvent =
     }
   | {
       kind: "compaction_end"
+      tokensBefore?: number
       tokensAfter?: number
+      // The condensed summary the compaction LLM produced. Present on
+      // successful (non-aborted) threshold compactions; absent when the
+      // run was aborted, when prepareCompaction returned early, or when
+      // the model/auth was missing.
+      summary?: string
+      firstKeptEntryId?: string
+      errorMessage?: string
       at: number
       aborted: boolean
     }

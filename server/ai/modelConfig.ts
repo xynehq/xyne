@@ -711,6 +711,14 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     contextWindow: 200_000,
     reserveTokens: 40_192,
     keepRecentTokens: 50_000,
+    // Nemotron's reasoning chain has hit streaming-truncation cliffs
+    // around ~1k reasoning tokens — the provider returns stopReason
+    // "stop" with empty visible text when reasoning runs long. Cap
+    // the per-call reasoning budget at "low" so the model spends
+    // roughly 300-600 reasoning tokens instead of the 1-2k that
+    // "medium" produces. UI override (Low/Medium/High picker) still
+    // wins when the user explicitly selects one.
+    thinkingLevel: "low",
   },
   [Models.GEMMA_4]: {
     actualName: "gemma-4",

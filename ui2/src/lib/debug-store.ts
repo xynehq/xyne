@@ -64,7 +64,13 @@ export type DebugEvent =
     }
   | {
       kind: "compaction_end"
+      tokensBefore?: number
       tokensAfter?: number
+      // Condensed summary the compaction LLM produced. Absent on
+      // aborted / failed compactions.
+      summary?: string
+      firstKeptEntryId?: string
+      errorMessage?: string
       at: number
       aborted: boolean
     }

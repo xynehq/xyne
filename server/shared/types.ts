@@ -874,6 +874,14 @@ export interface ModelConfiguration {
    *  compaction round (everything older becomes a summary). Omit to
    *  fall back to BACKENDV2_PI_KEEP_RECENT_TOKENS env / global. */
   keepRecentTokens?: number
+  /** Per-model default reasoning budget. Applied when the caller
+   *  doesn't explicitly pass a thinkingLevel. Lets us tune the
+   *  reasoning depth on a per-model basis — e.g. Nemotron's long
+   *  reasoning chains have hit streaming-truncation cliffs around
+   *  ~1k reasoning tokens, so we default it lower than the global
+   *  "medium". UI selectors (Low/Medium/High) still override per
+   *  message when the user picks one explicitly. */
+  thinkingLevel?: "minimal" | "low" | "medium" | "high"
 }
 export const getDocumentSchema = z.object({
   docId: z.string().min(1),

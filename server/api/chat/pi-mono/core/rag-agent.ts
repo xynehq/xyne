@@ -14,6 +14,7 @@ import {
   shouldCompact,
 } from "@earendil-works/pi-coding-agent"
 
+import { ragCompactionExtension } from "./rag-compaction-extension"
 import type { RAGAgent, RAGAgentConfig, RAGEvent, RunOptions } from "./types"
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes
@@ -53,6 +54,57 @@ export function resolveModel(
       supportsToolStreaming: true,
     },
   } as Model<"openai-completions">
+}
+
+// Steering message we inject after the soft cap on mid-turn stops is hit.
+// The text needs to be unambiguous to the model — vague phrasing (e.g.
+// "consider answering") tends to be ignored in favour of "one more
+// search". The wording below has been tuned to push the model off the
+// tool path: it's framed as a hard constraint from the system, not a
+// suggestion, and ends with explicit instructions on what NOT to do.
+const FINAL_ANSWER_STEER_TEXT =
+  "[system steering] You have reached the maximum number of search/tool iterations for this turn. " +
+  "Do NOT issue any more tool calls. Using ONLY the Key findings already gathered in the compaction summary above, " +
+  "produce the final answer for the user now. " +
+  "If some specific sub-question can't be answered from what you already have, say so explicitly in the answer — " +
+  "but do not search further. Synthesize a complete response from the existing findings."
+
+/** Append the final-answer steering message to both the pi-mono session
+ *  history (for persistence + the next compaction) and the in-memory
+ *  agent state (so the very next `agent.continue()` LLM call sees it).
+ *  Both writes are best-effort — if either path throws we still want
+ *  the run to continue. */
+function injectFinalAnswerSteer(
+  piSession: PiMonoAgentSession,
+  agent: { state: { messages?: unknown[] } },
+  stopCount: number,
+): void {
+  const userMsg = {
+    role: "user" as const,
+    content: [
+      {
+        type: "text" as const,
+        text: `${FINAL_ANSWER_STEER_TEXT} (Triggered after ${stopCount} mid-turn compactions.)`,
+      },
+    ],
+    timestamp: Date.now(),
+  }
+  try {
+    ;(
+      piSession.sessionManager as unknown as {
+        appendMessage: (m: unknown) => unknown
+      }
+    ).appendMessage(userMsg)
+  } catch {
+    /* best-effort */
+  }
+  try {
+    if (Array.isArray(agent.state.messages)) {
+      agent.state.messages.push(userMsg)
+    }
+  } catch {
+    /* best-effort */
+  }
 }
 
 function mapEvent(event: AgentSessionEvent): RAGEvent[] {
@@ -181,6 +233,20 @@ export async function createRAGAgent<TState = unknown>(
 
   const model = resolveModel(config.model, config.baseUrl, config.modelOptions)
 
+  // Always register the RAG-flavored compaction summarizer. Pi-coding-agent's
+  // built-in template ("Goal / Done / Next Steps / file paths") is wrong for
+  // search-based research turns and produces empty `(none)` summaries, which
+  // strands the model with zero context after compaction. The extension
+  // returns `{compaction: {summary, ...}}` so pi-mono uses our summary
+  // instead of running its own compact(). See rag-compaction-extension.ts.
+  const ragCompactionFactory = ragCompactionExtension({
+    model,
+    ...(config.apiKey ? { apiKey: config.apiKey } : {}),
+    ...(config.thinkingLevel !== undefined && config.thinkingLevel !== "off"
+      ? { thinkingLevel: config.thinkingLevel }
+      : {}),
+  })
+
   let resourceLoader = config.resourceLoader
   if (!resourceLoader) {
     resourceLoader = new DefaultResourceLoader({
@@ -199,7 +265,10 @@ export async function createRAGAgent<TState = unknown>(
           : Array.isArray(config.appendSystemPrompt)
             ? config.appendSystemPrompt
             : [config.appendSystemPrompt],
-      extensionFactories: config.extensions ?? [],
+      extensionFactories: [
+        ragCompactionFactory,
+        ...(config.extensions ?? []),
+      ],
       noSkills: true,
       noPromptTemplates: true,
       noThemes: true,
@@ -278,6 +347,20 @@ export async function createRAGAgent<TState = unknown>(
     // consumed (and cleared) by _checkCompaction so its threshold
     // math agrees with ours. Cleared on read.
     let pendingTrailingTokens = 0
+    // Soft-cap on how many times our hook is allowed to fire mid-turn
+    // stops within a single `prompt()` call. After the cap the model
+    // tends to be in a tool-spamming loop (re-searching the same regs
+    // with slight rewordings) and another compaction just feeds it more
+    // tokens to chew on. Once we cross the cap, _checkCompaction below
+    // still runs compaction one last time AND injects a "produce final
+    // answer now" steering user message so the next turn is forced to
+    // synthesize instead of search.
+    // Configurable via `BACKENDV2_PI_MAX_MID_TURN_STOPS`; default 4.
+    const maxMidTurnStops = Math.max(
+      1,
+      Number(process.env["BACKENDV2_PI_MAX_MID_TURN_STOPS"] ?? "4"),
+    )
+    let midTurnStopCount = 0
     agent.createLoopConfig = (opts?: unknown): LoopCfg => {
       const cfg = origCreateLoopConfig(opts)
       cfg.shouldStopAfterTurn = (ctx): boolean => {
@@ -301,6 +384,7 @@ export async function createRAGAgent<TState = unknown>(
         const contextTokens = baseTokens + trailing
         const stop = shouldCompact(contextTokens, ctxWindow, settings)
         if (stop) {
+          midTurnStopCount += 1
           pendingTrailingTokens = trailing
           if (debugSink) {
             debugSink.emitMidTurnStop({
@@ -334,6 +418,23 @@ export async function createRAGAgent<TState = unknown>(
       ) => Promise<boolean>
       settingsManager: typeof piSession.settingsManager
     }
+    // Track whether the most recent _runAutoCompaction succeeded — pi-mono
+    // returns `hasQueuedMessages()` after a successful threshold compaction
+    // (agent-session.js:1580), which is false when nothing is queued, so we
+    // can't tell success-vs-failure from the return value alone. Watch the
+    // `compaction_end` event the run emits and read it back below.
+    let lastCompactionSucceeded = false
+    piSession.subscribe((evt: { type: string; aborted?: boolean; result?: unknown }) => {
+      if (evt.type === "compaction_start") {
+        lastCompactionSucceeded = false
+      } else if (
+        evt.type === "compaction_end" &&
+        !evt.aborted &&
+        evt.result !== undefined
+      ) {
+        lastCompactionSucceeded = true
+      }
+    })
     const origCheckCompaction = session._checkCompaction.bind(session)
     session._checkCompaction = async (msg, skipAbortedCheck = true): Promise<boolean> => {
       const trailing = pendingTrailingTokens
@@ -354,7 +455,31 @@ export async function createRAGAgent<TState = unknown>(
         msg.usage as Parameters<typeof calculateContextTokens>[0],
       )
       if (!shouldCompact(base + trailing, ctxWindow, settings)) return false
-      return await session._runAutoCompaction("threshold", false)
+      const r = await session._runAutoCompaction("threshold", false)
+      // When OUR hook triggered the mid-turn stop, the model hasn't yet had
+      // a chance to respond to the (now compacted) tool result. Pi-mono's
+      // _runAutoCompaction returns `hasQueuedMessages()` on success — false
+      // when nothing's queued — which makes `_handlePostAgentRun` skip the
+      // follow-up `agent.continue()`. That's correct for the natural
+      // post-agent_end compaction (the model already produced its final
+      // answer), but wrong for us: without a continue, the run ends with
+      // tool_result as the final block and no text. Force a continue here
+      // when we know compaction wrote a summary.
+      if (lastCompactionSucceeded) {
+        // Once we've hit the soft cap on mid-turn stops, inject a steering
+        // user message telling the model to compose the final answer
+        // instead of doing more searches. Without this the model tends to
+        // get stuck in a search loop — re-searching the same regulations
+        // with slight rewordings, even after the compaction summary tells
+        // it those searches have been done. The injected message lands on
+        // the (compacted) context the next `agent.continue()` sends to
+        // the LLM, so the loop's last LLM call is forced to synthesize.
+        if (midTurnStopCount >= maxMidTurnStops) {
+          injectFinalAnswerSteer(piSession, agent, midTurnStopCount)
+        }
+        return true
+      }
+      return r
     }
   }
 

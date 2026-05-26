@@ -140,14 +140,28 @@ export class DebugCapture {
   }
 
   public emitCompactionEnd(args: {
+    tokensBefore?: number
     tokensAfter?: number
+    summary?: string
+    firstKeptEntryId?: string
+    errorMessage?: string
     at: number
     aborted: boolean
   }): void {
     this.publish({
       kind: "compaction_end",
+      ...(args.tokensBefore !== undefined
+        ? { tokensBefore: args.tokensBefore }
+        : {}),
       ...(args.tokensAfter !== undefined
         ? { tokensAfter: args.tokensAfter }
+        : {}),
+      ...(args.summary !== undefined ? { summary: args.summary } : {}),
+      ...(args.firstKeptEntryId !== undefined
+        ? { firstKeptEntryId: args.firstKeptEntryId }
+        : {}),
+      ...(args.errorMessage !== undefined
+        ? { errorMessage: args.errorMessage }
         : {}),
       at: args.at,
       aborted: args.aborted,

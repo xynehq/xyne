@@ -1918,23 +1918,37 @@ const renderDetails = (e: DebugEvent, extra: RowExtra = {}): JSX.Element[] => {
       </Section>,
     )
   } else if (e.kind === "compaction_end") {
-    const before = extra.compactionPairedStart?.tokensBefore
+    // `tokensBefore` lands on either the start event (older runs) or the
+    // end event (newer pi-coding-agent surfaces it inside `result`); use
+    // whichever we have.
+    const before = e.tokensBefore ?? extra.compactionPairedStart?.tokensBefore
     const after = e.tokensAfter
     const durationMs = extra.compactionPairedStart
       ? Math.max(0, e.at - extra.compactionPairedStart.at)
       : undefined
-    const summary: Record<string, unknown> = { aborted: e.aborted }
-    if (typeof before === "number") summary["tokensBefore"] = before
-    if (typeof after === "number") summary["tokensAfter"] = after
+    const stats: Record<string, unknown> = { aborted: e.aborted }
+    if (typeof before === "number") stats["tokensBefore"] = before
+    if (typeof after === "number") stats["tokensAfter"] = after
     if (typeof before === "number" && typeof after === "number") {
-      summary["tokensFreed"] = before - after
+      stats["tokensFreed"] = before - after
     }
-    if (durationMs !== undefined) summary["durationMs"] = durationMs
+    if (durationMs !== undefined) stats["durationMs"] = durationMs
+    if (e.firstKeptEntryId) stats["firstKeptEntryId"] = e.firstKeptEntryId
+    if (e.errorMessage) stats["errorMessage"] = e.errorMessage
     out.push(
-      <Section key="summary" title="Compaction result">
-        <PrettyValue value={summary} />
+      <Section key="stats" title="Compaction result">
+        <PrettyValue value={stats} />
       </Section>,
     )
+    if (e.summary && e.summary.length > 0) {
+      out.push(
+        <Section key="summary" title="Generated summary">
+          <pre className="whitespace-pre-wrap break-words rounded-md border border-border bg-surface-muted/40 px-3 py-2 font-mono text-[11.5px] leading-relaxed text-foreground">
+            {e.summary}
+          </pre>
+        </Section>,
+      )
+    }
   } else if (e.kind === "agent_end") {
     const u = e.tokenUsage
     const totalContext = (u?.input ?? 0) + (u?.cacheRead ?? 0)
