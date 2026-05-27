@@ -22,6 +22,36 @@ import {
 
 type Vars = {
   jwtPayload: { sub: string; workspaceId: string }
+  authMethod: "cookie" | "api_key"
+  /** Set by AuthMiddleware. Empty when cookie-authed OR when the calling
+   *  API key has no per-agent restriction. */
+  apiKeyAllowedAgents: string[]
+}
+
+/** Enforce the API-key allowlist on any handler that takes an agent
+ *  reference. Returns nothing on success; throws 403 to reject. */
+const enforceAgentAllowlist = (
+  c: Context<{ Variables: Vars }>,
+  agentExternalId: string | undefined,
+): void => {
+  if (c.get("authMethod") !== "api_key") return
+  const allowed = c.get("apiKeyAllowedAgents") ?? []
+  if (allowed.length === 0) return // unrestricted key
+  // A restricted key MUST name an agent. If it doesn't, the workspace
+  // default would run — bypassing the allowlist. Refuse explicitly so
+  // the caller doesn't quietly hit an unrelated agent.
+  if (!agentExternalId) {
+    throw new HTTPException(403, {
+      message:
+        "This API key is scoped to specific agents; pass `agentId` " +
+        "explicitly (no implicit default).",
+    })
+  }
+  if (!allowed.includes(agentExternalId)) {
+    throw new HTTPException(403, {
+      message: `Agent ${agentExternalId} is not in this API key's allowlist.`,
+    })
+  }
 }
 
 const service = new ChatService(agentDeps())
@@ -145,6 +175,9 @@ router.post("/conversations/:id/messages", (c) =>
     if (!body.text) {
       throw new HTTPException(400, { message: "text required" })
     }
+    // Enforce per-key agent allowlist. For cookie-authed callers and for
+    // unrestricted API keys this is a no-op.
+    enforceAgentAllowlist(c as Context<{ Variables: Vars }>, body.agentId)
     const allowedLevels = ["minimal", "low", "medium", "high"] as const
     type ThinkingLevel = (typeof allowedLevels)[number]
     const thinkingLevel: ThinkingLevel | undefined = allowedLevels.includes(

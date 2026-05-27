@@ -781,3 +781,40 @@ export const searchKb = async (
 ): Promise<KbSearchResult[]> => {
   return []
 }
+
+// ── API keys ────────────────────────────────────────────────────────────────
+// Personal API keys backing the /api-keys settings page. Keys grant the same
+// permissions the calling user has — there's no per-scope ACL, just an
+// optional agent allowlist on the consumer surface.
+
+export type ApiKey = {
+  id: string
+  name: string
+  /** Always masked. The full plaintext is only returned by createApiKey. */
+  displayKey: string
+  allowedAgents: string[]
+  createdAt: string
+}
+
+export type CreateApiKeyInput = {
+  name: string
+  allowedAgents?: string[]
+}
+
+export const listApiKeys = async (): Promise<ApiKey[]> => {
+  const res = await apiFetch<{ keys: ApiKey[] }>("/v2/api-keys")
+  return res.keys ?? []
+}
+
+export const createApiKey = (
+  input: CreateApiKeyInput,
+): Promise<{ key: string; apiKey: ApiKey }> =>
+  apiFetch<{ key: string; apiKey: ApiKey }>("/v2/api-keys", {
+    method: "POST",
+    body: JSON.stringify(input),
+  })
+
+export const deleteApiKey = (id: string): Promise<void> =>
+  apiFetch<void>(`/v2/api-keys/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  })

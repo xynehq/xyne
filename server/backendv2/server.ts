@@ -20,6 +20,8 @@ import { googleAuthMiddleware, googleCallback } from "./auth/google"
 import chatRouter from "./agent/routes/chat"
 import kbRouter from "./routes/knowledgeBase"
 import agentsRouter, { usersRouter } from "./routes/agents"
+import apiKeysRouter from "./routes/apiKeys"
+import { verifyApiKey } from "./lib/apiKey"
 import { reconcileRunningOnBoot } from "./agent/storage/postgres"
 import { initApiServerQueue } from "@/queue/api-server-queue"
 import {
@@ -36,7 +38,19 @@ import {
   verifyRefresh,
 } from "./lib/tokens"
 
-type Variables = { jwtPayload: JwtPayload }
+type Variables = {
+  jwtPayload: JwtPayload
+  /** Which credential satisfied AuthMiddleware. Routes that must refuse
+   *  API-key callers (e.g. /v2/api-keys management) gate on this via
+   *  `RequireCookie`. */
+  authMethod: "cookie" | "api_key"
+  /** Allowlist of agent external IDs the current API key may invoke. Set
+   *  only when `authMethod === "api_key"`. Empty array means the key has
+   *  no per-agent restriction (it can reach anything the owning user can).
+   *  Cookie callers don't get a restriction here — the regular agent
+   *  permission system governs them. */
+  apiKeyAllowedAgents: string[]
+}
 
 const Logger = getLogger(Subsystem.Api).child({ module: "backendv2" })
 
@@ -100,12 +114,44 @@ const tryRefresh = async (c: Context): Promise<JwtPayload | null> => {
   }
 }
 
+// Unified auth. Accepts either an API key (header or ?query) or the
+// session cookie. The chosen credential is recorded in `authMethod` so
+// downstream guards can refuse one or the other — see `RequireCookie`,
+// applied to /v2/api-keys so API-key holders cannot mint more keys.
+//
+// Order matters: explicit API key wins. If a caller sends `x-api-key`,
+// they meant to authenticate that way — we will NOT silently fall through
+// to cookie auth on a bad key (that would mask the user's intent and
+// surface confusing 401s).
 const AuthMiddleware = async (c: Context, next: Next): Promise<void> => {
+  // Path 1: explicit API key — header (x-api-key or Authorization: Bearer …)
+  //         or query string (?api_key=…). The query form exists for SSE
+  //         EventSource clients that can't set custom headers.
+  const rawKey =
+    c.req.header("x-api-key") ??
+    c.req.header("authorization")?.replace(/^Bearer\s+/i, "") ??
+    c.req.query("api_key")
+  if (rawKey) {
+    const ctx = await verifyApiKey(rawKey)
+    if (!ctx) {
+      throw new HTTPException(401, { message: "Invalid API key" })
+    }
+    c.set("jwtPayload", ctx.jwtPayload)
+    c.set("authMethod", "api_key")
+    c.set("apiKeyAllowedAgents", ctx.allowedAgents)
+    await next()
+    return
+  }
+
+  // Path 2: session cookie. Tries the access token first; falls back to a
+  // refresh-token exchange if the access cookie is expired/invalid.
   const access = getCookie(c, ACCESS_COOKIE)
   if (access) {
     try {
       const decoded = await verifyAccess(access)
       c.set("jwtPayload", decoded)
+      c.set("authMethod", "cookie")
+      c.set("apiKeyAllowedAgents", [])
       await next()
       return
     } catch (err) {
@@ -118,6 +164,20 @@ const AuthMiddleware = async (c: Context, next: Next): Promise<void> => {
     throw new HTTPException(401, { message: "Unauthorized" })
   }
   c.set("jwtPayload", refreshed)
+  c.set("authMethod", "cookie")
+  c.set("apiKeyAllowedAgents", [])
+  await next()
+}
+
+// Guard for endpoints that must remain cookie-only. Today: /v2/api-keys
+// (key holders should not be able to mint more keys). Mount after
+// AuthMiddleware so `authMethod` is already populated.
+const RequireCookie = async (c: Context, next: Next): Promise<void> => {
+  if (c.get("authMethod") !== "cookie") {
+    throw new HTTPException(403, {
+      message: "This endpoint requires a session cookie, not an API key.",
+    })
+  }
   await next()
 }
 
@@ -153,12 +213,17 @@ app.get("/v1/auth/google/start", (c) => c.redirect("/v1/auth/callback"))
 app.route("/v1/auth/keycloak", keycloakRouter)
 
 // ── Protected routes ──────────────────────────────────────────────────────
+// All /v2/* accept either auth method (see AuthMiddleware). The /v2/api-keys
+// admin surface additionally requires cookie auth — RequireCookie runs after
+// AuthMiddleware sets `authMethod`.
 app.use("/v2/*", AuthMiddleware)
+app.use("/v2/api-keys/*", RequireCookie)
 
 app.route("/v2/chat", chatRouter)
 app.route("/v2/kb", kbRouter)
 app.route("/v2/agents", agentsRouter)
 app.route("/v2/users", usersRouter)
+app.route("/v2/api-keys", apiKeysRouter)
 
 app.get("/v2/me", (c) => {
   const p = c.get("jwtPayload")

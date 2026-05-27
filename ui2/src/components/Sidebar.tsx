@@ -3,6 +3,7 @@ import {
   Bot,
   FileJson,
   FolderTree,
+  KeyRound,
   MessageSquarePlus,
   Monitor,
   Moon,
@@ -140,6 +141,7 @@ function CollapsedShell({
   const onKb = pathname.startsWith("/kb")
   const onAgents = pathname.startsWith("/agents")
   const onExtractors = pathname.startsWith("/extractors")
+  const onApiKeys = pathname.startsWith("/api-keys")
   return (
     <div className="flex h-full w-14 flex-col items-center py-3">
       <button
@@ -205,6 +207,19 @@ function CollapsedShell({
           }
         >
           <FileJson className="h-4 w-4" aria-hidden strokeWidth={1.75} />
+        </Link>
+        <Link
+          to="/api-keys"
+          aria-label="API keys"
+          title="API keys"
+          className={
+            "grid h-9 w-9 place-items-center rounded-lg transition-colors duration-150 " +
+            (onApiKeys
+              ? "bg-secondary text-foreground"
+              : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground")
+          }
+        >
+          <KeyRound className="h-4 w-4" aria-hidden strokeWidth={1.75} />
         </Link>
       </div>
 
@@ -282,6 +297,7 @@ function ExpandedShell({
   const onKb = pathname.startsWith("/kb")
   const onAgents = pathname.startsWith("/agents")
   const onExtractors = pathname.startsWith("/extractors")
+  const onApiKeys = pathname.startsWith("/api-keys")
   return (
     <div className="flex h-full w-[272px] flex-col">
       <header className="flex items-center justify-between px-3 pb-2 pt-3">
@@ -351,6 +367,23 @@ function ExpandedShell({
             strokeWidth={1.75}
           />
           <span className="flex-1 truncate text-left">Extractors</span>
+        </Link>
+        <Link
+          to="/api-keys"
+          aria-current={onApiKeys ? "page" : undefined}
+          className={
+            "group flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-[13.5px] transition-colors duration-150 " +
+            (onApiKeys
+              ? "bg-secondary font-medium text-foreground"
+              : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground")
+          }
+        >
+          <KeyRound
+            className="h-4 w-4 shrink-0"
+            aria-hidden
+            strokeWidth={1.75}
+          />
+          <span className="flex-1 truncate text-left">API keys</span>
         </Link>
       </nav>
 
