@@ -29,7 +29,11 @@ import {
   getAgentByExternalIdWithPermissionCheck,
 } from "@/db/agent"
 import { storeAttachmentMetadata } from "@/db/attachment"
-import { getChatExternalIdsByAgentId, insertChat, updateChatByExternalIdWithAuth } from "@/db/chat"
+import {
+  getChatExternalIdsByAgentId,
+  insertChat,
+  updateChatByExternalIdWithAuth,
+} from "@/db/chat"
 import { insertChatTrace } from "@/db/chatTrace"
 import { db } from "@/db/client"
 import { getConnectorById } from "@/db/connector"
@@ -196,7 +200,12 @@ import {
   mergeDocumentStatesIntoDocumentMemory,
   mergeRawDocumentsIntoDocumentMemory,
 } from "./document-memory"
-import type { Citation, FragmentImageReference, ImageCitation, MinimalAgentFragment } from "./types"
+import type {
+  Citation,
+  FragmentImageReference,
+  ImageCitation,
+  MinimalAgentFragment,
+} from "./types"
 import {
   checkAndYieldCitationsForAgent,
   collectReferencedFileIdsUntilCompaction,
@@ -858,18 +867,14 @@ function sanitizeChatMemoryForLLMContext(
   if (!chatMemoryText?.trim()) return undefined
   const sanitized = chatMemoryText
     .split("\n")
-    .filter(
-      (line) => !line.trimStart().startsWith("Assistant thinking:"),
-    )
+    .filter((line) => !line.trimStart().startsWith("Assistant thinking:"))
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim()
   return sanitized ? sanitized : undefined
 }
 
-function buildLLMMemoryContextSection(
-  context: AgentRunContext,
-): string {
+function buildLLMMemoryContextSection(context: AgentRunContext): string {
   const parts: string[] = []
   if (context.episodicMemoriesText?.trim()) {
     parts.push(`Relevant Past Experiences:\n${context.episodicMemoriesText}`)
@@ -899,9 +904,7 @@ export async function buildFinalSynthesisPayload(
   const agentSystemPromptSection = agentSystemPromptBlock
     ? `Agent System Prompt Context:\n${agentSystemPromptBlock}`
     : ""
-  const formattedFragments = formatFragmentsWithMetadata(
-    fragments,
-  )
+  const formattedFragments = formatFragmentsWithMetadata(fragments)
   const fragmentsSection = formattedFragments
     ? `Context Fragments:\n${formattedFragments}`
     : ""
@@ -1097,7 +1100,11 @@ function buildInitialToolMessage(options: {
     )
   }
   if (options.chatMemoryText?.trim()) {
-    parts.push("## Earlier Conversation Context\n", options.chatMemoryText.trim(), "\n")
+    parts.push(
+      "## Earlier Conversation Context\n",
+      options.chatMemoryText.trim(),
+      "\n",
+    )
   }
   if (parts.length === 0) return null
   const content = parts.join("")
@@ -1382,7 +1389,7 @@ async function handleReviewOutcome(
     )
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.anomaliesDetected(reviewResult.anomalies ?? [])
+      ReasoningSteps.anomaliesDetected(reviewResult.anomalies ?? []),
     )
   }
 }
@@ -1592,7 +1599,10 @@ async function prepareInitialAttachmentContext(
 ): Promise<{ rawDocuments: ToolRawDocument[]; summary: string } | null> {
   // We support image-only requests: `fileIds` can be empty while
   // `imageAttachmentFileIds` is non-empty (images extracted from attachments).
-  if ((!fileIds?.length || fileIds.length === 0) && (!imageAttachmentFileIds?.length || imageAttachmentFileIds.length === 0)) {
+  if (
+    (!fileIds?.length || fileIds.length === 0) &&
+    (!imageAttachmentFileIds?.length || imageAttachmentFileIds.length === 0)
+  ) {
     return null
   }
 
@@ -1684,12 +1694,9 @@ async function prepareInitialAttachmentContext(
       }
       fileSearchSpan?.end()
     }
-    
-    if(imageAttachmentFileIds && imageAttachmentFileIds.length > 0) {
-      const direct = await GetDocumentsByDocIds(
-        imageAttachmentFileIds,
-        span,
-      )
+
+    if (imageAttachmentFileIds && imageAttachmentFileIds.length > 0) {
+      const direct = await GetDocumentsByDocIds(imageAttachmentFileIds, span)
       if (direct?.root?.children?.length) {
         attachmentFallbackDocs.push(...direct.root.children)
       }
@@ -1819,7 +1826,7 @@ export async function beforeToolExecutionHook(
   if (!validation.success) {
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.toolValidationError(toolName, validation.error.message)
+      ReasoningSteps.toolValidationError(toolName, validation.error.message),
     )
     Logger.warn(
       `Tool input validation failed for ${toolName}: ${validation.error.message}`,
@@ -1839,7 +1846,7 @@ export async function beforeToolExecutionHook(
   if (isDuplicate) {
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.toolSkippedDuplicate(toolName)
+      ReasoningSteps.toolSkippedDuplicate(toolName),
     )
     return null // Skip execution
   }
@@ -1852,7 +1859,7 @@ export async function beforeToolExecutionHook(
     const turnsLeft = info.cooldownUntilTurn - context.turnCount
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.toolSkippedCooldown(toolName, turnsLeft)
+      ReasoningSteps.toolSkippedCooldown(toolName, turnsLeft),
     )
     return null // Skip execution — tool is also removed from tool list
   }
@@ -1972,13 +1979,17 @@ export async function afterToolExecutionHook(
     const enteredCooldown = cooldownMgr.recordFailure(
       toolName,
       record.error!.message,
-      context.turnCount
+      context.turnCount,
     )
     if (enteredCooldown) {
       const info = cooldownMgr.getCooldownInfo(toolName)!
       await emitReasoningEvent(
         reasoningEmitter,
-        ReasoningSteps.toolCooldownApplied(toolName, info.count, info.cooldownUntilTurn - context.turnCount)
+        ReasoningSteps.toolCooldownApplied(
+          toolName,
+          info.count,
+          info.cooldownUntilTurn - context.turnCount,
+        ),
       )
     }
   }
@@ -1986,12 +1997,17 @@ export async function afterToolExecutionHook(
   // 5. Extract raw Vespa results only. All tools return rawDocuments.
   const resultData = result?.data
   const rawDocuments: ToolRawDocument[] =
-    (resultData && typeof resultData === "object" && Array.isArray((resultData as { rawDocuments?: unknown }).rawDocuments))
+    resultData &&
+    typeof resultData === "object" &&
+    Array.isArray((resultData as { rawDocuments?: unknown }).rawDocuments)
       ? (resultData as { rawDocuments: ToolRawDocument[] }).rawDocuments
       : []
-  let toolFragments: MinimalAgentFragment[] = (resultData && typeof resultData === "object" && Array.isArray((resultData as { fragments?: unknown }).fragments))
-    ? (resultData as { fragments: MinimalAgentFragment[] }).fragments
-    : []
+  let toolFragments: MinimalAgentFragment[] =
+    resultData &&
+    typeof resultData === "object" &&
+    Array.isArray((resultData as { fragments?: unknown }).fragments)
+      ? (resultData as { fragments: MinimalAgentFragment[] }).fragments
+      : []
 
   loggerWithChild({ email: context.user.email }).info(
     { toolName, rawDocumentsExtracted: rawDocuments.length },
@@ -2027,7 +2043,11 @@ export async function afterToolExecutionHook(
         reasoningEmitter,
         ReasoningSteps.planCreated(
           plan.goal || "Goal not specified",
-          plan.subTasks.map((t) => ({ id: t.id, description: t.description, status: t.status })),
+          plan.subTasks.map((t) => ({
+            id: t.id,
+            description: t.description,
+            status: t.status,
+          })),
         ),
       )
     }
@@ -2045,7 +2065,11 @@ export async function afterToolExecutionHook(
       reasoningEmitter,
       ReasoningSteps.planCreated(
         context.plan.goal || "Goal not specified",
-        context.plan.subTasks.map((t) => ({ id: t.id, description: t.description, status: t.status })),
+        context.plan.subTasks.map((t) => ({
+          id: t.id,
+          description: t.description,
+          status: t.status,
+        })),
       ),
     )
   }
@@ -2056,12 +2080,14 @@ export async function afterToolExecutionHook(
     typeof result === "object" &&
     result.status === "success"
   ) {
-    const agents = (result?.data as { agents?: ListCustomAgentsOutput["agents"] })?.agents
+    const agents = (
+      result?.data as { agents?: ListCustomAgentsOutput["agents"] }
+    )?.agents
     const agentCount = Array.isArray(agents) ? agents.length : 0
     const agentNames = agentCount ? agents?.map((a) => a.agentName) : undefined
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.agentsFound(agentCount, agentNames)
+      ReasoningSteps.agentsFound(agentCount, agentNames),
     )
   }
 
@@ -2093,7 +2119,7 @@ export async function afterToolExecutionHook(
       ?.delegationRunId
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.agentCompleted(agentName, delegationRunId)
+      ReasoningSteps.agentCompleted(agentName, delegationRunId),
     )
   }
 
@@ -2106,13 +2132,17 @@ export async function afterToolExecutionHook(
   ) {
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.fallbackCompleted()
+      ReasoningSteps.fallbackCompleted(),
     )
   }
 
-  const toolQuery = extractToolQuery(toolName, args as Record<string, unknown>) ?? ""
+  const toolQuery =
+    extractToolQuery(toolName, args as Record<string, unknown>) ?? ""
   const resultSummary =
-    (result?.data && typeof result.data === "object" && typeof (result.data as { resultSummary?: string }).resultSummary === "string")
+    result?.data &&
+    typeof result.data === "object" &&
+    typeof (result.data as { resultSummary?: string }).resultSummary ===
+      "string"
       ? (result.data as { resultSummary: string }).resultSummary
       : summarizeToolResultPayload(result)
 
@@ -2144,7 +2174,10 @@ export async function afterToolExecutionHook(
         title: `Delegated agent (${agentName})`,
         url: "",
         app: Apps.Xyne,
-        entity: { type: "agent", name: agentName } as unknown as Citation["entity"],
+        entity: {
+          type: "agent",
+          name: agentName,
+        } as unknown as Citation["entity"],
       })
       doc.chunks.set(chunkKeyFromContent(resultSummary), {
         content: resultSummary,
@@ -2188,7 +2221,7 @@ export async function afterToolExecutionHook(
   if (toolName !== XyneTools.runPublicAgent) {
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.toolCompleted(toolName, record.status === "error")
+      ReasoningSteps.toolCompleted(toolName, record.status === "error"),
     )
   }
 
@@ -2206,13 +2239,7 @@ export function buildDelegatedAgentFragments(opts: {
   turnNumber: number
   sourceToolName: string
 }): MinimalAgentFragment[] {
-  const {
-    result,
-    agentId,
-    agentName,
-    turnNumber,
-    sourceToolName,
-  } = opts
+  const { result, agentId, agentName, turnNumber, sourceToolName } = opts
   const resultData = (result?.data as Record<string, unknown>) || {}
   const citations = resultData.citations as Citation[] | undefined
   const imageCitations = resultData.imageCitations as
@@ -2509,13 +2536,8 @@ function normalizeReviewResult(raw: unknown): unknown {
             : "missed",
         summary: typeof item?.summary === "string" ? item.summary : "",
         expectationGoal:
-          typeof item?.expectationGoal === "string"
-            ? item.expectationGoal
-            : "",
-        followUp:
-          typeof item?.followUp === "string"
-            ? item.followUp
-            : "",
+          typeof item?.expectationGoal === "string" ? item.expectationGoal : "",
+        followUp: typeof item?.followUp === "string" ? item.followUp : "",
       }))
     : []
   const unmetExpectations = Array.isArray(r.unmetExpectations)
@@ -2534,8 +2556,10 @@ function normalizeReviewResult(raw: unknown): unknown {
     notes: typeof r.notes === "string" ? r.notes : "",
     toolFeedback,
     unmetExpectations,
-    planChangeNeeded: typeof r.planChangeNeeded === "boolean" ? r.planChangeNeeded : false,
-    planChangeReason: typeof r.planChangeReason === "string" ? r.planChangeReason : undefined,
+    planChangeNeeded:
+      typeof r.planChangeNeeded === "boolean" ? r.planChangeNeeded : false,
+    planChangeReason:
+      typeof r.planChangeReason === "string" ? r.planChangeReason : undefined,
     anomaliesDetected:
       typeof r.anomaliesDetected === "boolean"
         ? r.anomaliesDetected
@@ -2548,7 +2572,8 @@ function normalizeReviewResult(raw: unknown): unknown {
       r.recommendation === "replan"
         ? r.recommendation
         : "proceed",
-    ambiguityResolved: typeof r.ambiguityResolved === "boolean" ? r.ambiguityResolved : false,
+    ambiguityResolved:
+      typeof r.ambiguityResolved === "boolean" ? r.ambiguityResolved : false,
     clarificationQuestions,
   }
 }
@@ -2603,7 +2628,7 @@ async function batchRankFragments(
   userMessage: string,
   messagesWithNoErrResponse: Message[],
   turnNumber: number,
-  reasoningEmitter?: ReasoningEmitter
+  reasoningEmitter?: ReasoningEmitter,
 ): Promise<MinimalAgentFragment[]> {
   if (allUnrankedWithToolContext.length === 0) return []
 
@@ -2612,10 +2637,19 @@ async function batchRankFragments(
     string,
     { toolName: string; toolQuery: string; signals: RetrievalSignal[] }
   >()
-  for (const { fragment, toolName, toolQuery, signals } of allUnrankedWithToolContext) {
+  for (const {
+    fragment,
+    toolName,
+    toolQuery,
+    signals,
+  } of allUnrankedWithToolContext) {
     const key = getFragmentDedupKey(fragment) || fragment.id || ""
     if (!fragmentKeyToToolContext.has(key)) {
-      fragmentKeyToToolContext.set(key, { toolName, toolQuery, signals: [...signals] })
+      fragmentKeyToToolContext.set(key, {
+        toolName,
+        toolQuery,
+        signals: [...signals],
+      })
       continue
     }
 
@@ -2624,7 +2658,9 @@ async function batchRankFragments(
 
     // Preserve "all" signals for this doc/content key (dedupe by query+turn+toolName).
     const existingSigKeys = new Set(
-      existing.signals.map((s) => `${s.toolName ?? "search"}|${s.query}|${s.turn}`),
+      existing.signals.map(
+        (s) => `${s.toolName ?? "search"}|${s.query}|${s.turn}`,
+      ),
     )
     for (const sig of signals) {
       const k = `${sig.toolName ?? "search"}|${sig.query}|${sig.turn}`
@@ -2634,7 +2670,8 @@ async function batchRankFragments(
     }
   }
 
-  const metadataConstraints = extractMetadataConstraintsFromUserMessage(userMessage)
+  const metadataConstraints =
+    extractMetadataConstraintsFromUserMessage(userMessage)
   const {
     rankedCandidates,
     hasConstraints: hasMetadataConstraints,
@@ -2642,11 +2679,14 @@ async function batchRankFragments(
   } = rankFragmentsByMetadataConstraints(allUnranked, metadataConstraints)
   const rankingCandidates = rankedCandidates.map((c) => c.fragment)
   const strictNoCompliantCandidates =
-    hasMetadataConstraints && metadataConstraints.strict && !hasCompliantCandidates
+    hasMetadataConstraints &&
+    metadataConstraints.strict &&
+    !hasCompliantCandidates
 
   /** Skip ranking LLM when fragments already fit context; use all and record. */
   const RANKING_CONTEXT_WINDOW_CAPACITY = 8
-  const skipRankingLLM = rankingCandidates.length <= RANKING_CONTEXT_WINDOW_CAPACITY
+  const skipRankingLLM =
+    rankingCandidates.length <= RANKING_CONTEXT_WINDOW_CAPACITY
 
   if (!skipRankingLLM) {
     await emitReasoningEvent(
@@ -2655,11 +2695,14 @@ async function batchRankFragments(
     )
     if (hasMetadataConstraints) {
       if (strictNoCompliantCandidates) {
-        await emitReasoningEvent(reasoningEmitter, ReasoningSteps.metadataNoMatch())
+        await emitReasoningEvent(
+          reasoningEmitter,
+          ReasoningSteps.metadataNoMatch(),
+        )
       } else {
         await emitReasoningEvent(
           reasoningEmitter,
-          ReasoningSteps.metadataFilterApplied(hasCompliantCandidates)
+          ReasoningSteps.metadataFilterApplied(hasCompliantCandidates),
         )
       }
     }
@@ -2670,7 +2713,9 @@ async function batchRankFragments(
   if (skipRankingLLM) {
     selectedDocs = strictNoCompliantCandidates
       ? []
-      : hasMetadataConstraints && metadataConstraints.strict && hasCompliantCandidates
+      : hasMetadataConstraints &&
+          metadataConstraints.strict &&
+          hasCompliantCandidates
         ? rankedCandidates.filter((c) => c.compliant).map((c) => c.fragment)
         : rankingCandidates
   } else {
@@ -2685,95 +2730,109 @@ async function batchRankFragments(
           toolContext?.toolQuery,
           toolContext?.signals,
         )
-      }
+      },
     )
 
-  try {
-    const rankingModelId = (context.modelId as Models) || config.defaultBestModel
-    const selectionSpan = getTracer("chat").startSpan("batch_select_best_documents")
-    selectionSpan.setAttribute("total_unranked", allUnrankedWithToolContext.length)
-    selectionSpan.setAttribute("context_count", contextStrings.length)
-
-    let bestDocIndexes: number[] = []
     try {
-      const rankingMessages = withAgentSystemPromptMessage(
-        messagesWithNoErrResponse,
-        context.dedicatedAgentSystemPrompt
+      const rankingModelId =
+        (context.modelId as Models) || config.defaultBestModel
+      const selectionSpan = getTracer("chat").startSpan(
+        "batch_select_best_documents",
       )
       selectionSpan.setAttribute(
-        "has_agent_system_prompt_snapshot",
-        !!sanitizeAgentSystemPromptSnapshot(context.dedicatedAgentSystemPrompt)
+        "total_unranked",
+        allUnrankedWithToolContext.length,
       )
-      bestDocIndexes = await extractBestDocumentIndexes(
-        userMessage,
-        contextStrings,
-        { modelId: rankingModelId, json: false, stream: false },
-        rankingMessages
-      )
-      selectionSpan.setAttribute("selected_count", bestDocIndexes.length)
+      selectionSpan.setAttribute("context_count", contextStrings.length)
+
+      let bestDocIndexes: number[] = []
+      try {
+        const rankingMessages = withAgentSystemPromptMessage(
+          messagesWithNoErrResponse,
+          context.dedicatedAgentSystemPrompt,
+        )
+        selectionSpan.setAttribute(
+          "has_agent_system_prompt_snapshot",
+          !!sanitizeAgentSystemPromptSnapshot(
+            context.dedicatedAgentSystemPrompt,
+          ),
+        )
+        bestDocIndexes = await extractBestDocumentIndexes(
+          userMessage,
+          contextStrings,
+          { modelId: rankingModelId, json: false, stream: false },
+          rankingMessages,
+        )
+        selectionSpan.setAttribute("selected_count", bestDocIndexes.length)
+      } catch (error) {
+        selectionSpan.setAttribute("error", true)
+        selectionSpan.setAttribute("error_message", getErrorMessage(error))
+        throw error
+      } finally {
+        selectionSpan.end()
+      }
+
+      if (bestDocIndexes.length > 0) {
+        bestDocIndexes.forEach((idx) => {
+          if (idx >= 1 && idx <= rankingCandidates.length) {
+            selectedDocs.push(rankingCandidates[idx - 1])
+          }
+        })
+        selectedDocs = enforceMetadataConstraintsOnSelection(
+          selectedDocs,
+          rankedCandidates,
+          metadataConstraints,
+        )
+      }
+
+      if (selectedDocs.length === 0) {
+        // Fallback: use all candidates (or compliant-only if strict)
+        selectedDocs = strictNoCompliantCandidates
+          ? []
+          : hasMetadataConstraints &&
+              metadataConstraints.strict &&
+              hasCompliantCandidates
+            ? rankedCandidates.filter((c) => c.compliant).map((c) => c.fragment)
+            : rankingCandidates
+      }
     } catch (error) {
-      selectionSpan.setAttribute("error", true)
-      selectionSpan.setAttribute("error_message", getErrorMessage(error))
-      throw error
-    } finally {
-      selectionSpan.end()
-    }
-
-    if (bestDocIndexes.length > 0) {
-      bestDocIndexes.forEach((idx) => {
-        if (idx >= 1 && idx <= rankingCandidates.length) {
-          selectedDocs.push(rankingCandidates[idx - 1])
-        }
-      })
-      selectedDocs = enforceMetadataConstraintsOnSelection(
-        selectedDocs,
-        rankedCandidates,
-        metadataConstraints
+      loggerWithChild({ email: context.user.email }).error(
+        {
+          error: error instanceof Error ? error.message : String(error),
+          totalUnranked: allUnranked.length,
+        },
+        "[batchRankFragments] Ranking failed — falling back to all candidates",
       )
-    }
-
-    if (selectedDocs.length === 0) {
-      // Fallback: use all candidates (or compliant-only if strict)
+      await emitReasoningEvent(
+        reasoningEmitter,
+        ReasoningSteps.rankingFailed(strictNoCompliantCandidates),
+      )
+      // Apply same metadata-based filtering as success-path fallback so strict mode
+      // does not reintroduce non-compliant fragments.
       selectedDocs = strictNoCompliantCandidates
         ? []
-        : hasMetadataConstraints && metadataConstraints.strict && hasCompliantCandidates
-        ? rankedCandidates.filter((c) => c.compliant).map((c) => c.fragment)
-        : rankingCandidates
+        : hasMetadataConstraints &&
+            metadataConstraints.strict &&
+            hasCompliantCandidates
+          ? rankedCandidates.filter((c) => c.compliant).map((c) => c.fragment)
+          : rankingCandidates
     }
-  } catch (error) {
-    loggerWithChild({ email: context.user.email }).error(
-      {
-        error: error instanceof Error ? error.message : String(error),
-        totalUnranked: allUnranked.length,
-      },
-      "[batchRankFragments] Ranking failed — falling back to all candidates"
-    )
-    await emitReasoningEvent(
-      reasoningEmitter,
-      ReasoningSteps.rankingFailed(strictNoCompliantCandidates)
-    )
-    // Apply same metadata-based filtering as success-path fallback so strict mode
-    // does not reintroduce non-compliant fragments.
-    selectedDocs = strictNoCompliantCandidates
-      ? []
-      : hasMetadataConstraints && metadataConstraints.strict && hasCompliantCandidates
-        ? rankedCandidates.filter((c) => c.compliant).map((c) => c.fragment)
-        : rankingCandidates
-  }
   }
 
   if (selectedDocs.length > 0) {
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.documentsFiltered(selectedDocs.length)
+      ReasoningSteps.documentsFiltered(selectedDocs.length),
     )
 
     // Merge ranked current-turn docs into cross-turn document memory before recording
     const rankedDocIds = new Set(
-      selectedDocs.map((f) => f.source?.docId ?? f.id).filter(Boolean) as string[]
+      selectedDocs
+        .map((f) => f.source?.docId ?? f.id)
+        .filter(Boolean) as string[],
     )
     const rankedDocsFromCurrentTurn = Array.from(
-      context.currentTurnDocumentMemory.values()
+      context.currentTurnDocumentMemory.values(),
     ).filter((d) => rankedDocIds.has(d.docId))
     if (rankedDocsFromCurrentTurn.length > 0) {
       const newChunks = mergeDocumentStatesIntoDocumentMemory(
@@ -2870,16 +2929,15 @@ export async function buildReviewPromptFromContext(
             r.unmetExpectations?.length
               ? `Unmet expectations: ${r.unmetExpectations.join("; ")}`
               : "",
-            r.anomalies?.length
-              ? `Anomalies: ${r.anomalies.join("; ")}`
-              : "",
+            r.anomalies?.length ? `Anomalies: ${r.anomalies.join("; ")}` : "",
           ].filter(Boolean)
           return `Previous review summary (for continuity):\n${parts.join("\n")}`
         })()
       : ""
   const docOrderForImages = newFragments.map((f) => f.id)
   const reviewImageBudget =
-    IMAGE_CONTEXT_CONFIG.maxImagesPerCall && IMAGE_CONTEXT_CONFIG.maxImagesPerCall > 0
+    IMAGE_CONTEXT_CONFIG.maxImagesPerCall &&
+    IMAGE_CONTEXT_CONFIG.maxImagesPerCall > 0
       ? IMAGE_CONTEXT_CONFIG.maxImagesPerCall
       : 8
   const { imageFileNamesForModel: currentImages, total: totalImages } =
@@ -3003,10 +3061,9 @@ async function runReviewLLM(
   const hasChatMemory = !!sanitizeChatMemoryForLLMContext(
     context.chatMemoryText,
   )
-  const totalImagesAll = Array.from(context.documentMemory?.values?.() ?? []).reduce(
-    (sum, doc) => sum + (doc.images?.length ?? 0),
-    0,
-  )
+  const totalImagesAll = Array.from(
+    context.documentMemory?.values?.() ?? [],
+  ).reduce((sum, doc) => sum + (doc.images?.length ?? 0), 0)
   Logger.debug(
     {
       email: context.user.email,
@@ -3576,7 +3633,9 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
                 } as MinimalAgentFragment
               })
             : []
-      const rawDocumentsUnfiltered = Array.isArray((metadata as any).rawDocuments)
+      const rawDocumentsUnfiltered = Array.isArray(
+        (metadata as any).rawDocuments,
+      )
         ? ((metadata as any).rawDocuments as ToolRawDocument[])
         : []
       const citations = Array.isArray((metadata as any).citations)
@@ -3921,14 +3980,21 @@ function buildAgentInstructions(
   agentPrompt?: string,
   delegationEnabled = true,
 ): string {
-  const availableToolNames = enabledToolNames.filter((tool) => context.enabledTools.has(tool))
-  const toolDescriptions = availableToolNames.length > 0
-    ? generateToolDescriptions(availableToolNames)
-    : "No tools available yet. "
+  const availableToolNames = enabledToolNames.filter((tool) =>
+    context.enabledTools.has(tool),
+  )
+  const toolDescriptions =
+    availableToolNames.length > 0
+      ? generateToolDescriptions(availableToolNames)
+      : "No tools available yet. "
 
   const cooldownMgr = new ToolCooldownManager(context.failedTools)
   const toolsInCooldown = enabledToolNames
-    .filter((t) => !context.enabledTools.has(t) && cooldownMgr.isInCooldown(t, context.turnCount))
+    .filter(
+      (t) =>
+        !context.enabledTools.has(t) &&
+        cooldownMgr.isInCooldown(t, context.turnCount),
+    )
     .map((name) => ({ name, info: cooldownMgr.getCooldownInfo(name)! }))
   const cooldownBlock =
     toolsInCooldown.length > 0
@@ -3938,25 +4004,26 @@ function buildAgentInstructions(
           "The following tools are temporarily disabled due to repeated failures. Use other tools or data sources instead.",
           ...toolsInCooldown.map(
             ({ name, info }) =>
-              `- ${name}: failed ${info.count}x (last: ${info.lastError || "error"}), ${info.cooldownUntilTurn - context.turnCount} turn(s) remaining.`
+              `- ${name}: failed ${info.count}x (last: ${info.lastError || "error"}), ${info.cooldownUntilTurn - context.turnCount} turn(s) remaining.`,
           ),
           "</tools_in_cooldown>",
           "",
         ].join("\n")
       : ""
 
-  const agentSection = agentPrompt ? `\n\nAgent Constraints:\n${agentPrompt}` : ""
+  const agentSection = agentPrompt
+    ? `\n\nAgent Constraints:\n${agentPrompt}`
+    : ""
   const attachmentDirective = buildAttachmentDirective(context)
   const promptAddendum = buildAgentPromptAddendum()
-  const reviewResultBlock =
-    context.review.lastReviewResult
-      ? [
-          "<last_review_result>",
-          JSON.stringify(context.review.lastReviewResult, null, 2),
-          "</last_review_result>",
-          "",
-        ].join("\n")
-      : ""
+  const reviewResultBlock = context.review.lastReviewResult
+    ? [
+        "<last_review_result>",
+        JSON.stringify(context.review.lastReviewResult, null, 2),
+        "</last_review_result>",
+        "",
+      ].join("\n")
+    : ""
 
   let planSection = "\n<plan>\n"
   if (context.plan) {
@@ -3986,8 +4053,11 @@ function buildAgentInstructions(
     : ""
 
   const isFirstTurn = context.turnCount === 1
-  const workingMemoryMessages = config.MEMORY_CONFIG?.WORKING_MEMORY_MESSAGES ?? 6
-  const conversationContext = isFirstTurn ? `You are given only the last ${workingMemoryMessages} messages of this chat in context. Use \`searchChatHistory\` when you need to recall or search older messages.` : '';
+  const workingMemoryMessages =
+    config.MEMORY_CONFIG?.WORKING_MEMORY_MESSAGES ?? 6
+  const conversationContext = isFirstTurn
+    ? `You are given only the last ${workingMemoryMessages} messages of this chat in context. Use \`searchChatHistory\` when you need to recall or search older messages.`
+    : ""
 
   const instructionLines: string[] = [
     "You are Xyne, an enterprise search assistant with agentic capabilities.",
@@ -4049,7 +4119,8 @@ function buildAgentInstructions(
           "- Track each `clarificationQuestions` entry as its own sub-task or outbound user question until the ambiguity is resolved inside <last_review_result>.",
           "- If review feedback demands a brand-new approach, rebuild the plan; otherwise refine the existing tasks.",
           "- If no plan change is needed, explicitly mark the tasks `in_progress` or `completed` so the reviewer sees momentum.",
-        ] : []),
+        ]
+      : []),
     "- Maintain one sub-task per concrete goal; list only the tools truly needed for that sub-task.",
     "- Only chain subtasks when real dependencies exist—for example, “fetch the people who messaged me today → gather the emails received from them → summarize the combined thread” keeps later steps paused until earlier outputs arrive.",
     "- After every tool run, immediately update the active sub-task’s status, result, and any newly required tasks so the plan mirrors reality.",
@@ -4490,6 +4561,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
       ) => {
         try {
           const traceJson = tracer.serializeToJson()
+          const t_trace0 = Date.now()
           await insertChatTrace({
             workspaceId: workspace.id as number,
             userId: user.id as number,
@@ -4500,6 +4572,10 @@ export async function MessageAgents(c: Context): Promise<Response> {
             messageExternalId: messageExternalId as string,
             traceJson,
           })
+          const t_trace1 = Date.now()
+          loggerWithChild({ email }).info(
+            `[TX-TIMING] MessageAgentsApi.persistTrace traceJsonSize=${traceJson.length} insertChatTrace=${t_trace1 - t_trace0}ms`,
+          )
         } catch (traceError) {
           loggerWithChild({ email }).error(
             traceError,
@@ -4578,8 +4654,12 @@ export async function MessageAgents(c: Context): Promise<Response> {
             : undefined
 
         // Memory retrieval is best-effort; failures should not block message handling
-        let episodicMemories: Awaited<ReturnType<typeof retrieveEpisodicMemories>> = []
-        let chatMemoryChunks: Awaited<ReturnType<typeof retrieveRelevantChatHistory>> = []
+        let episodicMemories: Awaited<
+          ReturnType<typeof retrieveEpisodicMemories>
+        > = []
+        let chatMemoryChunks: Awaited<
+          ReturnType<typeof retrieveRelevantChatHistory>
+        > = []
         try {
           const [episodicResults, chatMemoryResults] = await Promise.all([
             retrieveEpisodicMemories({
@@ -4911,7 +4991,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
           "[MessageAgents] Tools exposed to LLM after filtering",
         )
 
-
         const initialSyntheticMessages: JAFMessage[] = []
 
         let initialAttachmentContext: {
@@ -4926,7 +5005,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
         if (referencedWithImages.length > 0) {
           await emitReasoningEvent(
             emitReasoningStep,
-            ReasoningSteps.attachmentAnalyzing()
+            ReasoningSteps.attachmentAnalyzing(),
           )
           const prepared = await prepareInitialAttachmentContext(
             allReferencedFileIds,
@@ -4934,12 +5013,12 @@ export async function MessageAgents(c: Context): Promise<Response> {
             userMetadata,
             message,
             email,
-            imageAttachmentFileIds
+            imageAttachmentFileIds,
           )
           if (prepared) {
             await emitReasoningEvent(
               emitReasoningStep,
-              ReasoningSteps.attachmentExtracted(prepared.rawDocuments.length)
+              ReasoningSteps.attachmentExtracted(prepared.rawDocuments.length),
             )
             initialAttachmentContext = {
               rawDocuments: prepared.rawDocuments,
@@ -5000,7 +5079,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   {
                     email: agentContext.user.email,
                     userId: agentContext.user.numericId ?? undefined,
-                    workspaceId: agentContext.user.workspaceNumericId ?? undefined,
+                    workspaceId:
+                      agentContext.user.workspaceNumericId ?? undefined,
                   },
                 )
               : []
@@ -5194,7 +5274,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
           await runTurnEndPipeline(agentContext, {
             turn,
             useAgenticFiltering: USE_AGENTIC_FILTERING,
-            reviewFrequency: agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY,
+            reviewFrequency:
+              agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY,
             minTurnNumber: MIN_TURN_NUMBER,
             emitter: emitReasoningStep,
 
@@ -5215,20 +5296,25 @@ export async function MessageAgents(c: Context): Promise<Response> {
             // Wiring: batch fragment ranking (one fragment per doc from merged document memory)
             getUnrankedFragmentsForRanking: (ctx, t) =>
               buildUnrankedFragmentsFromDocumentMemory(ctx, t),
-            rankFragments: async (ctx, allUnrankedWithToolContext, t, emitter) => {
+            rankFragments: async (
+              ctx,
+              allUnrankedWithToolContext,
+              t,
+              emitter,
+            ) => {
               return await batchRankFragments(
                 ctx,
                 allUnrankedWithToolContext,
                 message,
                 messagesWithNoErrResponse,
                 t,
-                emitter
+                emitter,
               )
             },
             mergeCurrentTurnIntoCrossTurn: (ctx, t, rankedDocIds) => {
-              const docs = Array.from(ctx.currentTurnDocumentMemory.values()).filter(
-                (doc) => !rankedDocIds || rankedDocIds.has(doc.docId),
-              )
+              const docs = Array.from(
+                ctx.currentTurnDocumentMemory.values(),
+              ).filter((doc) => !rankedDocIds || rankedDocIds.has(doc.docId))
               if (docs.length > 0) {
                 const newChunks = mergeDocumentStatesIntoDocumentMemory(
                   ctx.documentMemory,
@@ -5459,12 +5545,14 @@ export async function MessageAgents(c: Context): Promise<Response> {
               data: chunk,
             })
 
-            const fragmentsForCitations =
-              await getFragmentsForSynthesis(agentContext.documentMemory, {
+            const fragmentsForCitations = await getFragmentsForSynthesis(
+              agentContext.documentMemory,
+              {
                 email: agentContext.user?.email,
                 userId: agentContext.user?.numericId ?? undefined,
                 workspaceId: agentContext.user?.workspaceNumericId ?? undefined,
-              })
+              },
+            )
             for await (const citationEvent of checkAndYieldCitationsForAgent(
               answer,
               yieldedCitations,
@@ -5568,12 +5656,15 @@ export async function MessageAgents(c: Context): Promise<Response> {
               if (recovered.length > 0) {
                 await emitReasoningEvent(
                   emitReasoningStep,
-                  ReasoningSteps.toolRecovered(recovered)
+                  ReasoningSteps.toolRecovered(recovered),
                 )
               }
-              const activeTools = cooldown.getAvailableTools(allTools, currentTurn)
+              const activeTools = cooldown.getAvailableTools(
+                allTools,
+                currentTurn,
+              )
               agentContext.enabledTools = new Set(
-                activeTools.map((t) => t.schema.name)
+                activeTools.map((t) => t.schema.name),
               )
 
               Logger.debug(
@@ -5582,14 +5673,14 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   agentName: evt.data.agentName,
                   chatId: agentContext.chat.externalId,
                   runId,
-                  jafRunState: runState
+                  jafRunState: runState,
                 },
                 "[MessageAgents] Turn start LLM input",
               )
 
               await emitReasoningEvent(
                 emitReasoningStep,
-                ReasoningSteps.turnStarted(currentTurn)
+                ReasoningSteps.turnStarted(currentTurn),
               )
               break
             }
@@ -5639,31 +5730,37 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 // Emit a tool-specific intent message based on the tool being selected.
                 // toolExecutionId is inlined directly in each payload — no shared scalar,
                 // so parallel tool calls never overwrite each other's group key.
-                const toolQuery = extractToolQuery(toolCall.name, (toolCall.args ?? {}) as Record<string, unknown>)
+                const toolQuery = extractToolQuery(
+                  toolCall.name,
+                  (toolCall.args ?? {}) as Record<string, unknown>,
+                )
                 if (toolCall.name === XyneTools.toDoWrite) {
-                  await emitReasoningEvent(
-                    emitReasoningStep,
-                    { ...ReasoningSteps.toolSelected(toolCall.name), toolExecutionId: normalizedCallId }
-                  )
+                  await emitReasoningEvent(emitReasoningStep, {
+                    ...ReasoningSteps.toolSelected(toolCall.name),
+                    toolExecutionId: normalizedCallId,
+                  })
                 } else if (toolCall.name === XyneTools.listCustomAgents) {
-                  await emitReasoningEvent(
-                    emitReasoningStep,
-                    { ...ReasoningSteps.agentSearching(), toolExecutionId: normalizedCallId, toolName: XyneTools.listCustomAgents, ...(toolQuery ? { toolQuery } : {}) }
-                  )
+                  await emitReasoningEvent(emitReasoningStep, {
+                    ...ReasoningSteps.agentSearching(),
+                    toolExecutionId: normalizedCallId,
+                    toolName: XyneTools.listCustomAgents,
+                    ...(toolQuery ? { toolQuery } : {}),
+                  })
                 } else if (toolCall.name === XyneTools.runPublicAgent) {
                   // agentDelegated emission moved into createRunPublicAgentTool.execute()
                   // so each parallel call generates its own ID in an isolated async scope,
                   // eliminating the shared-scalar overwrite race condition.
                 } else if (toolCall.name === XyneTools.fallBack) {
-                  await emitReasoningEvent(
-                    emitReasoningStep,
-                    { ...ReasoningSteps.fallbackActivated(), toolExecutionId: normalizedCallId, toolName: XyneTools.fallBack }
-                  )
+                  await emitReasoningEvent(emitReasoningStep, {
+                    ...ReasoningSteps.fallbackActivated(),
+                    toolExecutionId: normalizedCallId,
+                    toolName: XyneTools.fallBack,
+                  })
                 } else {
-                  await emitReasoningEvent(
-                    emitReasoningStep,
-                    { ...ReasoningSteps.toolSelected(toolCall.name, toolQuery), toolExecutionId: normalizedCallId }
-                  )
+                  await emitReasoningEvent(emitReasoningStep, {
+                    ...ReasoningSteps.toolSelected(toolCall.name, toolQuery),
+                    toolExecutionId: normalizedCallId,
+                  })
                 }
                 selectionSpan?.end()
               }
@@ -5843,7 +5940,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   )
                   pendingExpectations.push(...extractedExpectations)
                   agentContext.currentTurnArtifacts.expectations.push(
-                    ...extractedExpectations
+                    ...extractedExpectations,
                   )
                   if (currentTurn > 0) {
                     recordExpectationsForTurn(
@@ -5869,7 +5966,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   agentContext.finalSynthesis.ackReceived = true
                   await emitReasoningEvent(
                     emitReasoningStep,
-                    ReasoningSteps.synthesisCompleted()
+                    ReasoningSteps.synthesisCompleted(),
                   )
                 }
                 assistantSpan?.end()
@@ -6065,7 +6162,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     )
                     assistantMessageId = persisted.assistantMessageId
                     lastPersistedMessageId = persisted.msg.id as number
-                    lastPersistedMessageExternalId = persisted.assistantMessageId
+                    lastPersistedMessageExternalId =
+                      persisted.assistantMessageId
                   } catch (error) {
                     loggerWithChild({ email }).error(
                       error,
@@ -6760,14 +6858,13 @@ async function runDelegatedAgentWithMessageAgents(
       }
     }
 
-    const runTurnEndReviewAndCleanup = async (
-      turn: number,
-    ): Promise<void> => {
-          mergeToolOutputsIntoCurrentTurnMemory(agentContext, turn)
+    const runTurnEndReviewAndCleanup = async (turn: number): Promise<void> => {
+      mergeToolOutputsIntoCurrentTurnMemory(agentContext, turn)
       await runTurnEndPipeline(agentContext, {
         turn,
         useAgenticFiltering: USE_AGENTIC_FILTERING,
-        reviewFrequency: agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY,
+        reviewFrequency:
+          agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY,
         minTurnNumber: MIN_TURN_NUMBER,
         emitter: emitReasoningStep,
 
@@ -6793,13 +6890,13 @@ async function runDelegatedAgentWithMessageAgents(
             message,
             messagesWithNoErrResponse,
             t,
-            emitter
+            emitter,
           )
         },
         mergeCurrentTurnIntoCrossTurn: (ctx, t, rankedDocIds) => {
-          const docs = Array.from(ctx.currentTurnDocumentMemory.values()).filter(
-            (doc) => !rankedDocIds || rankedDocIds.has(doc.docId),
-          )
+          const docs = Array.from(
+            ctx.currentTurnDocumentMemory.values(),
+          ).filter((doc) => !rankedDocIds || rankedDocIds.has(doc.docId))
           if (docs.length > 0) {
             const newChunks = mergeDocumentStatesIntoDocumentMemory(
               ctx.documentMemory,
@@ -7221,10 +7318,12 @@ async function runDelegatedAgentWithMessageAgents(
         ? answer
         : agentContext.finalSynthesis.streamedText || ""
 
-    const fragmentsForCitations =
-    await getFragmentsForSynthesis(agentContext.documentMemory, {
-      email: params.userEmail,
-    })
+    const fragmentsForCitations = await getFragmentsForSynthesis(
+      agentContext.documentMemory,
+      {
+        email: params.userEmail,
+      },
+    )
 
     if (answerForCitations) {
       for await (const event of checkAndYieldCitationsForAgent(
@@ -7244,7 +7343,9 @@ async function runDelegatedAgentWithMessageAgents(
     }
 
     const finalAnswer = answerForCitations || "Agent did not return any text."
-    const rawDocuments = documentMemoryToRawDocuments(agentContext.documentMemory)
+    const rawDocuments = documentMemoryToRawDocuments(
+      agentContext.documentMemory,
+    )
 
     return {
       result: finalAnswer,

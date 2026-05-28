@@ -1808,6 +1808,7 @@ export const AgentMessageApi = async (c: Context) => {
                   0,
                 )
 
+                const t_insert0 = Date.now()
                 const msg = await insertMessage(db, {
                   chatId: chat.id,
                   userId: user.id,
@@ -1824,7 +1825,9 @@ export const AgentMessageApi = async (c: Context) => {
                   tokensUsed: totalTokens,
                 })
                 assistantMessageId = msg.externalId
+                const t_insert1 = Date.now()
                 const traceJson = tracer.serializeToJson()
+                const t_trace0 = Date.now()
                 await insertChatTrace({
                   workspaceId: workspace.id,
                   userId: user.id,
@@ -1835,6 +1838,10 @@ export const AgentMessageApi = async (c: Context) => {
                   messageExternalId: msg.externalId,
                   traceJson,
                 })
+                const t_trace1 = Date.now()
+                Logger.info(
+                  `[TX-TIMING] AgentsApi_V2.Path3 insertAssistantMessage=${t_insert1 - t_insert0}ms traceJsonSize=${traceJson.length} insertChatTrace=${t_trace1 - t_trace0}ms`,
+                )
                 Logger.info(
                   `[AgentMessageApi][Path3] Inserted trace for message ${msg.externalId} (premature: ${wasStreamClosedPrematurely}).`,
                 )
@@ -1871,6 +1878,7 @@ export const AgentMessageApi = async (c: Context) => {
                 )
 
                 const traceJson = tracer.serializeToJson()
+                const t_trace0 = Date.now()
                 await insertChatTrace({
                   workspaceId: workspace.id,
                   userId: user.id,
@@ -1881,6 +1889,10 @@ export const AgentMessageApi = async (c: Context) => {
                   messageExternalId: lastMessage.externalId,
                   traceJson,
                 })
+                const t_trace1 = Date.now()
+                Logger.info(
+                  `[TX-TIMING] AgentsApi_V2.Path3.error traceJsonSize=${traceJson.length} insertChatTrace=${t_trace1 - t_trace0}ms`,
+                )
                 errorSpan.end()
               }
 
@@ -2054,6 +2066,7 @@ export const AgentMessageApi = async (c: Context) => {
                   0,
                 )
 
+                const t_insert0 = Date.now()
                 const msg = await insertMessage(db, {
                   chatId: chat.id,
                   userId: user.id,
@@ -2070,7 +2083,9 @@ export const AgentMessageApi = async (c: Context) => {
                   tokensUsed: totalTokens,
                 })
                 assistantMessageId = msg.externalId
+                const t_insert1 = Date.now()
                 const traceJson = tracer.serializeToJson()
+                const t_trace0 = Date.now()
                 await insertChatTrace({
                   workspaceId: workspace.id,
                   userId: user.id,
@@ -2081,6 +2096,10 @@ export const AgentMessageApi = async (c: Context) => {
                   messageExternalId: msg.externalId,
                   traceJson,
                 })
+                const t_trace1 = Date.now()
+                Logger.info(
+                  `[TX-TIMING] AgentsApi_V2.Path2 insertAssistantMessage=${t_insert1 - t_insert0}ms traceJsonSize=${traceJson.length} insertChatTrace=${t_trace1 - t_trace0}ms`,
+                )
                 Logger.info(
                   `[AgentMessageApi] Inserted trace for message ${msg.externalId} (premature: ${wasStreamClosedPrematurely}).`,
                 )
@@ -2117,6 +2136,7 @@ export const AgentMessageApi = async (c: Context) => {
                 )
 
                 const traceJson = tracer.serializeToJson()
+                const t_trace0 = Date.now()
                 await insertChatTrace({
                   workspaceId: workspace.id,
                   userId: user.id,
@@ -2127,6 +2147,10 @@ export const AgentMessageApi = async (c: Context) => {
                   messageExternalId: lastMessage.externalId,
                   traceJson,
                 })
+                const t_trace1 = Date.now()
+                Logger.info(
+                  `[TX-TIMING] AgentsApi_V2.Path2.error traceJsonSize=${traceJson.length} insertChatTrace=${t_trace1 - t_trace0}ms`,
+                )
                 errorSpan.end()
               }
 
@@ -2698,6 +2722,7 @@ export const AgentMessageApi = async (c: Context) => {
                   0,
                 )
 
+                const t_insert0 = Date.now()
                 const msg = await insertMessage(db, {
                   chatId: chat.id,
                   userId: user.id,
@@ -2714,8 +2739,10 @@ export const AgentMessageApi = async (c: Context) => {
                   tokensUsed: totalTokens,
                 })
                 assistantMessageId = msg.externalId
+                const t_insert1 = Date.now()
 
                 const traceJson = tracer.serializeToJson()
+                const t_trace0 = Date.now()
                 await insertChatTrace({
                   workspaceId: workspace.id,
                   userId: user.id,
@@ -2726,6 +2753,10 @@ export const AgentMessageApi = async (c: Context) => {
                   messageExternalId: msg.externalId,
                   traceJson,
                 })
+                const t_trace1 = Date.now()
+                Logger.info(
+                  `[TX-TIMING] AgentsApi_V2.Path1 insertAssistantMessage=${t_insert1 - t_insert0}ms traceJsonSize=${traceJson.length} insertChatTrace=${t_trace1 - t_trace0}ms`,
+                )
                 Logger.info(
                   `[AgentMessageApi] Inserted trace for message ${msg.externalId} (premature: ${wasStreamClosedPrematurely}).`,
                 )
@@ -2763,6 +2794,7 @@ export const AgentMessageApi = async (c: Context) => {
                 )
 
                 const traceJson = tracer.serializeToJson()
+                const t_trace0 = Date.now()
                 await insertChatTrace({
                   workspaceId: workspace.id,
                   userId: user.id,
@@ -2773,6 +2805,10 @@ export const AgentMessageApi = async (c: Context) => {
                   messageExternalId: lastMessage.externalId,
                   traceJson,
                 })
+                const t_trace1 = Date.now()
+                Logger.info(
+                  `[TX-TIMING] AgentsApi_V2.Path1.error traceJsonSize=${traceJson.length} insertChatTrace=${t_trace1 - t_trace0}ms`,
+                )
                 errorSpan.end()
               }
 
@@ -2993,6 +3029,7 @@ export const AgentMessageApi = async (c: Context) => {
           assistantMessageId = msg.externalId
 
           const traceJson = tracer.serializeToJson()
+          const t_trace0 = Date.now()
           await insertChatTrace({
             workspaceId: workspace.id,
             userId: user.id,
@@ -3003,6 +3040,10 @@ export const AgentMessageApi = async (c: Context) => {
             messageExternalId: msg.externalId,
             traceJson,
           })
+          const t_trace1 = Date.now()
+          Logger.info(
+            `[TX-TIMING] AgentsApi_V2.finalizeAndRespond traceJsonSize=${traceJson.length} insertChatTrace=${t_trace1 - t_trace0}ms`,
+          )
 
           streamSpan.end()
           rootSpan.end()
