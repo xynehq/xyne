@@ -96,7 +96,11 @@ async function checkVespaContainerHealth(
 
         const contentType = response.headers.get("content-type")
         let applicationStatus = "Unknown"
-        let vespaDetails: Record<string, any> = { endpoint, container: containerName, port }
+        let vespaDetails: Record<string, any> = {
+          endpoint,
+          container: containerName,
+          port,
+        }
         let healthStatus: HealthStatusType = HealthStatusType.Healthy
 
         try {
@@ -144,7 +148,12 @@ async function checkVespaContainerHealth(
                 applicationStatus = "JSON_RESPONSE"
                 healthStatus = HealthStatusType.Healthy
               }
-              vespaDetails = { endpoint, container: containerName, port, ...data }
+              vespaDetails = {
+                endpoint,
+                container: containerName,
+                port,
+                ...data,
+              }
             }
           } else {
             // Handle text/HTML responses
@@ -242,7 +251,9 @@ async function checkVespaContainerHealth(
       responseTime: Date.now() - startTime,
       details: {
         error:
-          error instanceof Error ? error.message : `Vespa ${containerName} container connection failed`,
+          error instanceof Error
+            ? error.message
+            : `Vespa ${containerName} container connection failed`,
         container: containerName,
         port,
       },
@@ -399,7 +410,9 @@ export const checkOverallSystemHealth =
     }
 
     const totalTime = Date.now() - startTime
-
+    Logger.info(
+      `Completed overall system health check in ${totalTime}ms - Status: ${overallStatus}, Healthy: ${healthyServices}, Degraded: ${degradedServices}, Unhealthy: ${unhealthyServices}`,
+    )
     return {
       status: overallStatus,
       timestamp: new Date().toISOString(),
