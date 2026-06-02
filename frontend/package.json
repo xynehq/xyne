@@ -105,6 +105,6 @@
     "vite": "^5.4.11",
     "vite-plugin-static-copy": "^3.1.1",
     "vite-plugin-svgr": "^4.3.0",
-    "vitest": "^3.1.4"
+    "vitest": "^4.1.0"
   }
 }
