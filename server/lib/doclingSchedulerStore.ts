@@ -131,6 +131,8 @@ const allRows = <T>(result: { rows?: T[] } | T[]): T[] =>
 const leaseInterval = (leaseMs: number) =>
   sql.raw(`(${Math.max(leaseMs, 1)} || ' milliseconds')::interval`)
 
+const timestampParam = (date: Date) => sql`${date.toISOString()}::timestamptz`
+
 export const inferDoclingSourcePriority = (input: {
   collectionId: string
   parentId?: string | null
@@ -439,7 +441,7 @@ export const markDoclingPartSubmitRetry = async (input: {
     WITH reset AS (
       UPDATE docling_async_parts
       SET status = ${DOCLING_PART_STATUS.Queued},
-          available_at = ${input.availableAt},
+          available_at = ${timestampParam(input.availableAt)},
           lease_owner = NULL,
           lease_until = NULL,
           submit_permit_id = NULL,
@@ -759,7 +761,7 @@ export const requeueExpiredDoclingLeases = async (now = new Date()) => {
         lease_owner = NULL,
         lease_token = NULL,
         lease_until = NULL,
-        available_at = ${now},
+        available_at = ${timestampParam(now)},
         updated_at = NOW()
     WHERE status IN (${DOCLING_FILE_STATUS.Splitting}, ${DOCLING_FILE_STATUS.Writing})
       AND lease_until IS NOT NULL
@@ -773,7 +775,7 @@ export const requeueExpiredDoclingLeases = async (now = new Date()) => {
           lease_owner = NULL,
           lease_until = NULL,
           submit_permit_id = NULL,
-          available_at = ${now},
+          available_at = ${timestampParam(now)},
           updated_at = NOW()
       WHERE status = ${DOCLING_PART_STATUS.Submitting}
         AND lease_until IS NOT NULL

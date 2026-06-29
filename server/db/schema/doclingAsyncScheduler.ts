@@ -8,18 +8,19 @@ import {
   text,
   timestamp,
   uniqueIndex,
+  uuid,
 } from "drizzle-orm/pg-core"
 import { collectionItems } from "@/db/schema/knowledgeBase"
 
 export const doclingAsyncFiles = pgTable(
   "docling_async_files",
   {
-    fileId: text("file_id")
+    fileId: uuid("file_id")
       .primaryKey()
       .references(() => collectionItems.id, { onDelete: "cascade" }),
     vespaDocId: text("vespa_doc_id").notNull(),
-    collectionId: text("collection_id").notNull(),
-    parentId: text("parent_id"),
+    collectionId: uuid("collection_id").notNull(),
+    parentId: uuid("parent_id"),
     collectionName: text("collection_name").notNull(),
     fileName: text("file_name").notNull(),
     originalName: text("original_name"),
@@ -84,7 +85,7 @@ export const doclingAsyncFiles = pgTable(
 export const doclingAsyncParts = pgTable(
   "docling_async_parts",
   {
-    fileId: text("file_id")
+    fileId: uuid("file_id")
       .notNull()
       .references(() => doclingAsyncFiles.fileId, { onDelete: "cascade" }),
     partIndex: integer("part_index").notNull(),

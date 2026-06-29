@@ -1,8 +1,8 @@
 CREATE TABLE "docling_async_files" (
-	"file_id" text PRIMARY KEY NOT NULL,
+	"file_id" uuid PRIMARY KEY NOT NULL,
 	"vespa_doc_id" text NOT NULL,
-	"collection_id" text NOT NULL,
-	"parent_id" text,
+	"collection_id" uuid NOT NULL,
+	"parent_id" uuid,
 	"collection_name" text NOT NULL,
 	"file_name" text NOT NULL,
 	"original_name" text,
@@ -43,7 +43,7 @@ CREATE TABLE "docling_async_files" (
 );
 --> statement-breakpoint
 CREATE TABLE "docling_async_parts" (
-	"file_id" text NOT NULL,
+	"file_id" uuid NOT NULL,
 	"part_index" integer NOT NULL,
 	"doc_id" text NOT NULL,
 	"current_job_id" text,

@@ -62,14 +62,14 @@ function getEffectiveDoclingTimeoutMs(timeoutMs?: number): number {
 }
 
 // Docling API response types
-interface DoclingBbox {
+export interface DoclingBbox {
   l: number
   t: number
   r: number
   b: number
 }
 
-interface DoclingTocEntry {
+export interface DoclingTocEntry {
   section_number: string
   section_title: string
   page_number: number
@@ -78,11 +78,11 @@ interface DoclingTocEntry {
   parent_index?: number | null
 }
 
-interface DoclingBboxFragment extends DoclingBbox {
+export interface DoclingBboxFragment extends DoclingBbox {
   page_no?: number | null
 }
 
-interface DoclingChunk {
+export interface DoclingChunk {
   text: string
   headings: string[]
   page_numbers: number[]
@@ -90,7 +90,7 @@ interface DoclingChunk {
   bboxes?: DoclingBboxFragment[]
 }
 
-interface DoclingImageChunk {
+export interface DoclingImageChunk {
   text: string
   page_number: number
   bbox?: DoclingBbox
@@ -98,13 +98,13 @@ interface DoclingImageChunk {
   height?: number
 }
 
-interface DoclingVlmStats {
+export interface DoclingVlmStats {
   tables_replaced: number
   pictures_replaced: number
   scanned_pages_ocrd: number
 }
 
-interface DoclingVlmMetadata {
+export interface DoclingVlmMetadata {
   enabled: boolean
   preset: string | null
   model: string | null
@@ -113,7 +113,7 @@ interface DoclingVlmMetadata {
   scanned_pages_ocrd: number
 }
 
-interface DoclingMetadata {
+export interface DoclingMetadata {
   doc_id: string
   filename: string
   num_pages: number
@@ -123,7 +123,7 @@ interface DoclingMetadata {
   vlm: DoclingVlmMetadata
 }
 
-interface DoclingResponse {
+export interface DoclingResponse {
   metadata: DoclingMetadata
   toc: {
     entries: DoclingTocEntry[]
@@ -586,7 +586,7 @@ function buildMetadata(
       vlm: metadata.vlm,
     },
     // Table of contents
-    toc: toc.entries.map((entry) => ({
+    toc: (toc?.entries || []).map((entry) => ({
       sectionNumber: entry.section_number,
       sectionTitle: entry.section_title,
       pageNumber: entry.page_number,
@@ -634,20 +634,33 @@ export async function chunkByDoclingFromBuffer(
     options,
   )
 
+  return await processingResultFromDoclingResponse(doclingResponse, docId, {
+    fileName,
+  })
+}
+
+export async function processingResultFromDoclingResponse(
+  doclingResponse: DoclingResponse,
+  docId: string,
+  options?: { fileName?: string },
+): Promise<ProcessingResult> {
+  const fileName =
+    options?.fileName || doclingResponse.metadata?.filename || "unknown.pdf"
+
   // Step 2: Save images to disk
-  const savedImagePaths = await saveImages(doclingResponse.images, docId)
+  const savedImagePaths = await saveImages(doclingResponse.images || {}, docId)
 
   // Step 3: Transform chunks
-  const { chunks, chunks_map } = transformChunks(doclingResponse.chunks)
+  const { chunks, chunks_map } = transformChunks(doclingResponse.chunks || [])
 
   // Step 4: Transform image chunks
   const { image_chunks, image_chunks_map } = transformImageChunks(
-    doclingResponse.image_chunks,
+    doclingResponse.image_chunks || [],
   )
 
   // Step 5: Build TOC chunks
   // Accumulate TOC entries into text and chunk them
-  const tocText = doclingResponse.toc.entries
+  const tocText = (doclingResponse.toc?.entries || [])
     .map((entry) => `${entry.section_number} ${entry.section_title}`.trim())
     .join("\n")
   const toc_chunks = tocText ? chunkTextByParagraph(tocText, 512, 0) : []
@@ -662,8 +675,8 @@ export async function chunkByDoclingFromBuffer(
     imageChunks: image_chunks.length,
     tocChunks: toc_chunks.length,
     savedImages: savedImagePaths.size,
-    numPages: doclingResponse.metadata.num_pages,
-    processingTime: doclingResponse.metadata.processing_time,
+    numPages: doclingResponse.metadata?.num_pages,
+    processingTime: doclingResponse.metadata?.processing_time,
   })
 
   return {

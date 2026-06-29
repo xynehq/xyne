@@ -3,7 +3,7 @@ FROM oven/bun:1 AS base
 WORKDIR /usr/src/app/server
 
 COPY server/package.json server/bun.lock* /usr/src/app/server/
-RUN bun install --production
+RUN bun install
 
 WORKDIR /usr/src/app
 COPY --chown=bun:bun server/ /usr/src/app/server/
