@@ -9,7 +9,10 @@ import { Subsystem } from "@/types"
 import config from "@/config"
 import { MEMORY_CONFIG } from "@/config"
 import { searchEpisodicMemory, UpdateDocument } from "@/search/vespa"
-import { episodicMemorySchema, type VespaEpisodicMemorySearch } from "@xyne/vespa-ts/types"
+import {
+  episodicMemorySchema,
+  type VespaEpisodicMemorySearch,
+} from "@xyne/vespa-ts/types"
 
 const Logger = getLogger(Subsystem.Vespa).child({
   module: "episodic-memory-retriever",

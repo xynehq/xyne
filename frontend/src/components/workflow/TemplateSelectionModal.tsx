@@ -82,7 +82,9 @@ export function TemplateSelectionModal({
           {loading ? (
             <div className="flex flex-col items-center justify-center py-16">
               <div className="w-8 h-8 border-4 border-gray-300 dark:border-gray-600 border-t-gray-600 dark:border-t-gray-400 rounded-full animate-spin mb-4"></div>
-              <p className="text-gray-600 dark:text-gray-400">Loading templates...</p>
+              <p className="text-gray-600 dark:text-gray-400">
+                Loading templates...
+              </p>
             </div>
           ) : error ? (
             <div className="flex flex-col items-center justify-center py-16">
@@ -104,7 +106,9 @@ export function TemplateSelectionModal({
               <p className="text-gray-900 dark:text-gray-100 font-medium mb-2">
                 Failed to fetch templates
               </p>
-              <p className="text-gray-600 dark:text-gray-400">Please refresh and try again</p>
+              <p className="text-gray-600 dark:text-gray-400">
+                Please refresh and try again
+              </p>
             </div>
           ) : templates.length === 0 ||
             templates.every((t) => t.isPlaceholder) ? (

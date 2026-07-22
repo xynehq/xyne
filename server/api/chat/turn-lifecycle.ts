@@ -57,7 +57,7 @@ export interface TurnEndPipelineConfig {
   runReview: (
     context: AgentRunContext,
     input: AutoReviewInput,
-    turn: number
+    turn: number,
   ) => Promise<ReviewResult | null>
   /** Function to handle review outcome (update context state) */
   handleReviewOutcome: (
@@ -65,21 +65,21 @@ export interface TurnEndPipelineConfig {
     result: ReviewResult,
     turn: number,
     focus: AutoReviewInput["focus"],
-    emitter?: ReasoningEmitter
+    emitter?: ReasoningEmitter,
   ) => Promise<void>
   /** Function to rank and select best fragments (batch LLM call). Receives enriched list with tool name and query per fragment. */
   rankFragments: (
     context: AgentRunContext,
     allUnrankedWithToolContext: UnrankedFragmentWithToolContext[],
     turn: number,
-    emitter?: ReasoningEmitter
+    emitter?: ReasoningEmitter,
   ) => Promise<MinimalAgentFragment[]>
   /** Build unranked fragments from merged document memory (one fragment per doc via answerContextMap). If returns non-empty, that list is used for ranking. */
   getUnrankedFragmentsForRanking?: (
     context: AgentRunContext,
-    turn: number
+    turn: number,
   ) => Promise<UnrankedFragmentWithToolContext[] | null>
-  /** When useAgenticFiltering is false, merge all current-turn document memory into cross-turn before ingestFragments. Receives turn for stagnation tracking. 
+  /** When useAgenticFiltering is false, merge all current-turn document memory into cross-turn before ingestFragments. Receives turn for stagnation tracking.
    *  When rankedDocIds is provided, only merge docs in that set (filtered path);
    *  when undefined, merge all docs (the no-ranking fallback path).
    */
@@ -89,10 +89,7 @@ export interface TurnEndPipelineConfig {
     rankedDocIds?: Set<string>,
   ) => void
   /** Build review input for the turn range */
-  buildReviewInput: (
-    turn: number,
-    reviewFreq: number
-  ) => AutoReviewInput
+  buildReviewInput: (turn: number, reviewFreq: number) => AutoReviewInput
   /** Get expectation history for a specific turn */
   getExpectationsForTurn: (turn: number) => ToolExpectationAssignment[]
   /** When false, skip batch fragment ranking (filtering) this turn. Default true. */
@@ -143,7 +140,7 @@ export interface TurnEndResult {
  */
 export async function runTurnEndPipeline(
   context: AgentRunContext,
-  config: TurnEndPipelineConfig
+  config: TurnEndPipelineConfig,
 ): Promise<TurnEndResult> {
   const { turn, emitter } = config
   const result: TurnEndResult = {
@@ -168,7 +165,7 @@ export async function runTurnEndPipeline(
           chatId: context.chat.externalId,
           lockedAtTurn: context.review.lockedAtTurn,
         },
-        "[TurnLifecycle] Review locked by final synthesis — skipping pipeline."
+        "[TurnLifecycle] Review locked by final synthesis — skipping pipeline.",
       )
       return result
     }
@@ -192,7 +189,7 @@ export async function runTurnEndPipeline(
     if (isNoOpTurn) {
       Logger.debug(
         { turn, chatId: context.chat.externalId },
-        "[TurnLifecycle] No-op turn (only toDoWrite) — skipping review and ranking."
+        "[TurnLifecycle] No-op turn (only toDoWrite) — skipping review and ranking.",
       )
       result.wasNoOpTurn = true
       // Still do cleanup
@@ -202,7 +199,7 @@ export async function runTurnEndPipeline(
     if (isReasoningOnlyTurn) {
       Logger.debug(
         { turn, chatId: context.chat.externalId },
-        "[TurnLifecycle] Reasoning-only turn (no tool calls) — skipping review and ranking."
+        "[TurnLifecycle] Reasoning-only turn (no tool calls) — skipping review and ranking.",
       )
       result.wasNoOpTurn = true
       // Still do cleanup
@@ -223,7 +220,7 @@ export async function runTurnEndPipeline(
       artifacts,
       config,
       turn,
-      emitter
+      emitter,
     )
 
     // ────────────────────────────────────────────────────────────────────
@@ -251,7 +248,7 @@ export async function runTurnEndPipeline(
         chatId: context.chat.externalId,
         error: error instanceof Error ? error.message : String(error),
       },
-      "[TurnLifecycle] Turn-end pipeline failed"
+      "[TurnLifecycle] Turn-end pipeline failed",
     )
     return result
   } finally {
@@ -310,7 +307,10 @@ async function buildRankingTask(
   let allUnrankedWithToolContext: UnrankedFragmentWithToolContext[] = []
 
   if (config.getUnrankedFragmentsForRanking) {
-    const fromMemory = await config.getUnrankedFragmentsForRanking(context, turn)
+    const fromMemory = await config.getUnrankedFragmentsForRanking(
+      context,
+      turn,
+    )
     if (fromMemory && fromMemory.length > 0) {
       allUnrankedWithToolContext = fromMemory
     }
@@ -335,13 +335,20 @@ async function buildRankingTask(
       totalUnranked: allUnrankedWithToolContext.length,
       toolCount: toolOutputsWithRaw.length,
     },
-    "[TurnLifecycle] Running batch fragment ranking."
+    "[TurnLifecycle] Running batch fragment ranking.",
   )
 
-  const ranked = await config.rankFragments(context, allUnrankedWithToolContext, turn, emitter)
+  const ranked = await config.rankFragments(
+    context,
+    allUnrankedWithToolContext,
+    turn,
+    emitter,
+  )
   context.turnRankedCount.set(turn, ranked.length)
   // Pass ranked doc IDs so merge callback only merges what was ranked/filtered.
-  const rankedDocIds = new Set(ranked.map((f) => f.source?.docId ?? f.id).filter(Boolean) as string[])
+  const rankedDocIds = new Set(
+    ranked.map((f) => f.source?.docId ?? f.id).filter(Boolean) as string[],
+  )
   config.mergeCurrentTurnIntoCrossTurn?.(context, turn, rankedDocIds)
   return { count: ranked.length }
 }

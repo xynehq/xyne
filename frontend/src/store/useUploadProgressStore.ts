@@ -1,4 +1,4 @@
-import {create} from 'zustand'; 
+import { create } from "zustand"
 import { generateUUID } from "@/utils/uuid"
 
 export interface UploadBatchProgress {
@@ -12,7 +12,7 @@ export interface UploadFileStatus {
   id: string
   name: string
   size: number
-  status: 'pending' | 'uploading' | 'uploaded' | 'failed'
+  status: "pending" | "uploading" | "uploaded" | "failed"
   error?: string
 }
 
@@ -30,19 +30,19 @@ export interface UploadTask {
 interface UploadProgressStore {
   currentUpload: UploadTask | null
   startUpload: (
-    collectionName: string, 
-    files: { file: File; id: string }[], 
-    totalBatches: number, 
-    isNewCollection: boolean, 
-    targetCollectionId?: string
+    collectionName: string,
+    files: { file: File; id: string }[],
+    totalBatches: number,
+    isNewCollection: boolean,
+    targetCollectionId?: string,
   ) => { uploadId: string; abortController: AbortController }
   updateProgress: (uploadId: string, current: number, batch: number) => void
   updateFileStatus: (
-    uploadId: string, 
-    fileName: string, 
-    fileId: string, 
-    status: 'pending' | 'uploading' | 'uploaded' | 'failed', 
-    error?: string
+    uploadId: string,
+    fileName: string,
+    fileId: string,
+    status: "pending" | "uploading" | "uploaded" | "failed",
+    error?: string,
   ) => void
   finishUpload: (uploadId: string) => void
   cancelUpload: (uploadId: string) => void
@@ -52,17 +52,23 @@ interface UploadProgressStore {
 export const useUploadProgress = create<UploadProgressStore>((set, get) => ({
   currentUpload: null,
 
-  startUpload: (collectionName, files, totalBatches, isNewCollection, targetCollectionId) => {
+  startUpload: (
+    collectionName,
+    files,
+    totalBatches,
+    isNewCollection,
+    targetCollectionId,
+  ) => {
     const uploadId = `upload_${Date.now()}_${generateUUID()}`
     const abortController = new AbortController()
-    
+
     const uploadFiles: UploadFileStatus[] = files.map((file) => ({
       id: file.id,
       name: file.file.name,
       size: file.file.size,
-      status: 'pending'
+      status: "pending",
     }))
-    
+
     const newUpload: UploadTask = {
       id: uploadId,
       collectionName,
@@ -71,14 +77,14 @@ export const useUploadProgress = create<UploadProgressStore>((set, get) => ({
         total: files.length,
         current: 0,
         batch: 0,
-        totalBatches
+        totalBatches,
       },
       isNewCollection,
       targetCollectionId,
       files: uploadFiles,
-      abortController
+      abortController,
     }
-    
+
     set({ currentUpload: newUpload })
     return { uploadId, abortController }
   },
@@ -88,16 +94,16 @@ export const useUploadProgress = create<UploadProgressStore>((set, get) => ({
       if (!state.currentUpload || state.currentUpload.id !== uploadId) {
         return state
       }
-      
+
       return {
         currentUpload: {
           ...state.currentUpload,
           batchProgress: {
             ...state.currentUpload.batchProgress,
             current,
-            batch
-          }
-        }
+            batch,
+          },
+        },
       }
     })
   },
@@ -107,16 +113,16 @@ export const useUploadProgress = create<UploadProgressStore>((set, get) => ({
       if (!state.currentUpload || state.currentUpload.id !== uploadId) {
         return state
       }
-      
+
       return {
         currentUpload: {
           ...state.currentUpload,
-          files: state.currentUpload.files.map(file => 
+          files: state.currentUpload.files.map((file) =>
             file.name === fileName && file.id === fileId
               ? { ...file, status, error }
-              : file
-          )
-        }
+              : file,
+          ),
+        },
       }
     })
   },
@@ -138,12 +144,12 @@ export const useUploadProgress = create<UploadProgressStore>((set, get) => ({
     }
 
     set((state) =>
-      state.currentUpload?.id === uploadId ? { currentUpload: null } : state
+      state.currentUpload?.id === uploadId ? { currentUpload: null } : state,
     )
   },
 
   getUploadProgress: (uploadId) => {
     const state = get()
     return state.currentUpload?.id === uploadId ? state.currentUpload : null
-  }
+  },
 }))

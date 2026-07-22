@@ -17,11 +17,16 @@ import {
   getTextContent,
 } from "@juspay-xyne-jaf/jaf"
 import config from "@/config"
+import { db } from "@/db/client"
+import { getSdkConfigByWorkspaceExternalId } from "@/db/sdkConfig"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { makeXyneGenericJAFProvider } from "@/api/chat/jaf-generic-provider"
 import { buildVisibilityFilter } from "@/api/sdk/search"
-import { resolveCollectionId, resolveWorkspaceCreator } from "@/api/sdk/collections"
+import {
+  resolveCollectionId,
+  resolveWorkspaceCreator,
+} from "@/api/sdk/collections"
 
 const Logger = getLogger(Subsystem.Server)
 
@@ -40,6 +45,7 @@ type SdkAgentContext = {
   collectionId?: string
   isAuthenticated: boolean
   accessTags: string[]
+  workspaceId: string
 }
 
 const SESSION_TTL_MS = 30 * 60 * 1000 // 30 minutes
@@ -56,20 +62,20 @@ function getSessionMessages(sessionId: string): JAFMessage[] {
   return entry.messages
 }
 
-function saveSessionMessages(
-  sessionId: string,
-  messages: JAFMessage[],
-): void {
+function saveSessionMessages(sessionId: string, messages: JAFMessage[]): void {
   sessionStore.set(sessionId, { messages, lastAccess: Date.now() })
 }
 
 // Periodic cleanup of expired sessions
-setInterval(() => {
-  const now = Date.now()
-  for (const [id, entry] of sessionStore) {
-    if (now - entry.lastAccess > SESSION_TTL_MS) sessionStore.delete(id)
-  }
-}, 10 * 60 * 1000)
+setInterval(
+  () => {
+    const now = Date.now()
+    for (const [id, entry] of sessionStore) {
+      if (now - entry.lastAccess > SESSION_TTL_MS) sessionStore.delete(id)
+    }
+  },
+  10 * 60 * 1000,
+)
 
 // ---------------------------------------------------------------------------
 // Vespa search helper (shared by the tool)
@@ -86,7 +92,9 @@ async function searchWithAccessTags(
   Array<{ docId: string; title: string; content: string; sourceUrl?: string }>
 > {
   const visibilityFilter = buildVisibilityFilter(isAuthenticated, accessTags)
-  const collectionFilter = collectionId ? ` AND clId contains "${collectionId}"` : ""
+  const collectionFilter = collectionId
+    ? ` AND clId contains "${collectionId}"`
+    : ""
   const yql = `select * from kb_items where userInput(@query) AND createdBy contains "${createdBy}"${collectionFilter} AND (${visibilityFilter})`
 
   const vespaQuery = {
@@ -110,10 +118,7 @@ async function searchWithAccessTags(
   )
 
   if (!response.ok) {
-    Logger.error(
-      { status: response.status },
-      "Vespa search failed in SDK chat",
-    )
+    Logger.error({ status: response.status }, "Vespa search failed in SDK chat")
     return []
   }
 
@@ -140,27 +145,19 @@ async function searchWithAccessTags(
 // ---------------------------------------------------------------------------
 
 const searchDocumentsSchema = z.object({
-  query: z
-    .string()
-    .describe("The search query to recall relevant information"),
+  query: z.string().describe("The search query to recall relevant information"),
 })
 
 type SearchDocumentsParams = z.infer<typeof searchDocumentsSchema>
 
-const searchDocumentsTool: Tool<
-  SearchDocumentsParams,
-  SdkAgentContext
-> = {
+const searchDocumentsTool: Tool<SearchDocumentsParams, SdkAgentContext> = {
   schema: {
     name: "searchDocuments",
     description:
       "Recall internal information relevant to the query. Use this to look up facts, procedures, policies, or context before responding.",
     parameters: searchDocumentsSchema as any,
   },
-  async execute(
-    params: SearchDocumentsParams,
-    context: SdkAgentContext,
-  ) {
+  async execute(params: SearchDocumentsParams, context: SdkAgentContext) {
     try {
       const results = await searchWithAccessTags(
         params.query,
@@ -194,6 +191,102 @@ const searchDocumentsTool: Tool<
 }
 
 // ---------------------------------------------------------------------------
+// JAF create support ticket tool
+// ---------------------------------------------------------------------------
+
+const createSupportTicketSchema = z.object({
+  email: z
+    .string()
+    .describe("The end-user's email address for ticket correspondence"),
+  subject: z.string().describe("Short summary of the support request"),
+  body: z
+    .string()
+    .describe("Detailed description of the issue (HTML supported)"),
+})
+
+type CreateSupportTicketParams = z.infer<typeof createSupportTicketSchema>
+
+const createSupportTicketTool: Tool<
+  CreateSupportTicketParams,
+  SdkAgentContext
+> = {
+  schema: {
+    name: "createSupportTicket",
+    description:
+      "Create a support ticket in the desk system for the user's issue. " +
+      "Use when the user needs help that requires human follow-up or " +
+      "when they explicitly ask to raise a ticket.",
+    parameters: createSupportTicketSchema as any,
+  },
+  async execute(
+    params: CreateSupportTicketParams,
+    context: SdkAgentContext,
+  ) {
+    try {
+      const sdkConfig = await getSdkConfigByWorkspaceExternalId(
+        db,
+        context.workspaceId,
+      )
+      const ticketConfig = sdkConfig?.spacesConfig?.createTicketWithEmail
+      if (!ticketConfig?.enabled) {
+        return ToolResponse.error(
+          ToolErrorCodes.EXECUTION_FAILED,
+          "Ticket creation is not configured",
+        )
+      }
+
+      const requestBody = {
+        channelId: ticketConfig.channelId,
+        email: params.email,
+        subject: ticketConfig.ackSubject
+          ? ticketConfig.ackSubject.replace("{{subject}}", params.subject)
+          : params.subject,
+        body: params.body,
+        ...(ticketConfig.ackBody && { ackBody: ticketConfig.ackBody }),
+      }
+
+      const response = await fetch(
+        `${ticketConfig.spacesBaseUrl}/api/apps/email/createTicketWithEmail`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${ticketConfig.spacesAppToken}`,
+          },
+          body: JSON.stringify(requestBody),
+        },
+      )
+
+      if (!response.ok) {
+        const err = (await response.json().catch(() => ({}))) as {
+          message?: string
+        }
+        return ToolResponse.error(
+          ToolErrorCodes.EXECUTION_FAILED,
+          err.message || "Failed to create ticket",
+        )
+      }
+
+      const result = (await response.json()) as {
+        ticketId: string
+        conversationId: string
+        externalThreadId: string
+      }
+      return ToolResponse.success({
+        ticketId: result.ticketId,
+        message:
+          "Support ticket created. The user will receive an acknowledgment email.",
+      })
+    } catch (error) {
+      return ToolResponse.error(
+        ToolErrorCodes.EXECUTION_FAILED,
+        `Ticket creation failed: ${error}`,
+      )
+    }
+  },
+}
+
+// ---------------------------------------------------------------------------
 // Shared JAF agent runner — maps TraceEvents → SSE
 // ---------------------------------------------------------------------------
 
@@ -207,11 +300,19 @@ async function runSdkAgent(
   isAuthenticated: boolean,
   accessTags: string[],
   sessionId: string,
+  workspaceId: string,
 ): Promise<void> {
+  // Conditionally register support ticket tool based on spacesConfig
+  const tools: Tool<any, SdkAgentContext>[] = [searchDocumentsTool]
+  const sdkConfig = await getSdkConfigByWorkspaceExternalId(db, workspaceId)
+  if (sdkConfig?.spacesConfig?.createTicketWithEmail?.enabled) {
+    tools.push(createSupportTicketTool)
+  }
+
   const agent: JAFAgent<SdkAgentContext, string> = {
     name: agentName,
     instructions: () => instructions,
-    tools: [searchDocumentsTool],
+    tools,
     modelConfig: { name: config.defaultFastModel },
   }
 
@@ -222,7 +323,10 @@ async function runSdkAgent(
   const previousMessages = getSessionMessages(sessionId)
   const allMessages: JAFMessage[] = [
     ...previousMessages,
-    { role: "user" as const, content: [{ type: "text" as const, text: userMessage }] },
+    {
+      role: "user" as const,
+      content: [{ type: "text" as const, text: userMessage }],
+    },
   ]
 
   const runState: JAFRunState<SdkAgentContext> = {
@@ -230,7 +334,7 @@ async function runSdkAgent(
     traceId: generateTraceId(),
     messages: allMessages,
     currentAgentName: agent.name,
-    context: { createdBy, collectionId, isAuthenticated, accessTags },
+    context: { createdBy, collectionId, isAuthenticated, accessTags, workspaceId },
     turnCount: 0,
   }
 
@@ -278,7 +382,10 @@ async function runSdkAgent(
   if (assistantText) {
     saveSessionMessages(sessionId, [
       ...allMessages,
-      { role: "assistant" as const, content: [{ type: "text" as const, text: assistantText }] },
+      {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: assistantText }],
+      },
     ])
   }
 }
@@ -288,7 +395,11 @@ async function runSdkAgent(
 // ---------------------------------------------------------------------------
 
 export const SdkChatApi = async (c: Context) => {
-  const { query, session_id, collection: collectionName } = c.req.valid("json" as never)
+  const {
+    query,
+    session_id,
+    collection: collectionName,
+  } = c.req.valid("json" as never)
   const workspaceId = c.get("workspaceId") as string
   const accessTags = (c.get("accessTags") as string[]) ?? []
   const isAuthenticated = (c.get("isAuthenticated") as boolean) ?? false
@@ -296,10 +407,12 @@ export const SdkChatApi = async (c: Context) => {
   // Resolve workspace → admin email for createdBy scoping
   const createdBy = await resolveWorkspaceCreator(workspaceId)
   // Resolve collection name → UUID before entering the stream
-  const collectionUuid = await resolveCollectionId(workspaceId, collectionName as string | undefined)
+  const collectionUuid = await resolveCollectionId(
+    workspaceId,
+    collectionName as string | undefined,
+  )
 
-  const resolvedSessionId =
-    (session_id as string) ?? `sdk-${Date.now()}`
+  const resolvedSessionId = (session_id as string) ?? `sdk-${Date.now()}`
 
   return streamSSE(c, async (stream) => {
     try {
@@ -323,13 +436,21 @@ export const SdkChatApi = async (c: Context) => {
         isAuthenticated,
         accessTags,
         resolvedSessionId,
+        workspaceId,
       )
 
-      await stream.writeSSE(sseEvent({ type: "session_id", sessionId: resolvedSessionId }))
+      await stream.writeSSE(
+        sseEvent({ type: "session_id", sessionId: resolvedSessionId }),
+      )
       await stream.writeSSE(sseEvent({ type: "done" }))
     } catch (error) {
       Logger.error(error, "SDK chat streaming error")
-      await stream.writeSSE(sseEvent({ type: "error", content: "An error occurred while processing your request" }))
+      await stream.writeSSE(
+        sseEvent({
+          type: "error",
+          content: "An error occurred while processing your request",
+        }),
+      )
       await stream.writeSSE(sseEvent({ type: "done" }))
     }
   })
@@ -348,7 +469,10 @@ export const SdkExplainApi = async (c: Context) => {
   // Resolve workspace → admin email for createdBy scoping
   const createdBy = await resolveWorkspaceCreator(workspaceId)
   // Resolve collection name → UUID before entering the stream
-  const collectionUuid = await resolveCollectionId(workspaceId, collectionName as string | undefined)
+  const collectionUuid = await resolveCollectionId(
+    workspaceId,
+    collectionName as string | undefined,
+  )
 
   return streamSSE(c, async (stream) => {
     try {
@@ -368,12 +492,15 @@ export const SdkExplainApi = async (c: Context) => {
         isAuthenticated,
         accessTags,
         `explain-${Date.now()}`,
+        workspaceId,
       )
 
       await stream.writeSSE(sseEvent({ type: "done" }))
     } catch (error) {
       Logger.error(error, "SDK explain streaming error")
-      await stream.writeSSE(sseEvent({ type: "error", content: "An error occurred" }))
+      await stream.writeSSE(
+        sseEvent({ type: "error", content: "An error occurred" }),
+      )
       await stream.writeSSE(sseEvent({ type: "done" }))
     }
   })

@@ -22,14 +22,16 @@ export class ToolCooldownManager {
       cooldownUntilTurn: 0,
     }
     const newCount = existing.count + 1
-    const enteringCooldown = newCount >= MAX_FAILURES && existing.count < MAX_FAILURES
+    const enteringCooldown =
+      newCount >= MAX_FAILURES && existing.count < MAX_FAILURES
     this.failures.set(toolName, {
       count: newCount,
       lastError: error,
       lastAttempt: Date.now(),
-      cooldownUntilTurn: newCount >= MAX_FAILURES
-        ? currentTurn + COOLDOWN_TURNS
-        : existing.cooldownUntilTurn,
+      cooldownUntilTurn:
+        newCount >= MAX_FAILURES
+          ? currentTurn + COOLDOWN_TURNS
+          : existing.cooldownUntilTurn,
     })
     return enteringCooldown
   }
@@ -46,7 +48,7 @@ export class ToolCooldownManager {
 
   getAvailableTools<T extends { schema: { name: string } }>(
     tools: T[],
-    currentTurn: number
+    currentTurn: number,
   ): T[] {
     return tools.filter((t) => !this.isInCooldown(t.schema.name, currentTurn))
   }

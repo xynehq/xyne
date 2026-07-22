@@ -138,17 +138,16 @@ export const getFileContent = async (
 ): Promise<VespaFileWithDrivePermission | null> => {
   const docs = google.docs({ version: "v1", auth: client })
   try {
-    const docResponse: any =
-      await retryWithBackoff(
-        () =>
-          docs.documents.get({
-            documentId: file.id as string,
-          }),
-        `Getting document with documentId ${file.id}`,
-        Apps.GoogleDrive,
-        0,
-        client,
-      )
+    const docResponse: any = await retryWithBackoff(
+      () =>
+        docs.documents.get({
+          documentId: file.id as string,
+        }),
+      `Getting document with documentId ${file.id}`,
+      Apps.GoogleDrive,
+      0,
+      client,
+    )
     const documentContent: docs_v1.Schema$Document = docResponse.data
     const rawTextContent = documentContent?.body?.content
       ?.map((e) => extractText(documentContent, e))

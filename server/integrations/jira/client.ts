@@ -3,9 +3,9 @@
  * Handles authentication and API requests to Jira Cloud
  */
 
-import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios'
-import { getLogger } from '@/logger'
-import { Subsystem } from '@/types'
+import axios, { type AxiosInstance, type AxiosRequestConfig } from "axios"
+import { getLogger } from "@/logger"
+import { Subsystem } from "@/types"
 import type {
   JiraCredentials,
   JiraIssue,
@@ -16,11 +16,11 @@ import type {
   JiraWebhook,
   JiraIssueCreateInput,
   JiraIssueUpdateInput,
-} from './types'
-import { JIRA_CONFIG } from './config'
-import { textToADF, formatJiraError, parseIssueKey } from './utils'
+} from "./types"
+import { JIRA_CONFIG } from "./config"
+import { textToADF, formatJiraError, parseIssueKey } from "./utils"
 
-const Logger = getLogger(Subsystem.Integrations).child({ module: 'jira' })
+const Logger = getLogger(Subsystem.Integrations).child({ module: "jira" })
 
 export class JiraClient {
   private client: AxiosInstance
@@ -42,16 +42,16 @@ export class JiraClient {
     this.credentials = credentials
 
     const auth = Buffer.from(
-      `${credentials.email}:${credentials.apiToken}`
-    ).toString('base64')
+      `${credentials.email}:${credentials.apiToken}`,
+    ).toString("base64")
 
     // Main API client
     this.client = axios.create({
       baseURL: JIRA_CONFIG.basePaths.cloud(credentials.domain),
       headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
       },
       timeout: 30000,
     })
@@ -60,9 +60,9 @@ export class JiraClient {
     this.webhookClient = axios.create({
       baseURL: JIRA_CONFIG.basePaths.webhook(credentials.domain),
       headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
       },
       timeout: 30000,
     })
@@ -73,10 +73,10 @@ export class JiraClient {
    */
   async testConnection(): Promise<boolean> {
     try {
-      await this.client.get('/myself')
+      await this.client.get("/myself")
       return true
     } catch (error) {
-      this.throwWithResponse('Jira connection failed', error)
+      this.throwWithResponse("Jira connection failed", error)
     }
   }
 
@@ -87,10 +87,10 @@ export class JiraClient {
    */
   async getProjects(): Promise<JiraProject[]> {
     try {
-      const response = await this.client.get('/project')
+      const response = await this.client.get("/project")
       return response.data
     } catch (error) {
-      this.throwWithResponse('Failed to get projects', error)
+      this.throwWithResponse("Failed to get projects", error)
     }
   }
 
@@ -102,7 +102,7 @@ export class JiraClient {
       const response = await this.client.get(`/project/${projectKey}`)
       return response.data
     } catch (error) {
-      this.throwWithResponse('Failed to get project', error)
+      this.throwWithResponse("Failed to get project", error)
     }
   }
 
@@ -118,12 +118,12 @@ export class JiraClient {
       const projectId = projectResponse.data.id
 
       // Use the correct endpoint for issue types
-      const response = await this.client.get('/issuetype/project', {
+      const response = await this.client.get("/issuetype/project", {
         params: { projectId },
       })
       return response.data
     } catch (error) {
-      this.throwWithResponse('Failed to get issue types', error)
+      this.throwWithResponse("Failed to get issue types", error)
     }
   }
 
@@ -134,10 +134,10 @@ export class JiraClient {
    */
   async getPriorities(): Promise<JiraPriority[]> {
     try {
-      const response = await this.client.get('/priority')
+      const response = await this.client.get("/priority")
       return response.data
     } catch (error) {
-      this.throwWithResponse('Failed to get priorities', error)
+      this.throwWithResponse("Failed to get priorities", error)
     }
   }
 
@@ -148,10 +148,10 @@ export class JiraClient {
    */
   async getStatuses(): Promise<any[]> {
     try {
-      const response = await this.client.get('/status')
+      const response = await this.client.get("/status")
       return response.data
     } catch (error) {
-      this.throwWithResponse('Failed to get statuses', error)
+      this.throwWithResponse("Failed to get statuses", error)
     }
   }
 
@@ -163,7 +163,7 @@ export class JiraClient {
       const response = await this.client.get(`/project/${projectKey}/statuses`)
       return response.data
     } catch (error) {
-      this.throwWithResponse('Failed to get project statuses', error)
+      this.throwWithResponse("Failed to get project statuses", error)
     }
   }
 
@@ -174,10 +174,12 @@ export class JiraClient {
    */
   async getComponents(projectKey: string): Promise<any[]> {
     try {
-      const response = await this.client.get(`/project/${projectKey}/components`)
+      const response = await this.client.get(
+        `/project/${projectKey}/components`,
+      )
       return response.data
     } catch (error) {
-      this.throwWithResponse('Failed to get components', error)
+      this.throwWithResponse("Failed to get components", error)
     }
   }
 
@@ -188,35 +190,39 @@ export class JiraClient {
    */
   async getEpics(projectKey: string): Promise<any[]> {
     try {
-      const response = await this.client.get('/search', {
+      const response = await this.client.get("/search", {
         params: {
           jql: `project = "${projectKey}" AND issuetype = Epic ORDER BY created DESC`,
           maxResults: 100,
-          fields: 'summary,key,status'
-        }
+          fields: "summary,key,status",
+        },
       })
       return response.data.issues || []
     } catch (error) {
-      this.throwWithResponse('Failed to get epics', error)
+      this.throwWithResponse("Failed to get epics", error)
     }
   }
 
   /**
    * Search for issues in projects using JQL
    */
-  async searchIssuesByProjects(projectKeys: string[], searchText?: string, maxResults: number = 50): Promise<any[]> {
+  async searchIssuesByProjects(
+    projectKeys: string[],
+    searchText?: string,
+    maxResults: number = 50,
+  ): Promise<any[]> {
     try {
-      let jql = ''
+      let jql = ""
 
       // Build project filter
       if (projectKeys.length === 1) {
         jql = `project = "${projectKeys[0]}"`
       } else if (projectKeys.length > 1) {
-        const projectList = projectKeys.map(k => `"${k}"`).join(', ')
+        const projectList = projectKeys.map((k) => `"${k}"`).join(", ")
         jql = `project IN (${projectList})`
       } else {
         // If no projects specified, search all projects (limited by maxResults)
-        jql = 'project IS NOT EMPTY'
+        jql = "project IS NOT EMPTY"
       }
 
       // Add text search if provided
@@ -225,18 +231,18 @@ export class JiraClient {
       }
 
       // Order by most recently updated
-      jql += ' ORDER BY updated DESC'
+      jql += " ORDER BY updated DESC"
 
-      const response = await this.client.get('/search', {
+      const response = await this.client.get("/search", {
         params: {
           jql,
           maxResults,
-          fields: 'summary,key,status,issuetype,priority'
-        }
+          fields: "summary,key,status,issuetype,priority",
+        },
       })
       return response.data.issues || []
     } catch (error) {
-      this.throwWithResponse('Failed to search issues', error)
+      this.throwWithResponse("Failed to search issues", error)
     }
   }
 
@@ -247,12 +253,12 @@ export class JiraClient {
    */
   async searchUsers(query: string): Promise<JiraUser[]> {
     try {
-      const response = await this.client.get('/user/search/query', {
+      const response = await this.client.get("/user/search/query", {
         params: { query },
       })
       return response.data
     } catch (error) {
-      this.throwWithResponse('Failed to search users', error)
+      this.throwWithResponse("Failed to search users", error)
     }
   }
 
@@ -261,12 +267,12 @@ export class JiraClient {
    */
   async getUser(accountId: string): Promise<JiraUser> {
     try {
-      const response = await this.client.get('/user', {
+      const response = await this.client.get("/user", {
         params: { accountId },
       })
       return response.data
     } catch (error) {
-      this.throwWithResponse('Failed to get user', error)
+      this.throwWithResponse("Failed to get user", error)
     }
   }
 
@@ -280,7 +286,7 @@ export class JiraClient {
       const response = await this.client.get(`/issue/${issueKey}`)
       return response.data
     } catch (error) {
-      this.throwWithResponse('Failed to get issue', error)
+      this.throwWithResponse("Failed to get issue", error)
     }
   }
 
@@ -325,7 +331,7 @@ export class JiraClient {
 
       // Add components
       if (input.components && input.components.length > 0) {
-        fields.components = input.components.map(name => ({ name }))
+        fields.components = input.components.map((name) => ({ name }))
       }
 
       // Add parent (for subtasks)
@@ -340,14 +346,14 @@ export class JiraClient {
         Object.assign(fields, input.customFields)
       }
 
-      const response = await this.client.post('/issue', {
+      const response = await this.client.post("/issue", {
         fields,
       })
 
       // Fetch the created issue to return full details
       return await this.getIssue(response.data.key)
     } catch (error) {
-      this.throwWithResponse('Failed to create issue', error)
+      this.throwWithResponse("Failed to create issue", error)
     }
   }
 
@@ -382,9 +388,7 @@ export class JiraClient {
 
       // Update assignee (null to unassign)
       if (input.assignee !== undefined) {
-        fields.assignee = input.assignee
-          ? { accountId: input.assignee }
-          : null
+        fields.assignee = input.assignee ? { accountId: input.assignee } : null
       }
 
       // Update labels
@@ -394,7 +398,7 @@ export class JiraClient {
 
       // Update components
       if (input.components !== undefined) {
-        fields.components = input.components.map(name => ({ name }))
+        fields.components = input.components.map((name) => ({ name }))
       }
 
       // Add custom fields
@@ -415,7 +419,7 @@ export class JiraClient {
       // Fetch the updated issue to return full details
       return await this.getIssue(input.issueKey)
     } catch (error) {
-      this.throwWithResponse('Failed to update issue', error)
+      this.throwWithResponse("Failed to update issue", error)
     }
   }
 
@@ -424,23 +428,23 @@ export class JiraClient {
    */
   private async transitionIssue(
     issueKey: string,
-    statusName: string
+    statusName: string,
   ): Promise<void> {
     try {
       // Get available transitions
       const transitionsResponse = await this.client.get(
-        `/issue/${issueKey}/transitions`
+        `/issue/${issueKey}/transitions`,
       )
       const transitions = transitionsResponse.data.transitions
 
       // Find the transition that matches the desired status
       const transition = transitions.find(
-        (t: any) => t.to.name.toLowerCase() === statusName.toLowerCase()
+        (t: any) => t.to.name.toLowerCase() === statusName.toLowerCase(),
       )
 
       if (!transition) {
         throw new Error(
-          `Status "${statusName}" not available for issue ${issueKey}`
+          `Status "${statusName}" not available for issue ${issueKey}`,
         )
       }
 
@@ -451,7 +455,7 @@ export class JiraClient {
         },
       })
     } catch (error) {
-      this.throwWithResponse('Failed to transition issue', error)
+      this.throwWithResponse("Failed to transition issue", error)
     }
   }
 
@@ -460,15 +464,15 @@ export class JiraClient {
    */
   async searchIssues(
     jql: string,
-    options: { maxResults?: number; startAt?: number } = {}
+    options: { maxResults?: number; startAt?: number } = {},
   ): Promise<{ issues: JiraIssue[]; total: number }> {
     try {
-      const response = await this.client.get('/search', {
+      const response = await this.client.get("/search", {
         params: {
           jql,
           maxResults: options.maxResults || 50,
           startAt: options.startAt || 0,
-          fields: JIRA_CONFIG.defaultFields.join(','),
+          fields: JIRA_CONFIG.defaultFields.join(","),
         },
       })
 
@@ -477,7 +481,7 @@ export class JiraClient {
         total: response.data.total,
       }
     } catch (error) {
-      this.throwWithResponse('Failed to search issues', error)
+      this.throwWithResponse("Failed to search issues", error)
     }
   }
 
@@ -488,37 +492,46 @@ export class JiraClient {
    */
   async getWebhooks(): Promise<JiraWebhook[]> {
     try {
-      const response = await this.webhookClient.get('')
+      const response = await this.webhookClient.get("")
       return response.data
     } catch (error) {
-      this.throwWithResponse('Failed to get webhooks', error)
+      this.throwWithResponse("Failed to get webhooks", error)
     }
   }
 
   /**
    * Create a webhook
    */
-  async createWebhook(webhook: Omit<JiraWebhook, 'id'>): Promise<JiraWebhook> {
+  async createWebhook(webhook: Omit<JiraWebhook, "id">): Promise<JiraWebhook> {
     try {
-      Logger.debug({
-        webhookUrl: webhook.url,
-        events: webhook.events,
-        endpoint: this.webhookClient.defaults.baseURL
-      }, 'Creating Jira webhook')
+      Logger.debug(
+        {
+          webhookUrl: webhook.url,
+          events: webhook.events,
+          endpoint: this.webhookClient.defaults.baseURL,
+        },
+        "Creating Jira webhook",
+      )
 
-      const response = await this.webhookClient.post('', webhook)
+      const response = await this.webhookClient.post("", webhook)
 
-      Logger.info({ webhookId: response.data.id, url: webhook.url }, 'Jira webhook created successfully')
+      Logger.info(
+        { webhookId: response.data.id, url: webhook.url },
+        "Jira webhook created successfully",
+      )
       return response.data
     } catch (error: any) {
-      Logger.error({
-        error: formatJiraError(error),
-        status: error.response?.status,
-        errorData: error.response?.data,
-        webhookUrl: webhook.url
-      }, 'Failed to create Jira webhook')
+      Logger.error(
+        {
+          error: formatJiraError(error),
+          status: error.response?.status,
+          errorData: error.response?.data,
+          webhookUrl: webhook.url,
+        },
+        "Failed to create Jira webhook",
+      )
 
-      this.throwWithResponse('Failed to create webhook', error)
+      this.throwWithResponse("Failed to create webhook", error)
     }
   }
 
@@ -529,7 +542,7 @@ export class JiraClient {
     try {
       await this.webhookClient.delete(`/${webhookId}`)
     } catch (error) {
-      this.throwWithResponse('Failed to delete webhook', error)
+      this.throwWithResponse("Failed to delete webhook", error)
     }
   }
 
@@ -543,7 +556,7 @@ export class JiraClient {
   async webhookExists(
     url: string,
     events: string[],
-    opts?: { exact?: boolean }
+    opts?: { exact?: boolean },
   ): Promise<string | null> {
     try {
       const webhooks = await this.getWebhooks()
@@ -557,7 +570,7 @@ export class JiraClient {
         const b = new Set(webhook.events)
 
         // Check for exact match or superset match based on opts
-        const isSuperset = [...a].every(e => b.has(e))
+        const isSuperset = [...a].every((e) => b.has(e))
         const isExact = isSuperset && a.size === b.size
 
         if ((exact && isExact) || (!exact && isSuperset)) {

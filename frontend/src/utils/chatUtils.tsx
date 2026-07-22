@@ -30,9 +30,9 @@ export const processMessage = (
   citations?: Citation[],
 ) => {
   if (!text) return ""
-  
+
   text = splitGroupedCitationsWithSpaces(text)
-  
+
   // Handle image citations
   text = text.replace(
     textToImageCitationIndex,
@@ -79,9 +79,9 @@ export const processMessage = (
     if (finalIndex == null || Number.isNaN(finalIndex) || finalIndex < 0) {
       return ""
     }
-    
+
     const url = citationUrls?.[finalIndex]
-    
+
     // Show citation number even if URL is missing
     if (
       typeof finalIndex === "number" &&
@@ -89,7 +89,9 @@ export const processMessage = (
       finalIndex >= 0 &&
       chunkIndex >= 0
     ) {
-      return url ? `[${finalIndex + 1}_${chunkIndex}](${url})` : `[${finalIndex + 1}_${chunkIndex}]`
+      return url
+        ? `[${finalIndex + 1}_${chunkIndex}](${url})`
+        : `[${finalIndex + 1}_${chunkIndex}]`
     }
     return ""
   })
@@ -99,7 +101,7 @@ export const processMessage = (
   // Case 2: From DB without citationMap - use direct index mapping
   return text.replace(textToCitationIndex, (match, num) => {
     const originalIndex = parseInt(num, 10)
-    
+
     // If citationMap exists (streaming), remap the index
     // Otherwise (DB-loaded), use direct index mapping
     let finalIndex: number
@@ -110,9 +112,9 @@ export const processMessage = (
       // DB-loaded: direct mapping (text already has final indices)
       finalIndex = originalIndex - 1 // Convert [1] to array index 0
     }
-    
+
     const url = citationUrls?.[finalIndex]
-    
+
     // Show citation number even if URL is missing
     if (typeof finalIndex === "number" && finalIndex >= 0) {
       return url ? `[${finalIndex + 1}](${url})` : `[${finalIndex + 1}]`

@@ -12,12 +12,12 @@ export function CredentialExample() {
   return (
     <div className="p-4">
       <h3 className="text-lg font-medium mb-4">Credential Modal Example</h3>
-      
+
       <Button variant="outline" onClick={() => setShowModal(true)}>
         Configure Credentials
       </Button>
 
-      <CredentialModal 
+      <CredentialModal
         open={showModal}
         onOpenChange={setShowModal}
         onSave={handleCredentialSave}

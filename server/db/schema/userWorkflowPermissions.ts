@@ -42,10 +42,9 @@ export const userWorkflowPermissions = pgTable(
   },
   (table) => ({
     // Uniqueness: one permission row per (user, workflow)
-    userWorkflowUniqueIndex: uniqueIndex("user_workflow_permissions_user_workflow_uq").on(
-      table.userId,
-      table.workflowId,
-    ),
+    userWorkflowUniqueIndex: uniqueIndex(
+      "user_workflow_permissions_user_workflow_uq",
+    ).on(table.userId, table.workflowId),
     // Index for efficient queries by workflow
     workflowIdIndex: index("user_workflow_permissions_workflow_id_index").on(
       table.workflowId,
@@ -73,20 +72,20 @@ export type SelectUserWorkflowPermission = z.infer<
 
 // Schema for user-workflow permission relationship with user and workflow details
 export const userWorkflowPermissionWithDetailsSchema = z.object({
-    user: z.object({
-      externalId: z.string(),
-      email: z.string(),
-      name: z.string(),
-      photoLink: z.string().nullable(),
-    }),
-    workflow: z.object({
-      id: z.string(),
-      name: z.string(),
-      description: z.string().nullable(),
-      version: z.string(),
-    }),
-    role: z.enum(UserWorkflowRole)
-  })
+  user: z.object({
+    externalId: z.string(),
+    email: z.string(),
+    name: z.string(),
+    photoLink: z.string().nullable(),
+  }),
+  workflow: z.object({
+    id: z.string(),
+    name: z.string(),
+    description: z.string().nullable(),
+    version: z.string(),
+  }),
+  role: z.enum(UserWorkflowRole),
+})
 export type UserWorkflowPermissionWithDetails = z.infer<
   typeof userWorkflowPermissionWithDetailsSchema
 >

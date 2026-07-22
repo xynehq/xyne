@@ -18,30 +18,38 @@ export const participantsSchema = z
   .object({
     from: z
       .array(
-        z.string().describe(
-          "Sender identifier string. Email is preferred; full name or organization name can also work.",
-        ),
+        z
+          .string()
+          .describe(
+            "Sender identifier string. Email is preferred; full name or organization name can also work.",
+          ),
       )
       .optional(),
     to: z
       .array(
-        z.string().describe(
-          "Primary recipient identifier string. Email is preferred; full name or organization name can also work.",
-        ),
+        z
+          .string()
+          .describe(
+            "Primary recipient identifier string. Email is preferred; full name or organization name can also work.",
+          ),
       )
       .optional(),
     cc: z
       .array(
-        z.string().describe(
-          "CC recipient identifier string. Email is preferred; full name or organization name can also work.",
-        ),
+        z
+          .string()
+          .describe(
+            "CC recipient identifier string. Email is preferred; full name or organization name can also work.",
+          ),
       )
       .optional(),
     bcc: z
       .array(
-        z.string().describe(
-          "BCC recipient identifier string. Email is preferred; full name or organization name can also work.",
-        ),
+        z
+          .string()
+          .describe(
+            "BCC recipient identifier string. Email is preferred; full name or organization name can also work.",
+          ),
       )
       .optional(),
   })

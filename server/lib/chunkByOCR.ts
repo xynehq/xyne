@@ -21,13 +21,15 @@ const DEFAULT_MAX_PAGES_PER_LAYOUT_REQUEST = 100
 const TEXT_CHUNK_OVERLAP_CHARS = 32
 
 // Configuration constants
-const LAYOUT_PARSING_BASE_URL = process.env.LAYOUT_PARSING_BASE_URL || DEFAULT_LAYOUT_PARSING_BASE_URL
-const LAYOUT_PARSING_TIMEOUT_MS = process.env.LAYOUT_PARSING_TIMEOUT_MS 
-  ? Number.parseInt(process.env.LAYOUT_PARSING_TIMEOUT_MS, 10) 
+const LAYOUT_PARSING_BASE_URL =
+  process.env.LAYOUT_PARSING_BASE_URL || DEFAULT_LAYOUT_PARSING_BASE_URL
+const LAYOUT_PARSING_TIMEOUT_MS = process.env.LAYOUT_PARSING_TIMEOUT_MS
+  ? Number.parseInt(process.env.LAYOUT_PARSING_TIMEOUT_MS, 10)
   : DEFAULT_LAYOUT_PARSING_TIMEOUT_MS
 
 const LOCAL_STATUS_ENDPOINT = "http://localhost:8081/instance_status"
-const DEFAULT_STATUS_ENDPOINT = config.paddleStatusEndpoint || LOCAL_STATUS_ENDPOINT
+const DEFAULT_STATUS_ENDPOINT =
+  config.paddleStatusEndpoint || LOCAL_STATUS_ENDPOINT
 const DEFAULT_POLL_INTERVAL_MS = 300
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000
 const DEFAULT_MAX_RETRIES = 2
@@ -37,7 +39,7 @@ const STATUS_FETCH_MAX_RETRIES = 3
 const BACKOFF_BASE_MS = 500
 const BACKOFF_FACTOR = 2
 const BACKOFF_MAX_MS = 8_000
-const BACKOFF_JITTER_RATIO = 0.2  
+const BACKOFF_JITTER_RATIO = 0.2
 
 type LayoutParsingBlock = {
   block_label?: string
@@ -165,8 +167,6 @@ type InstanceStatusPayload = {
   last_updated?: unknown
 }
 
-
-
 const noopLogger: Pick<Console, "info" | "warn" | "error"> = {
   info() {},
   warn() {},
@@ -182,20 +182,20 @@ type SendPdfBatchOptions = {
   timeoutMs: number
 }
 
-const TABLE_TAG = "(?:html|body|table|thead|tbody|tfoot|tr|th|td)";
+const TABLE_TAG = "(?:html|body|table|thead|tbody|tfoot|tr|th|td)"
 
 // convert table structure to TSV
 const convertTableToTsv = (html: string): string => {
   return html
-    .replace(/<\/t[dh]\s*>/gi, "\t")  // </td>, </th> -> tab
-    .replace(/<\/tr\s*>/gi, "\n")     // </tr> -> newline
+    .replace(/<\/t[dh]\s*>/gi, "\t") // </td>, </th> -> tab
+    .replace(/<\/tr\s*>/gi, "\n") // </tr> -> newline
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(new RegExp(`</?\\s*${TABLE_TAG}\\b[^>]*>`, "gi"), "") // Remove table tags
     .replace(/&(nbsp|#160);/gi, " ")
     .replace(/[ \f\r]+/g, " ")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{2,}/g, "\n")
-    .trim();
+    .trim()
 }
 
 // Placeholder implementation for integrating with the OCR service.
@@ -203,8 +203,8 @@ async function sendPdfOcrBatch(
   batch: PdfOcrBatch,
   { timeoutMs }: SendPdfBatchOptions,
 ): Promise<void> {
-  const baseUrl = LAYOUT_PARSING_BASE_URL.replace(/\/+$/, '')
-  const apiUrl = baseUrl + '/' + LAYOUT_PARSING_API_PATH.replace(/^\/+/, '')
+  const baseUrl = LAYOUT_PARSING_BASE_URL.replace(/\/+$/, "")
+  const apiUrl = baseUrl + "/" + LAYOUT_PARSING_API_PATH.replace(/^\/+/, "")
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -232,7 +232,6 @@ async function sendPdfOcrBatch(
         `OCR batch request failed (${response.status}): ${responseText.slice(0, 200)}`,
       )
     }
-
   } catch (error) {
     if ((error as Error).name === "AbortError") {
       throw new Error("OCR batch request aborted due to timeout")
@@ -371,8 +370,8 @@ async function fetchIdleInstances(
 
       const payload = (await response.json()) as InstanceStatusPayload
       const idle = sanitizeIdleValue(payload.idle_instances)
-      const active = isValidStatusNumber(payload.active_instances) 
-        ? extractNumber(payload.active_instances) 
+      const active = isValidStatusNumber(payload.active_instances)
+        ? extractNumber(payload.active_instances)
         : undefined
       const configured = isValidStatusNumber(payload.configured_instances)
         ? extractNumber(payload.configured_instances)
@@ -405,9 +404,10 @@ async function fetchIdleInstances(
     } catch (error) {
       lastError = error
       clearTimeout(timer)
-      
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      
+
+      const errorMessage =
+        error instanceof Error ? error.message : String(error)
+
       if (attempt < STATUS_FETCH_MAX_RETRIES) {
         const backoffMs = computeBackoffMs(attempt)
         logger.warn(
@@ -420,7 +420,7 @@ async function fetchIdleInstances(
           },
         )
         metrics?.incr("ocr_dispatch.status_fetch_retry")
-        
+
         await sleep(backoffMs)
       } else {
         // Max retries exceeded
@@ -433,7 +433,7 @@ async function fetchIdleInstances(
           },
         )
         metrics?.incr("ocr_dispatch.status_fetch_error")
-        
+
         throw new Error(
           `Instance status server unreachable after ${STATUS_FETCH_MAX_RETRIES} attempts: ${errorMessage}`,
         )
@@ -443,7 +443,9 @@ async function fetchIdleInstances(
 
   // This should never be reached, but TypeScript needs it
   const finalMessage =
-    lastError instanceof Error ? lastError.message : String(lastError ?? "unknown error")
+    lastError instanceof Error
+      ? lastError.message
+      : String(lastError ?? "unknown error")
   throw new Error(
     `Instance status server unreachable after ${STATUS_FETCH_MAX_RETRIES} attempts: ${finalMessage}`,
   )
@@ -515,7 +517,8 @@ async function processBatch(
     } catch (error) {
       const latencyMs = Date.now() - attemptStartedAt
       lastError = error
-      const errorMessage = error instanceof Error ? error.message : String(error)
+      const errorMessage =
+        error instanceof Error ? error.message : String(error)
 
       logger.warn(
         `[batch=${batch.id}] attempt=${attempt} latencyMs=${latencyMs} error=${errorMessage}`,
@@ -603,7 +606,8 @@ function createInFlightState(
     })
     .catch((error) => {
       state.done = true
-      const errorMessage = error instanceof Error ? error.message : String(error)
+      const errorMessage =
+        error instanceof Error ? error.message : String(error)
       const fallback: BatchDispatchResult = {
         id: batch.id,
         status: "failed",
@@ -618,9 +622,7 @@ function createInFlightState(
   return state
 }
 
-async function waitForAll(
-  inFlight: InFlightState[],
-): Promise<InFlightState[]> {
+async function waitForAll(inFlight: InFlightState[]): Promise<InFlightState[]> {
   if (inFlight.length === 0) {
     return []
   }
@@ -745,7 +747,7 @@ async function runConcurrentDispatch(
       const remaining = pendingQueue.length
       let toDispatch = 0
       if (!aborted && remaining > 0) {
-        toDispatch = idle > 0 ? Math.min(idle/2, remaining) : 1
+        toDispatch = idle > 0 ? Math.min(idle / 2, remaining) : 1
       }
 
       logger.info(

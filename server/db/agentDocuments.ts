@@ -25,7 +25,8 @@ const isAgentCitationReference = (
     typeof citation.app === "string" &&
     typeof citation.entity === "string" &&
     (citation.url === undefined || typeof citation.url === "string") &&
-    (citation.chunkContent === undefined || typeof citation.chunkContent === "string")
+    (citation.chunkContent === undefined ||
+      typeof citation.chunkContent === "string")
   )
 }
 
@@ -34,7 +35,9 @@ const parseCitations = (val: unknown): AgentCitationReference[] => {
   return val.filter(isAgentCitationReference)
 }
 
-const mapRow = (row: typeof agentDocuments.$inferSelect): SelectAgentDocument => ({
+const mapRow = (
+  row: typeof agentDocuments.$inferSelect,
+): SelectAgentDocument => ({
   ...row,
   citations: parseCitations(row.citations),
 })
@@ -77,7 +80,10 @@ export const getAgentDocumentByExternalId = async (
     .select()
     .from(agentDocuments)
     .where(
-      and(eq(agentDocuments.externalId, externalId), isNull(agentDocuments.deletedAt)),
+      and(
+        eq(agentDocuments.externalId, externalId),
+        isNull(agentDocuments.deletedAt),
+      ),
     )
     .limit(1)
 
@@ -111,7 +117,6 @@ export const getAgentDocumentsByChatId = async (
 export const getAgentDocumentsByChatExternalId = async (
   chatExternalId: string,
 ): Promise<SelectAgentDocument[]> => {
-
   const chat = await db
     .select({ id: chats.id })
     .from(chats)
@@ -188,7 +193,10 @@ export const updateAgentDocument = async (
     .update(agentDocuments)
     .set(updates)
     .where(
-      and(eq(agentDocuments.externalId, externalId), isNull(agentDocuments.deletedAt)),
+      and(
+        eq(agentDocuments.externalId, externalId),
+        isNull(agentDocuments.deletedAt),
+      ),
     )
     .returning()
 
@@ -209,7 +217,10 @@ export const deleteAgentDocument = async (
     .update(agentDocuments)
     .set({ deletedAt: new Date() })
     .where(
-      and(eq(agentDocuments.externalId, externalId), isNull(agentDocuments.deletedAt)),
+      and(
+        eq(agentDocuments.externalId, externalId),
+        isNull(agentDocuments.deletedAt),
+      ),
     )
     .returning()
 

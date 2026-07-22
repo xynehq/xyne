@@ -109,7 +109,6 @@ async function parseSpreadsheetFile(
   filename: string,
 ): Promise<string> {
   try {
-
     // Parse with XLSX library (supports CSV, XLSX, XLS)
     const workbook = XLSX.read(buffer, {
       type: "buffer",
@@ -143,10 +142,8 @@ async function parseSpreadsheetFile(
 
     const combinedText = allChunks.join("\n\n")
 
-
     return combinedText
   } catch (error) {
-
     Logger.error("Failed to parse spreadsheet file", {
       filename,
       error: error instanceof Error ? error.message : String(error),
@@ -238,10 +235,7 @@ export async function processTicketJob(
       fullTicket.modifiedTime &&
       fullTicket.modifiedTime <= lastModifiedTime
     ) {
-
-      Logger.info(
-        "⏭️  Skipping old ticket (early check)",
-      )
+      Logger.info("⏭️  Skipping old ticket (early check)")
       return
     }
 
@@ -251,7 +245,7 @@ export async function processTicketJob(
       const createdByAgent = await client.fetchAgentById(fullTicket.createdBy)
       if (createdByAgent) {
         fullTicket.createdBy = createdByAgent as any
-      } 
+      }
     }
 
     // Fetch modifiedBy agent info if it's just an ID
@@ -267,7 +261,7 @@ export async function processTicketJob(
       const account = await client.fetchAccountById(fullTicket.accountId)
       if (account) {
         fullTicket.account = account as any
-      } 
+      }
     }
 
     // Fetch product info if we only have productId
@@ -275,16 +269,15 @@ export async function processTicketJob(
       const product = await client.fetchProductById(fullTicket.productId)
       if (product) {
         fullTicket.product = product as any
-      } 
+      }
     }
 
     // Fetch team info if we only have teamId
     if (fullTicket.teamId && !fullTicket.team) {
-
       const team = await client.fetchTeamById(fullTicket.teamId)
       if (team) {
         fullTicket.team = team as any
-      } 
+      }
     }
 
     // 4. Fetch threads
@@ -622,14 +615,12 @@ export async function processAttachmentJob(
 
     // Check if file is a spreadsheet (CSV, XLSX, XLS)
     if (isSpreadsheetFile(attachmentName)) {
-
       Logger.info("📊 Parsing spreadsheet file", {
         attachmentId,
         attachmentName,
       })
       ocrText = await parseSpreadsheetFile(buffer, attachmentName)
     } else if (isPlainTextFile(attachmentName)) {
-
       Logger.info("📄 Reading plain text file directly", {
         attachmentId,
         attachmentName,
@@ -651,7 +642,6 @@ export async function processAttachmentJob(
         ocrText = ""
       }
     } else {
-
       Logger.info("🔍 Running OCR on attachment", {
         attachmentId,
         attachmentName,
@@ -667,7 +657,6 @@ export async function processAttachmentJob(
         // Extract text from chunks
         ocrText = ocrResult.chunks.join(" ")
       } catch (ocrError) {
-
         Logger.warn("OCR processing failed, continuing with empty text", {
           attachmentId,
           attachmentName,
@@ -734,13 +723,11 @@ export async function processAttachmentJob(
       attachmentId,
     })
   } catch (error) {
-
     Logger.error("Error processing attachment", {
       ticketId,
       attachmentId,
       error: error instanceof Error ? error.message : String(error),
     })
-
 
     try {
       const ticket = await fetchTicketWithRetry(ticketId, 3, 2000)
@@ -755,15 +742,11 @@ export async function processAttachmentJob(
         await UpdateDocument(ticketSchema as any, ticketId, ticketFields)
 
         // Success log - safe for production
-      
-
       } else {
         // Warning log - safe for production
-      
       }
     } catch (updateError) {
       // Failure log - safe for production
-
 
       Logger.error("Failed to mark attachment as failed", {
         ticketId,

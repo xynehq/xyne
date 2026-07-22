@@ -114,7 +114,11 @@ async function checkVespaContainerHealth(
 
         const contentType = response.headers.get("content-type")
         let applicationStatus = "Unknown"
-        let vespaDetails: Record<string, any> = { endpoint, container: containerName, port }
+        let vespaDetails: Record<string, any> = {
+          endpoint,
+          container: containerName,
+          port,
+        }
         let healthStatus: HealthStatusType = HealthStatusType.Healthy
 
         try {
@@ -162,7 +166,12 @@ async function checkVespaContainerHealth(
                 applicationStatus = "JSON_RESPONSE"
                 healthStatus = HealthStatusType.Healthy
               }
-              vespaDetails = { endpoint, container: containerName, port, ...data }
+              vespaDetails = {
+                endpoint,
+                container: containerName,
+                port,
+                ...data,
+              }
             }
           } else {
             // Handle text/HTML responses
@@ -260,7 +269,9 @@ async function checkVespaContainerHealth(
       responseTime: Date.now() - startTime,
       details: {
         error:
-          error instanceof Error ? error.message : `Vespa ${containerName} container connection failed`,
+          error instanceof Error
+            ? error.message
+            : `Vespa ${containerName} container connection failed`,
         container: containerName,
         port,
       },
@@ -510,7 +521,8 @@ export async function checkKeycloakHealth(): Promise<HealthStatusResponse> {
       serviceName: ServiceName.keycloak,
       responseTime: Date.now() - start,
       details: {
-        message: "Keycloak web login is enabled but configuration is incomplete",
+        message:
+          "Keycloak web login is enabled but configuration is incomplete",
         missingEnvKeys,
       },
     }

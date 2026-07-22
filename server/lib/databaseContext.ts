@@ -27,7 +27,11 @@ function stripVespaHighlight(s: string): string {
   return s.replace(/<\/?hi>/gi, "")
 }
 
-function parseMetadata(meta: unknown): { source?: string; connectorId?: string; tableName?: string } {
+function parseMetadata(meta: unknown): {
+  source?: string
+  connectorId?: string
+  tableName?: string
+} {
   if (typeof meta !== "string") return {}
   try {
     const o = JSON.parse(meta) as Record<string, unknown>
@@ -45,7 +49,9 @@ function parseMetadata(meta: unknown): { source?: string; connectorId?: string; 
  * Prefer schema from Vespa metadata when present (set by file processor for application/x-database-schema).
  * Metadata is not chunked, so this is reliable. Older docs may only have chunks.
  */
-function extractSchemaFromMetadata(meta: unknown): DatabaseTableSchemaDoc | null {
+function extractSchemaFromMetadata(
+  meta: unknown,
+): DatabaseTableSchemaDoc | null {
   if (meta == null) return null
   const str = typeof meta === "string" ? meta : undefined
   if (!str) return null
@@ -66,7 +72,9 @@ function extractSchemaFromMetadata(meta: unknown): DatabaseTableSchemaDoc | null
   return null
 }
 
-function sanitizeSchemaDoc(doc: DatabaseTableSchemaDoc): DatabaseTableSchemaDoc {
+function sanitizeSchemaDoc(
+  doc: DatabaseTableSchemaDoc,
+): DatabaseTableSchemaDoc {
   return {
     ...doc,
     tableName: stripVespaHighlight(doc.tableName),
@@ -85,14 +93,22 @@ function sanitizeSchemaDoc(doc: DatabaseTableSchemaDoc): DatabaseTableSchemaDoc 
 }
 
 /** Fallback for legacy docs: reassemble schema from chunks (metadata may not have schema). */
-function extractSchemaFromChunks(chunks: unknown): DatabaseTableSchemaDoc | null {
+function extractSchemaFromChunks(
+  chunks: unknown,
+): DatabaseTableSchemaDoc | null {
   if (!Array.isArray(chunks) || chunks.length === 0) return null
   const withIndex = chunks
     .map((c) => ({
       text: typeof c === "string" ? c : (c as { chunk?: string }).chunk,
-      index: typeof (c as { index?: number }).index === "number" ? (c as { index: number }).index : -1,
+      index:
+        typeof (c as { index?: number }).index === "number"
+          ? (c as { index: number }).index
+          : -1,
     }))
-    .filter((x): x is { text: string; index: number } => typeof x.text === "string" && x.text.length > 0)
+    .filter(
+      (x): x is { text: string; index: number } =>
+        typeof x.text === "string" && x.text.length > 0,
+    )
   if (withIndex.length === 0) return null
   withIndex.sort((a, b) => a.index - b.index)
   const text = withIndex.map((x) => x.text).join("")
@@ -145,7 +161,11 @@ export async function getPrecomputedDbContextIfNeeded(
     !query.trim()
   ) {
     Logger.warn(
-      { hasUserId: userId != null, hasWorkspaceId: workspaceId != null, hasQuery: typeof query === "string" && !!query?.trim() },
+      {
+        hasUserId: userId != null,
+        hasWorkspaceId: workspaceId != null,
+        hasQuery: typeof query === "string" && !!query?.trim(),
+      },
       "DatabaseContext: skipped building precomputed DB context (missing userId, workspaceId, or query)",
     )
     return new Map()
@@ -197,7 +217,10 @@ export async function buildPrecomputedDbContext(
   const map = new Map<string, string>()
   if (!searchResults?.length || !query?.trim()) {
     Logger.warn(
-      { resultsCount: searchResults?.length ?? 0, queryLength: query?.trim()?.length ?? 0 },
+      {
+        resultsCount: searchResults?.length ?? 0,
+        queryLength: query?.trim()?.length ?? 0,
+      },
       "DatabaseContext: no search results or empty query, skipping precomputed DB context",
     )
     return map
@@ -224,7 +247,9 @@ export async function buildPrecomputedDbContext(
     const meta = parseMetadata(f.metadata)
     let connectorId = meta.connectorId
     if (!connectorId && typeof f.clId === "string") {
-      connectorId = (await getDatabaseConnectorExternalIdByKbCollectionId(f.clId)) ?? undefined
+      connectorId =
+        (await getDatabaseConnectorExternalIdByKbCollectionId(f.clId)) ??
+        undefined
     }
     if (!connectorId) {
       Logger.warn(
@@ -233,7 +258,9 @@ export async function buildPrecomputedDbContext(
       )
       continue
     }
-    const schema = extractSchemaFromMetadata(f.metadata) ?? extractSchemaFromChunks(f.chunks_summary)
+    const schema =
+      extractSchemaFromMetadata(f.metadata) ??
+      extractSchemaFromChunks(f.chunks_summary)
     if (!schema) {
       Logger.warn(
         { connectorId, tableName: meta.tableName },
@@ -245,7 +272,13 @@ export async function buildPrecomputedDbContext(
       const list = byConnector.get(connectorId) ?? []
       // Dedup by composite key (schema + tableName) to avoid collapsing distinct tables across schemas
       const schemaName = schema.schema ?? "public"
-      if (!list.some((s) => (s.schema ?? "public") === schemaName && s.tableName === schema.tableName)) {
+      if (
+        !list.some(
+          (s) =>
+            (s.schema ?? "public") === schemaName &&
+            s.tableName === schema.tableName,
+        )
+      ) {
         list.push(schema)
       }
       byConnector.set(connectorId, list)
@@ -263,7 +296,13 @@ export async function buildPrecomputedDbContext(
   // TODO: improve caching logic later for large scale use cases
   const cacheKey = `${query.trim()}\n${[...byConnector.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([id, schemas]) => `${id}:${schemas.map((s) => s.tableName).sort().join(",")}`)
+    .map(
+      ([id, schemas]) =>
+        `${id}:${schemas
+          .map((s) => s.tableName)
+          .sort()
+          .join(",")}`,
+    )
     .join(";")}`
   const now = Date.now()
   const cached = precomputedDbCache.get(cacheKey)
@@ -274,7 +313,12 @@ export async function buildPrecomputedDbContext(
   const run = async (): Promise<Map<string, string>> => {
     await acquirePrecomputedDbSlot()
     try {
-      return await buildPrecomputedDbContextInner(byConnector, query, userId, workspaceId)
+      return await buildPrecomputedDbContextInner(
+        byConnector,
+        query,
+        userId,
+        workspaceId,
+      )
     } finally {
       releasePrecomputedDbSlot()
     }
@@ -313,7 +357,10 @@ export async function buildPrecomputedDbContext(
         "DatabaseContext: precomputed DB context skipped (orchestration timeout)",
       )
     } else {
-      Logger.warn({ err }, "DatabaseContext: precomputed DB context failed with error")
+      Logger.warn(
+        { err },
+        "DatabaseContext: precomputed DB context failed with error",
+      )
     }
     return map
   }
@@ -328,10 +375,20 @@ async function buildPrecomputedDbContextInner(
   const map = new Map<string, string>()
   for (const [connectorId, schemas] of byConnector) {
     try {
-      const connector = await getDatabaseConnectorForUser(db, connectorId, userId, workspaceId)
+      const connector = await getDatabaseConnectorForUser(
+        db,
+        connectorId,
+        userId,
+        workspaceId,
+      )
       if (!connector) {
         Logger.warn(
-          { connectorId, userId, workspaceId, tableNames: schemas.map((s) => s.tableName) },
+          {
+            connectorId,
+            userId,
+            workspaceId,
+            tableNames: schemas.map((s) => s.tableName),
+          },
           "DatabaseContext: connector not found for user/workspace; skipping query",
         )
         continue
@@ -361,7 +418,11 @@ async function buildPrecomputedDbContextInner(
       const validation = validatePostgresQuery(pgResult.sql, allowedTableNames)
       if (!validation.isValid) {
         Logger.warn(
-          { connectorId, error: validation.error, tableNames: allowedTableNames },
+          {
+            connectorId,
+            error: validation.error,
+            tableNames: allowedTableNames,
+          },
           "DatabaseContext: Postgres SQL validation failed; skipping query",
         )
         continue
@@ -377,10 +438,13 @@ async function buildPrecomputedDbContextInner(
           )
           continue
         }
-        const rows = await client.executeReadOnlyQuery(validation.sanitizedSQL ?? pgResult.sql, {
-          timeoutMs: 30_000,
-          rowLimit: 1000,
-        })
+        const rows = await client.executeReadOnlyQuery(
+          validation.sanitizedSQL ?? pgResult.sql,
+          {
+            timeoutMs: 30_000,
+            rowLimit: 1000,
+          },
+        )
 
         const lines: string[] = [
           "Database query result (from connected database):",
@@ -393,7 +457,11 @@ async function buildPrecomputedDbContextInner(
           const cols = Object.keys(rows[0] as object)
           lines.push(cols.join("\t"))
           for (const row of rows) {
-            lines.push(cols.map((c) => String((row as Record<string, unknown>)[c] ?? "")).join("\t"))
+            lines.push(
+              cols
+                .map((c) => String((row as Record<string, unknown>)[c] ?? ""))
+                .join("\t"),
+            )
           }
         }
         map.set(connectorId, lines.join("\n"))

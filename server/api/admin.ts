@@ -158,7 +158,10 @@ import { KbItemsSchema, type VespaSchema } from "@xyne/vespa-ts"
 import { GetDocument } from "@/search/vespa"
 import { getCollectionFilesVespaIds } from "@/db/knowledgeBase"
 import { replaceSheetIndex } from "@/search/utils"
-import { fetchUserQueriesForChat, fetchAgentQueryResponsePairs } from "@/db/message"
+import {
+  fetchUserQueriesForChat,
+  fetchAgentQueryResponsePairs,
+} from "@/db/message"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "admin" })
@@ -2686,7 +2689,6 @@ export const StartZohoDeskSyncApi = async (c: Context) => {
   const { sub } = c.get(JwtPayloadKey)
 
   try {
-
     const userRes = await getUserByEmail(db, sub)
     if (!userRes || !userRes.length) {
       throw new NoUserFound({})

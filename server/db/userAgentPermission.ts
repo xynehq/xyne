@@ -75,8 +75,8 @@ export const checkUserAgentAccessByExternalId = async (
     )
 
   if (permissionArr && permissionArr.length > 0) {
-     permissionArr.forEach((user) => selectUserAgentPermissionSchema.parse(user))
-     return permissionArr
+    permissionArr.forEach((user) => selectUserAgentPermissionSchema.parse(user))
+    return permissionArr
   }
 
   // If no explicit permission, check if agent is public
@@ -97,14 +97,16 @@ export const checkUserAgentAccessByExternalId = async (
 
   if (publicAgentArr && publicAgentArr.length > 0) {
     // Return a virtual permission for public access
-    return [{
-      id: 0, // Virtual permission ID
-      userId,
-      agentId: publicAgentArr[0].id,
-      role: "viewer" as any, // Public users get viewer access
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }]
+    return [
+      {
+        id: 0, // Virtual permission ID
+        userId,
+        agentId: publicAgentArr[0].id,
+        role: "viewer" as any, // Public users get viewer access
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]
   }
 
   return null

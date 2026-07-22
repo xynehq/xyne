@@ -22,19 +22,19 @@ export interface WorkflowFileUpload {
   attachmentId?: string
   attachmentMetadata?: AttachmentMetadata
 }
-  export interface WorkflowFileData {
-    originalFileName: string
-    fileName: string
-    fileSize: number
-    mimetype: string
-    uploadedAt: string
-    uploadedBy: string
-    fileExtension: string
-    workflowExecutionId: string
-    workflowStepId: string
-    attachmentId?: string
-    attachmentMetadata?: AttachmentMetadata
-  }
+export interface WorkflowFileData {
+  originalFileName: string
+  fileName: string
+  fileSize: number
+  mimetype: string
+  uploadedAt: string
+  uploadedBy: string
+  fileExtension: string
+  workflowExecutionId: string
+  workflowStepId: string
+  attachmentId?: string
+  attachmentMetadata?: AttachmentMetadata
+}
 
 export interface AttachmentUploadResponse {
   success: boolean
@@ -318,7 +318,6 @@ export async function handleWorkflowFileUpload(
   }
 }
 
-
 /**
  * Get MIME type from file extension
  */
@@ -405,4 +404,3 @@ function parseFileSize(sizeStr: string): number {
 
   return Math.floor(size * (units[unit] || 1))
 }
-

@@ -20,12 +20,15 @@ type WebhookConfig = {
 // Webhook registration service (moved from webhook.ts to avoid circular imports)
 class WebhookRegistrationService {
   private static instance: WebhookRegistrationService
-  private registeredWebhooks: Map<string, {
-    workflowTemplateId: string
-    toolId: string
-    config: WebhookConfig
-    httpMethod: string
-  }> = new Map()
+  private registeredWebhooks: Map<
+    string,
+    {
+      workflowTemplateId: string
+      toolId: string
+      config: WebhookConfig
+      httpMethod: string
+    }
+  > = new Map()
 
   static getInstance(): WebhookRegistrationService {
     if (!WebhookRegistrationService.instance) {
@@ -35,14 +38,14 @@ class WebhookRegistrationService {
   }
 
   async registerWebhook(
-    path: string, 
-    workflowTemplateId: string, 
-    toolId: string, 
-    config: WebhookConfig
+    path: string,
+    workflowTemplateId: string,
+    toolId: string,
+    config: WebhookConfig,
   ): Promise<void> {
     // Validate path format
-    const cleanPath = path.startsWith('/') ? path : `/${path}`
-    
+    const cleanPath = path.startsWith("/") ? path : `/${path}`
+
     // Check if path is already registered
     if (this.registeredWebhooks.has(cleanPath)) {
       throw new Error(`Webhook path ${cleanPath} is already registered`)
@@ -53,14 +56,16 @@ class WebhookRegistrationService {
       workflowTemplateId,
       toolId,
       config,
-      httpMethod: config.httpMethod
+      httpMethod: config.httpMethod,
     })
 
-    Logger.info(`Registered webhook: ${cleanPath} -> Template: ${workflowTemplateId}`)
+    Logger.info(
+      `Registered webhook: ${cleanPath} -> Template: ${workflowTemplateId}`,
+    )
   }
 
   async unregisterWebhook(path: string): Promise<boolean> {
-    const cleanPath = path.startsWith('/') ? path : `/${path}`
+    const cleanPath = path.startsWith("/") ? path : `/${path}`
     const deleted = this.registeredWebhooks.delete(cleanPath)
     if (deleted) {
       Logger.info(`Unregistered webhook: ${cleanPath}`)
@@ -69,15 +74,17 @@ class WebhookRegistrationService {
   }
 
   getWebhook(path: string) {
-    const cleanPath = path.startsWith('/') ? path : `/${path}`
+    const cleanPath = path.startsWith("/") ? path : `/${path}`
     return this.registeredWebhooks.get(cleanPath)
   }
 
   getAllWebhooks() {
-    return Array.from(this.registeredWebhooks.entries()).map(([path, data]) => ({
-      path,
-      ...data
-    }))
+    return Array.from(this.registeredWebhooks.entries()).map(
+      ([path, data]) => ({
+        path,
+        ...data,
+      }),
+    )
   }
 
   clearAll() {

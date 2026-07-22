@@ -1,65 +1,71 @@
-import { DocumentOperations } from "@/contexts/DocumentOperationsContext";
-import React, { useEffect, useState } from "react";
-import * as XLSX from "xlsx";
+import { DocumentOperations } from "@/contexts/DocumentOperationsContext"
+import React, { useEffect, useState } from "react"
+import * as XLSX from "xlsx"
 
 interface ExcelViewerProps {
-  source: File;
-  className?: string;
-  style?: React.CSSProperties;
-  documentOperationsRef?: React.RefObject<DocumentOperations>;
-  onSheetChange?: (sheetIndex: number) => void;
+  source: File
+  className?: string
+  style?: React.CSSProperties
+  documentOperationsRef?: React.RefObject<DocumentOperations>
+  onSheetChange?: (sheetIndex: number) => void
   /** 0-based sheet index to open at initially (e.g. from citation chunk). */
-  initialSheetIndex?: number;
+  initialSheetIndex?: number
 }
 
-const ExcelViewer: React.FC<ExcelViewerProps> = ({ source, className, documentOperationsRef, onSheetChange, initialSheetIndex }) => {
-  const [sheets, setSheets] = useState<{ name: string; data: any[][] }[]>([]);
-  const [activeSheet, setActiveSheet] = useState(0);
+const ExcelViewer: React.FC<ExcelViewerProps> = ({
+  source,
+  className,
+  documentOperationsRef,
+  onSheetChange,
+  initialSheetIndex,
+}) => {
+  const [sheets, setSheets] = useState<{ name: string; data: any[][] }[]>([])
+  const [activeSheet, setActiveSheet] = useState(0)
 
   useEffect(() => {
-    const reader = new FileReader();
+    const reader = new FileReader()
     reader.onload = (e) => {
-      const arrayBuffer = e.target?.result;
-      if (!arrayBuffer) return;
+      const arrayBuffer = e.target?.result
+      if (!arrayBuffer) return
 
-      const workbook = XLSX.read(arrayBuffer, { 
+      const workbook = XLSX.read(arrayBuffer, {
         type: "array",
-        cellDates: true,   // dates come back as JS Date objects
-        cellNF: true       // keep the original number format in cell.z
-      });
+        cellDates: true, // dates come back as JS Date objects
+        cellNF: true, // keep the original number format in cell.z
+      })
 
       const parsedSheets = workbook.SheetNames.map((sheetName) => {
-        const worksheet = workbook.Sheets[sheetName];
+        const worksheet = workbook.Sheets[sheetName]
         // Get the range of the worksheet to preserve empty cells
-        const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
-        const sheetData: any[][] = [];
-        
+        const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1")
+        const sheetData: any[][] = []
+
         // Initialize the array with the correct dimensions
         for (let row = range.s.r; row <= range.e.r; row++) {
-          const rowData: any[] = [];
+          const rowData: any[] = []
           for (let col = range.s.c; col <= range.e.c; col++) {
-            const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
-            const cell = worksheet[cellAddress];
-            rowData.push(cell ? XLSX.utils.format_cell(cell) : "");
+            const cellAddress = XLSX.utils.encode_cell({ r: row, c: col })
+            const cell = worksheet[cellAddress]
+            rowData.push(cell ? XLSX.utils.format_cell(cell) : "")
           }
-          sheetData.push(rowData);
+          sheetData.push(rowData)
         }
-        
-        return { name: sheetName, data: sheetData };
-      });
 
-      setSheets(parsedSheets);
+        return { name: sheetName, data: sheetData }
+      })
+
+      setSheets(parsedSheets)
       const initialSheet =
         initialSheetIndex != null &&
         initialSheetIndex >= 0 &&
         initialSheetIndex < parsedSheets.length
           ? initialSheetIndex
-          : 0;
-      setActiveSheet(initialSheet);
-    };
+          : 0
+      setActiveSheet(initialSheet)
+    }
 
-    reader.readAsArrayBuffer(source);
-  }, [source, initialSheetIndex]);
+    reader.readAsArrayBuffer(source)
+  }, [source, initialSheetIndex])
 
   // Register the goToPage function with the DocumentOperations ref
   useEffect(() => {
@@ -72,7 +78,7 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ source, className, documentOp
         }
       }
     }
-    
+
     return () => {
       if (documentOperationsRef?.current) {
         documentOperationsRef.current.goToPage = undefined
@@ -89,10 +95,10 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ source, className, documentOp
   }, [activeSheet, onSheetChange])
 
   if (sheets.length === 0) {
-    return <div className="p-4">Loading Excel file...</div>;
+    return <div className="p-4">Loading Excel file...</div>
   }
 
-  const currentSheet = sheets[activeSheet];
+  const currentSheet = sheets[activeSheet]
 
   return (
     <div className={`overflow-auto ${className}`}>
@@ -131,7 +137,7 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ source, className, documentOp
         </tbody>
       </table>
     </div>
-  );
-};
+  )
+}
 
-export default ExcelViewer;
+export default ExcelViewer

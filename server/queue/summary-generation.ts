@@ -71,7 +71,6 @@ export async function enqueueIndividualSummary(
   }
 
   try {
-
     await boss.send(SUMMARY_QUEUE_NAME, job, {
       retryLimit: 3,
       retryDelay: 60, // 1 minute between retries
@@ -85,7 +84,6 @@ export async function enqueueIndividualSummary(
       totalItems,
     })
   } catch (error) {
-
     logger.error(`Failed to enqueue individual summary job`, {
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
@@ -122,7 +120,6 @@ export async function enqueueAggregateSummary(
       ticketId,
     })
   } catch (error) {
-
     logger.error(`Failed to enqueue aggregate summary job`, {
       error: error instanceof Error ? error.message : String(error),
       ticketId,
@@ -154,7 +151,6 @@ export async function enqueueWholeResolutionSummary(ticketId: string) {
       ticketId,
     })
   } catch (error) {
-
     logger.error(`Failed to enqueue whole resolution summary job`, {
       error: error instanceof Error ? error.message : String(error),
       ticketId,

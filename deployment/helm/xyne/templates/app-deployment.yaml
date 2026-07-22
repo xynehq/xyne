@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "xyne.fullname" . }}-app
+  labels:
+    {{- include "xyne.labels" . | nindent 4 }}
+    {{- include "xyne.app.selectorLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.app.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "xyne.app.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        {{- include "xyne.app.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        # Main app container
+        - name: app
+          image: "{{ .Values.app.image }}:{{ .Values.app.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.app.port }}
+            - name: metrics
+              containerPort: {{ .Values.app.metricsPort }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "xyne.fullname" . }}-app
+            - secretRef:
+                name: {{ include "xyne.fullname" . }}-app
+          volumeMounts:
+            - name: storage
+              mountPath: /usr/src/app/server/storage
+          startupProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            failureThreshold: 120
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.app.resources | nindent 12 }}
+
+        # Sync server sidecar
+        - name: sync-server
+          image: "{{ .Values.app.image }}:{{ .Values.app.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["bun", "sync-server.ts"]
+          ports:
+            - name: sync
+              containerPort: {{ .Values.app.syncServerPort }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "xyne.fullname" . }}-app
+            - secretRef:
+                name: {{ include "xyne.fullname" . }}-app
+          volumeMounts:
+            - name: storage
+              mountPath: /usr/src/app/server/storage
+          startupProbe:
+            tcpSocket:
+              port: sync
+            failureThreshold: 60
+            periodSeconds: 5
+          readinessProbe:
+            tcpSocket:
+              port: sync
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.app.syncServer.resources | nindent 12 }}
+
+      volumes:
+        - name: storage
+          persistentVolumeClaim:
+            claimName: {{ include "xyne.fullname" . }}-app-storage

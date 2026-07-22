@@ -90,7 +90,7 @@ async function handleIndividualSummary(job: IndividualSummaryJob) {
     const summaryText = await generateIndividualSummary(
       itemText,
       authorEmail,
-      summaryType
+      summaryType,
     )
 
     // Step 3: Update DB with generated summary
@@ -211,7 +211,7 @@ async function handleAggregateSummary(job: AggregateSummaryJob) {
         summaryText: s.summaryText || "",
       })),
       summaryType,
-      ticketId
+      ticketId,
     )
 
     // Step 4: Update DB with aggregated summary
@@ -251,8 +251,6 @@ async function handleAggregateSummary(job: AggregateSummaryJob) {
       await checkAggregatesComplete(ticketId, hasThreads, hasComments)
 
     if (readyForWholeResolution) {
-
-
       logger.info(
         `✅ All required aggregates complete, enqueueing whole resolution`,
         {
@@ -268,7 +266,6 @@ async function handleAggregateSummary(job: AggregateSummaryJob) {
         ticketId,
       })
     } else {
-
       logger.info(
         `Waiting for other aggregate to complete before whole resolution`,
         {

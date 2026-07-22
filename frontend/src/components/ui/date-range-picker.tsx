@@ -1,6 +1,15 @@
 import { useState } from "react"
 import { Calendar as CalendarIcon, X } from "lucide-react"
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isWithinInterval, startOfDay, endOfDay } from "date-fns"
+import {
+  format,
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
+  isSameDay,
+  isWithinInterval,
+  startOfDay,
+  endOfDay,
+} from "date-fns"
 import * as Popover from "@radix-ui/react-popover"
 import { cn } from "@/lib/utils"
 
@@ -87,11 +96,15 @@ export function DateRangePicker({
   }
 
   const previousMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))
+    setCurrentMonth(
+      new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1),
+    )
   }
 
   const nextMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))
+    setCurrentMonth(
+      new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1),
+    )
   }
 
   const daysInMonth = eachDayOfInterval({
@@ -107,11 +120,17 @@ export function DateRangePicker({
     const normalizedDate = startOfDay(date)
     const normalizedFrom = startOfDay(tempFrom)
     const normalizedTo = startOfDay(tempTo)
-    return isWithinInterval(normalizedDate, { start: normalizedFrom, end: normalizedTo })
+    return isWithinInterval(normalizedDate, {
+      start: normalizedFrom,
+      end: normalizedTo,
+    })
   }
 
   const isDateSelected = (date: Date) => {
-    return (tempFrom && isSameDay(date, tempFrom)) || (tempTo && isSameDay(date, tempTo))
+    return (
+      (tempFrom && isSameDay(date, tempFrom)) ||
+      (tempTo && isSameDay(date, tempTo))
+    )
   }
   const now = new Date()
 
@@ -119,10 +138,10 @@ export function DateRangePicker({
     from && to
       ? `${format(from, "dd/MM/yyyy")} - ${format(to, "dd/MM/yyyy")}`
       : from
-      ? `From: ${format(from, "dd/MM/yyyy")}`
-      : to
-      ? `To: ${format(to, "dd/MM/yyyy")}`
-      : placeholder
+        ? `From: ${format(from, "dd/MM/yyyy")}`
+        : to
+          ? `To: ${format(to, "dd/MM/yyyy")}`
+          : placeholder
 
   return (
     <Popover.Root open={isOpen} onOpenChange={handleOpenChange}>
@@ -133,14 +152,14 @@ export function DateRangePicker({
             className={cn(
               "flex items-center gap-2 px-3 py-2 text-sm border border-input bg-background rounded-md hover:bg-muted/50 transition-colors",
               !from && !to && "text-muted-foreground",
-              className
+              className,
             )}
           >
             <CalendarIcon className="h-4 w-4" />
             <span>{displayText}</span>
           </button>
         </Popover.Trigger>
-        
+
         {(from || to) && (
           <button
             type="button"
@@ -167,18 +186,32 @@ export function DateRangePicker({
                 onClick={previousMonth}
                 className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors flex-shrink-0"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 19l-7-7 7-7"
+                  />
                 </svg>
               </button>
-              
+
               <div className="flex items-center gap-2 flex-1 justify-center">
                 {/* Month Selector */}
                 <div className="relative">
                   <select
                     value={currentMonth.getMonth()}
                     onChange={(e) => {
-                      const newMonth = new Date(currentMonth.getFullYear(), parseInt(e.target.value), 1)
+                      const newMonth = new Date(
+                        currentMonth.getFullYear(),
+                        parseInt(e.target.value),
+                        1,
+                      )
                       setCurrentMonth(newMonth)
                     }}
                     className="appearance-none px-3 py-1.5 pr-8 text-sm font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 focus:border-slate-400 dark:focus:border-slate-500 cursor-pointer transition-colors"
@@ -190,8 +223,18 @@ export function DateRangePicker({
                     ))}
                   </select>
                   <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
-                    <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    <svg
+                      className="w-4 h-4 text-slate-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 9l-7 7-7-7"
+                      />
                     </svg>
                   </div>
                 </div>
@@ -201,7 +244,11 @@ export function DateRangePicker({
                   <select
                     value={currentMonth.getFullYear()}
                     onChange={(e) => {
-                      const newMonth = new Date(parseInt(e.target.value), currentMonth.getMonth(), 1)
+                      const newMonth = new Date(
+                        parseInt(e.target.value),
+                        currentMonth.getMonth(),
+                        1,
+                      )
                       setCurrentMonth(newMonth)
                     }}
                     className="appearance-none px-3 py-1.5 pr-8 text-sm font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 focus:border-slate-400 dark:focus:border-slate-500 cursor-pointer transition-colors"
@@ -216,20 +263,40 @@ export function DateRangePicker({
                     })}
                   </select>
                   <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
-                    <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    <svg
+                      className="w-4 h-4 text-slate-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 9l-7 7-7-7"
+                      />
                     </svg>
                   </div>
                 </div>
               </div>
-              
+
               <button
                 type="button"
                 onClick={nextMonth}
                 className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors flex-shrink-0"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 5l7 7-7 7"
+                  />
                 </svg>
               </button>
             </div>
@@ -238,11 +305,16 @@ export function DateRangePicker({
             <div className="mb-6">
               {/* Day Headers */}
               <div className="grid grid-cols-7 gap-2 mb-3">
-                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-                  <div key={day} className="text-center text-sm font-medium text-slate-500 dark:text-slate-400 py-2">
-                    {day}
-                  </div>
-                ))}
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
+                  (day) => (
+                    <div
+                      key={day}
+                      className="text-center text-sm font-medium text-slate-500 dark:text-slate-400 py-2"
+                    >
+                      {day}
+                    </div>
+                  ),
+                )}
               </div>
 
               {/* Days Grid */}
@@ -251,7 +323,7 @@ export function DateRangePicker({
                 {Array.from({ length: firstDayOfMonth }).map((_, index) => (
                   <div key={`empty-${index}`} className="w-10 h-10" />
                 ))}
-                
+
                 {/* Actual days */}
                 {daysInMonth.map((date) => {
                   const isSelected = isDateSelected(date)
@@ -267,11 +339,19 @@ export function DateRangePicker({
                       disabled={isFutureDateDisabled}
                       className={cn(
                         "w-10 h-10 flex items-center justify-center rounded-full text-sm transition-colors",
-                        isSelected && "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 font-semibold",
-                        !isSelected && isInRange && "bg-slate-100 dark:bg-slate-800",
-                        !isSelected && !isInRange && !isFutureDateDisabled && "hover:bg-slate-100 dark:hover:bg-slate-800",
-                        isToday && !isSelected && "border border-slate-300 dark:border-slate-600",
-                        isFutureDateDisabled && "opacity-30 cursor-not-allowed"
+                        isSelected &&
+                          "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 font-semibold",
+                        !isSelected &&
+                          isInRange &&
+                          "bg-slate-100 dark:bg-slate-800",
+                        !isSelected &&
+                          !isInRange &&
+                          !isFutureDateDisabled &&
+                          "hover:bg-slate-100 dark:hover:bg-slate-800",
+                        isToday &&
+                          !isSelected &&
+                          "border border-slate-300 dark:border-slate-600",
+                        isFutureDateDisabled && "opacity-30 cursor-not-allowed",
                       )}
                     >
                       {format(date, "d")}
@@ -298,7 +378,7 @@ export function DateRangePicker({
                   "flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors",
                   tempFrom
                     ? "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-200"
-                    : "bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed"
+                    : "bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed",
                 )}
               >
                 Apply

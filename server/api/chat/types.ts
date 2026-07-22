@@ -6,10 +6,7 @@ import { z } from "zod"
 import { entitySchema } from "@/shared/types"
 import type { ConverseResponse } from "@/ai/types"
 
-const {
-  defaultBestModel,
-  defaultFastModel,
-} = config
+const { defaultBestModel, defaultFastModel } = config
 // this is not always the case but unless our router detects that we need
 // these we will by default remove them
 const nonWorkMailLabels = ["CATEGORY_UPDATES", "CATEGORY_PROMOTIONS"]

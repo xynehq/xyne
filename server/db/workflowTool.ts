@@ -18,8 +18,8 @@ export const createWorkflowTool = async (
   trx: TxnOrClient,
   data: {
     type: ToolType
-    workspaceId: number,
-    userId: number,
+    workspaceId: number
+    userId: number
     value?: string | number | Record<string, any>
     config?: Record<string, any>
   },
@@ -61,11 +61,13 @@ export const getWorkflowToolByIdWithChecks = async (
   const [tool] = await trx
     .select()
     .from(workflowTool)
-    .where(and(
-      eq(workflowTool.id, id),
-      eq(workflowTool.workspaceId, workspaceId),
-      eq(workflowTool.userId, userId),
-    ))
+    .where(
+      and(
+        eq(workflowTool.id, id),
+        eq(workflowTool.workspaceId, workspaceId),
+        eq(workflowTool.userId, userId),
+      ),
+    )
     .limit(1)
 
   return tool ? selectWorkflowToolSchema.parse(tool) : null
@@ -79,22 +81,21 @@ export const getAccessibleWorkflowTools = async (
   const results = await trx
     .select()
     .from(workflowTool)
-    .where(and(
-      eq(workflowTool.workspaceId, workspaceId),
-      eq(workflowTool.userId, userId),
-    ))
-  
+    .where(
+      and(
+        eq(workflowTool.workspaceId, workspaceId),
+        eq(workflowTool.userId, userId),
+      ),
+    )
+
   return z.array(selectWorkflowToolSchema).parse(results)
 }
-
 
 export const getAllWorkflowTools = async (
   trx: TxnOrClient,
 ): Promise<SelectWorkflowTool[]> => {
-  const results = await trx
-    .select()
-    .from(workflowTool)
-  
+  const results = await trx.select().from(workflowTool)
+
   return z.array(selectWorkflowToolSchema).parse(results)
 }
 
@@ -107,12 +108,12 @@ export const getWorkflowToolsByIds = async (
   toolIds: string[],
 ): Promise<SelectWorkflowTool[]> => {
   if (toolIds.length === 0) return []
-  
+
   const results = await trx
     .select()
     .from(workflowTool)
     .where(inArray(workflowTool.id, toolIds))
-  
+
   return z.array(selectWorkflowToolSchema).parse(results)
 }
 
@@ -147,7 +148,7 @@ export const deleteWorkflowTool = async (
   return deleted.length > 0
 }
 
-// Tool Execution Operations  
+// Tool Execution Operations
 export const createToolExecution = async (
   trx: TxnOrClient,
   data: {
@@ -167,7 +168,7 @@ export const createToolExecution = async (
       status: data.status,
       result: data.result,
       startedAt: data.startedAt,
-      completedAt: data.completedAt
+      completedAt: data.completedAt,
     })
     .returning()
 
@@ -195,7 +196,7 @@ export const getToolExecutionsByWorkflowExecution = async (
     .select()
     .from(toolExecution)
     .where(eq(toolExecution.workflowExecutionId, workflowExecutionId))
-  
+
   return z.array(selectToolExecutionSchema).parse(results)
 }
 
@@ -207,7 +208,7 @@ export const getToolExecutionsByTool = async (
     .select()
     .from(toolExecution)
     .where(eq(toolExecution.workflowToolId, workflowToolId))
-  
+
   return z.array(selectToolExecutionSchema).parse(results)
 }
 

@@ -3,8 +3,8 @@
  * UI for configuring Jira issue updates
  */
 
-import React, { useState } from 'react'
-import { JiraIcon } from '../WorkflowIcons'
+import React, { useState } from "react"
+import { JiraIcon } from "../WorkflowIcons"
 
 interface JiraUpdateIssueProps {
   onSave: (config: JiraUpdateIssueConfig) => void
@@ -28,24 +28,18 @@ export interface JiraUpdateIssueConfig {
   status?: string
 }
 
-const PRIORITIES = ['Highest', 'High', 'Medium', 'Low', 'Lowest']
-const COMMON_STATUSES = [
-  'To Do',
-  'In Progress',
-  'In Review',
-  'Done',
-  'Blocked',
-]
+const PRIORITIES = ["Highest", "High", "Medium", "Low", "Lowest"]
+const COMMON_STATUSES = ["To Do", "In Progress", "In Review", "Done", "Blocked"]
 
 export const JiraUpdateIssue: React.FC<JiraUpdateIssueProps> = ({
   onSave,
   initialConfig,
 }) => {
   const [config, setConfig] = useState<JiraUpdateIssueConfig>({
-    domain: initialConfig?.domain || '',
-    email: initialConfig?.email || '',
-    apiToken: initialConfig?.apiToken || '',
-    issueKey: initialConfig?.issueKey || '',
+    domain: initialConfig?.domain || "",
+    email: initialConfig?.email || "",
+    apiToken: initialConfig?.apiToken || "",
+    issueKey: initialConfig?.issueKey || "",
     summary: initialConfig?.summary,
     description: initialConfig?.description,
     priority: initialConfig?.priority,
@@ -56,16 +50,17 @@ export const JiraUpdateIssue: React.FC<JiraUpdateIssueProps> = ({
   })
 
   const [showPassword, setShowPassword] = useState(false)
-  const [labelInput, setLabelInput] = useState('')
+  const [labelInput, setLabelInput] = useState("")
   const [updateFields, setUpdateFields] = useState<Set<string>>(
     new Set(
       Object.entries(initialConfig || {})
-        .filter(([key, value]) =>
-          value !== undefined &&
-          !['domain', 'email', 'apiToken', 'issueKey'].includes(key)
+        .filter(
+          ([key, value]) =>
+            value !== undefined &&
+            !["domain", "email", "apiToken", "issueKey"].includes(key),
         )
-        .map(([key]) => key)
-    )
+        .map(([key]) => key),
+    ),
   )
 
   const toggleField = (field: string) => {
@@ -86,7 +81,7 @@ export const JiraUpdateIssue: React.FC<JiraUpdateIssueProps> = ({
         ...config,
         labels: [...(config.labels || []), labelInput.trim()],
       })
-      setLabelInput('')
+      setLabelInput("")
     }
   }
 
@@ -100,17 +95,17 @@ export const JiraUpdateIssue: React.FC<JiraUpdateIssueProps> = ({
   const handleSave = () => {
     // Validate required fields
     if (!config.domain || !config.email || !config.apiToken) {
-      alert('Please fill in Jira credentials')
+      alert("Please fill in Jira credentials")
       return
     }
 
     if (!config.issueKey) {
-      alert('Please enter the issue key')
+      alert("Please enter the issue key")
       return
     }
 
     if (updateFields.size === 0) {
-      alert('Please select at least one field to update')
+      alert("Please select at least one field to update")
       return
     }
 
@@ -123,7 +118,7 @@ export const JiraUpdateIssue: React.FC<JiraUpdateIssueProps> = ({
     }
 
     updateFields.forEach((field) => {
-      if (field !== 'issueKey') {
+      if (field !== "issueKey") {
         configToSave[field] = (config as any)[field]
       }
     })
@@ -158,9 +153,7 @@ export const JiraUpdateIssue: React.FC<JiraUpdateIssueProps> = ({
             type="text"
             placeholder="your-domain.atlassian.net"
             value={config.domain}
-            onChange={(e) =>
-              setConfig({ ...config, domain: e.target.value })
-            }
+            onChange={(e) => setConfig({ ...config, domain: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
@@ -184,7 +177,7 @@ export const JiraUpdateIssue: React.FC<JiraUpdateIssueProps> = ({
           </label>
           <div className="relative">
             <input
-              type={showPassword ? 'text' : 'password'}
+              type={showPassword ? "text" : "password"}
               placeholder="Your Jira API token"
               value={config.apiToken}
               onChange={(e) =>
@@ -197,7 +190,7 @@ export const JiraUpdateIssue: React.FC<JiraUpdateIssueProps> = ({
               onClick={() => setShowPassword(!showPassword)}
               className="absolute right-3 top-1/2 transform -translate-y-1/2 text-sm text-gray-500 hover:text-gray-700"
             >
-              {showPassword ? 'Hide' : 'Show'}
+              {showPassword ? "Hide" : "Show"}
             </button>
           </div>
         </div>
@@ -233,17 +226,17 @@ export const JiraUpdateIssue: React.FC<JiraUpdateIssueProps> = ({
           <label className="flex items-center gap-2 cursor-pointer mb-2">
             <input
               type="checkbox"
-              checked={updateFields.has('summary')}
-              onChange={() => toggleField('summary')}
+              checked={updateFields.has("summary")}
+              onChange={() => toggleField("summary")}
               className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
             />
             <span className="text-sm font-medium text-gray-700">Summary</span>
           </label>
-          {updateFields.has('summary') && (
+          {updateFields.has("summary") && (
             <input
               type="text"
               placeholder="New summary"
-              value={config.summary || ''}
+              value={config.summary || ""}
               onChange={(e) =>
                 setConfig({ ...config, summary: e.target.value })
               }
@@ -257,18 +250,18 @@ export const JiraUpdateIssue: React.FC<JiraUpdateIssueProps> = ({
           <label className="flex items-center gap-2 cursor-pointer mb-2">
             <input
               type="checkbox"
-              checked={updateFields.has('description')}
-              onChange={() => toggleField('description')}
+              checked={updateFields.has("description")}
+              onChange={() => toggleField("description")}
               className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
             />
             <span className="text-sm font-medium text-gray-700">
               Description
             </span>
           </label>
-          {updateFields.has('description') && (
+          {updateFields.has("description") && (
             <textarea
               placeholder="New description"
-              value={config.description || ''}
+              value={config.description || ""}
               onChange={(e) =>
                 setConfig({ ...config, description: e.target.value })
               }
@@ -283,15 +276,15 @@ export const JiraUpdateIssue: React.FC<JiraUpdateIssueProps> = ({
           <label className="flex items-center gap-2 cursor-pointer mb-2">
             <input
               type="checkbox"
-              checked={updateFields.has('priority')}
-              onChange={() => toggleField('priority')}
+              checked={updateFields.has("priority")}
+              onChange={() => toggleField("priority")}
               className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
             />
             <span className="text-sm font-medium text-gray-700">Priority</span>
           </label>
-          {updateFields.has('priority') && (
+          {updateFields.has("priority") && (
             <select
-              value={config.priority || 'Medium'}
+              value={config.priority || "Medium"}
               onChange={(e) =>
                 setConfig({ ...config, priority: e.target.value })
               }
@@ -311,18 +304,16 @@ export const JiraUpdateIssue: React.FC<JiraUpdateIssueProps> = ({
           <label className="flex items-center gap-2 cursor-pointer mb-2">
             <input
               type="checkbox"
-              checked={updateFields.has('status')}
-              onChange={() => toggleField('status')}
+              checked={updateFields.has("status")}
+              onChange={() => toggleField("status")}
               className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
             />
             <span className="text-sm font-medium text-gray-700">Status</span>
           </label>
-          {updateFields.has('status') && (
+          {updateFields.has("status") && (
             <select
-              value={config.status || 'To Do'}
-              onChange={(e) =>
-                setConfig({ ...config, status: e.target.value })
-              }
+              value={config.status || "To Do"}
+              onChange={(e) => setConfig({ ...config, status: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               {COMMON_STATUSES.map((status) => (
@@ -339,18 +330,18 @@ export const JiraUpdateIssue: React.FC<JiraUpdateIssueProps> = ({
           <label className="flex items-center gap-2 cursor-pointer mb-2">
             <input
               type="checkbox"
-              checked={updateFields.has('assignee')}
-              onChange={() => toggleField('assignee')}
+              checked={updateFields.has("assignee")}
+              onChange={() => toggleField("assignee")}
               className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
             />
             <span className="text-sm font-medium text-gray-700">Assignee</span>
           </label>
-          {updateFields.has('assignee') && (
+          {updateFields.has("assignee") && (
             <div>
               <input
                 type="text"
                 placeholder="User account ID (or leave empty to unassign)"
-                value={config.assignee || ''}
+                value={config.assignee || ""}
                 onChange={(e) =>
                   setConfig({ ...config, assignee: e.target.value || null })
                 }
@@ -368,13 +359,13 @@ export const JiraUpdateIssue: React.FC<JiraUpdateIssueProps> = ({
           <label className="flex items-center gap-2 cursor-pointer mb-2">
             <input
               type="checkbox"
-              checked={updateFields.has('labels')}
-              onChange={() => toggleField('labels')}
+              checked={updateFields.has("labels")}
+              onChange={() => toggleField("labels")}
               className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
             />
             <span className="text-sm font-medium text-gray-700">Labels</span>
           </label>
-          {updateFields.has('labels') && (
+          {updateFields.has("labels") && (
             <div>
               <div className="flex gap-2 mb-2">
                 <input
@@ -382,7 +373,7 @@ export const JiraUpdateIssue: React.FC<JiraUpdateIssueProps> = ({
                   placeholder="Add label"
                   value={labelInput}
                   onChange={(e) => setLabelInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddLabel()}
+                  onKeyDown={(e) => e.key === "Enter" && handleAddLabel()}
                   className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <button

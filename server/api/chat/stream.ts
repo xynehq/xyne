@@ -11,7 +11,11 @@ export interface ActiveStreamState {
   // HITL: Callback to resume JAF when clarification is provided
   clarificationCallback?: (
     clarificationId: string,
-    selectedOptionId: { selectedOptionId: string; selectedOption: string; customInput?: string },
+    selectedOptionId: {
+      selectedOptionId: string
+      selectedOption: string
+      customInput?: string
+    },
   ) => void
   stopController?: AbortController
 }

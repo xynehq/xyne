@@ -35,28 +35,40 @@ function StatusBadge({ status }: { status: string }) {
   switch (status.toUpperCase()) {
     case "COMPLETED":
       return (
-        <Badge variant="outline" className="gap-1 font-normal text-green-700 border-green-200 bg-green-50 dark:text-green-400 dark:border-green-800 dark:bg-green-950">
+        <Badge
+          variant="outline"
+          className="gap-1 font-normal text-green-700 border-green-200 bg-green-50 dark:text-green-400 dark:border-green-800 dark:bg-green-950"
+        >
           <CheckCircle2 className="h-3 w-3" />
           Completed
         </Badge>
       )
     case "PROCESSING":
       return (
-        <Badge variant="outline" className="gap-1 font-normal text-blue-700 border-blue-200 bg-blue-50 dark:text-blue-400 dark:border-blue-800 dark:bg-blue-950">
+        <Badge
+          variant="outline"
+          className="gap-1 font-normal text-blue-700 border-blue-200 bg-blue-50 dark:text-blue-400 dark:border-blue-800 dark:bg-blue-950"
+        >
           <Loader2 className="h-3 w-3 animate-spin" />
           Processing
         </Badge>
       )
     case "PENDING":
       return (
-        <Badge variant="outline" className="gap-1 font-normal text-yellow-700 border-yellow-200 bg-yellow-50 dark:text-yellow-400 dark:border-yellow-800 dark:bg-yellow-950">
+        <Badge
+          variant="outline"
+          className="gap-1 font-normal text-yellow-700 border-yellow-200 bg-yellow-50 dark:text-yellow-400 dark:border-yellow-800 dark:bg-yellow-950"
+        >
           <Clock className="h-3 w-3" />
           Pending
         </Badge>
       )
     case "FAILED":
       return (
-        <Badge variant="outline" className="gap-1 font-normal text-red-700 border-red-200 bg-red-50 dark:text-red-400 dark:border-red-800 dark:bg-red-950">
+        <Badge
+          variant="outline"
+          className="gap-1 font-normal text-red-700 border-red-200 bg-red-50 dark:text-red-400 dark:border-red-800 dark:bg-red-950"
+        >
           <AlertCircle className="h-3 w-3" />
           Failed
         </Badge>
@@ -72,7 +84,9 @@ function StatusBadge({ status }: { status: string }) {
 
 export function Documents() {
   const queryClient = useQueryClient()
-  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null)
+  const [selectedCollectionId, setSelectedCollectionId] = useState<
+    string | null
+  >(null)
   const [showUpload, setShowUpload] = useState(false)
   const [showCreateCollection, setShowCreateCollection] = useState(false)
 
@@ -82,7 +96,8 @@ export function Documents() {
   })
 
   const collections = collectionsData?.collections ?? []
-  const selectedCollection = collections.find((c) => c.id === selectedCollectionId) ?? null
+  const selectedCollection =
+    collections.find((c) => c.id === selectedCollectionId) ?? null
 
   // Auto-select first collection
   useEffect(() => {
@@ -93,7 +108,11 @@ export function Documents() {
 
   // Clear selection if deleted
   useEffect(() => {
-    if (selectedCollectionId && collections.length > 0 && !collections.find((c) => c.id === selectedCollectionId)) {
+    if (
+      selectedCollectionId &&
+      collections.length > 0 &&
+      !collections.find((c) => c.id === selectedCollectionId)
+    ) {
       setSelectedCollectionId(collections[0]?.id ?? null)
     }
   }, [collections, selectedCollectionId])
@@ -106,13 +125,16 @@ export function Documents() {
 
   // Auto-refresh when items are pending/processing
   const hasPendingItems = itemsData?.items.some(
-    (item) => item.uploadStatus === "PENDING" || item.uploadStatus === "PROCESSING",
+    (item) =>
+      item.uploadStatus === "PENDING" || item.uploadStatus === "PROCESSING",
   )
 
   useQuery({
     queryKey: ["collection-items-poll", selectedCollectionId],
     queryFn: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["collection-items", selectedCollectionId] })
+      await queryClient.invalidateQueries({
+        queryKey: ["collection-items", selectedCollectionId],
+      })
       await queryClient.invalidateQueries({ queryKey: ["collections"] })
       return null
     },
@@ -175,7 +197,9 @@ export function Documents() {
               ) : collections.length === 0 && !showCreateCollection ? (
                 <div className="py-8 text-center">
                   <FolderOpen className="h-8 w-8 text-muted-foreground/50 mx-auto mb-2" />
-                  <p className="text-xs text-muted-foreground">No collections</p>
+                  <p className="text-xs text-muted-foreground">
+                    No collections
+                  </p>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -211,7 +235,11 @@ export function Documents() {
                         className="h-6 w-6 opacity-0 group-hover:opacity-100 shrink-0 text-muted-foreground hover:text-destructive"
                         onClick={(e) => {
                           e.stopPropagation()
-                          if (confirm(`Delete collection "${col.name}" and all its documents?`)) {
+                          if (
+                            confirm(
+                              `Delete collection "${col.name}" and all its documents?`,
+                            )
+                          ) {
                             deleteCollectionMutation.mutate(col.id)
                           }
                         }}
@@ -243,7 +271,9 @@ export function Documents() {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-base font-medium">{selectedCollection.name}</h3>
+                  <h3 className="text-base font-medium">
+                    {selectedCollection.name}
+                  </h3>
                   {selectedCollection.description && (
                     <p className="text-sm text-muted-foreground mt-0.5">
                       {selectedCollection.description}
@@ -263,7 +293,9 @@ export function Documents() {
                   onClose={() => setShowUpload(false)}
                   onSuccess={() => {
                     setShowUpload(false)
-                    queryClient.invalidateQueries({ queryKey: ["collection-items", selectedCollectionId] })
+                    queryClient.invalidateQueries({
+                      queryKey: ["collection-items", selectedCollectionId],
+                    })
                     queryClient.invalidateQueries({ queryKey: ["collections"] })
                   }}
                 />
@@ -316,18 +348,26 @@ export function Documents() {
                             </div>
                           </TableCell>
                           <TableCell className="text-muted-foreground">
-                            {item.mimeType ? item.mimeType.split("/").pop() : item.type}
+                            {item.mimeType
+                              ? item.mimeType.split("/").pop()
+                              : item.type}
                           </TableCell>
                           <TableCell className="text-muted-foreground">
-                            {item.fileSize ? formatFileSize(item.fileSize) : "—"}
+                            {item.fileSize
+                              ? formatFileSize(item.fileSize)
+                              : "—"}
                           </TableCell>
                           <TableCell>
                             <StatusBadge status={item.uploadStatus} />
-                            {item.statusMessage && item.uploadStatus === "FAILED" && (
-                              <p className="text-xs text-destructive mt-1 max-w-[200px] truncate" title={item.statusMessage}>
-                                {item.statusMessage}
-                              </p>
-                            )}
+                            {item.statusMessage &&
+                              item.uploadStatus === "FAILED" && (
+                                <p
+                                  className="text-xs text-destructive mt-1 max-w-[200px] truncate"
+                                  title={item.statusMessage}
+                                >
+                                  {item.statusMessage}
+                                </p>
+                              )}
                           </TableCell>
                           <TableCell className="text-muted-foreground text-sm">
                             {new Date(item.createdAt).toLocaleDateString()}
@@ -360,18 +400,25 @@ function CreateCollectionInline({
   const mutation = useMutation({
     mutationFn: api.createCollection,
     onSuccess: (data) => onCreated(data.id),
-    onError: (err) => setError(err instanceof Error ? err.message : "Failed to create"),
+    onError: (err) =>
+      setError(err instanceof Error ? err.message : "Failed to create"),
   })
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim()) return
     setError("")
-    mutation.mutate({ name: name.trim(), description: description.trim() || undefined })
+    mutation.mutate({
+      name: name.trim(),
+      description: description.trim() || undefined,
+    })
   }
 
   return (
-    <form onSubmit={handleSubmit} className="p-2 mb-2 bg-muted/50 rounded-md space-y-2">
+    <form
+      onSubmit={handleSubmit}
+      className="p-2 mb-2 bg-muted/50 rounded-md space-y-2"
+    >
       <Input
         autoFocus
         placeholder="Collection name"
@@ -387,10 +434,21 @@ function CreateCollectionInline({
       />
       {error && <p className="text-xs text-destructive">{error}</p>}
       <div className="flex gap-1.5">
-        <Button type="submit" size="sm" className="h-7 text-xs flex-1" disabled={mutation.isPending}>
+        <Button
+          type="submit"
+          size="sm"
+          className="h-7 text-xs flex-1"
+          disabled={mutation.isPending}
+        >
           {mutation.isPending ? "Creating..." : "Create"}
         </Button>
-        <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={onClose}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs"
+          onClick={onClose}
+        >
           Cancel
         </Button>
       </div>
@@ -409,7 +467,9 @@ function UploadForm({
   onClose: () => void
   onSuccess: () => void
 }) {
-  const [visibility, setVisibility] = useState<"public" | "authenticated">("public")
+  const [visibility, setVisibility] = useState<"public" | "authenticated">(
+    "public",
+  )
   const [tags, setTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState("")
   const [error, setError] = useState("")
@@ -426,13 +486,15 @@ function UploadForm({
   const textMutation = useMutation({
     mutationFn: api.uploadDocuments,
     onSuccess,
-    onError: (err) => setError(err instanceof Error ? err.message : "Upload failed"),
+    onError: (err) =>
+      setError(err instanceof Error ? err.message : "Upload failed"),
   })
 
   const fileMutation = useMutation({
     mutationFn: api.uploadFiles,
     onSuccess,
-    onError: (err) => setError(err instanceof Error ? err.message : "Upload failed"),
+    onError: (err) =>
+      setError(err instanceof Error ? err.message : "Upload failed"),
   })
 
   const isPending = textMutation.isPending || fileMutation.isPending
@@ -453,7 +515,10 @@ function UploadForm({
     const arr = Array.from(newFiles)
     setFiles((prev) => {
       const existing = new Set(prev.map((f) => `${f.name}-${f.size}`))
-      return [...prev, ...arr.filter((f) => !existing.has(`${f.name}-${f.size}`))]
+      return [
+        ...prev,
+        ...arr.filter((f) => !existing.has(`${f.name}-${f.size}`)),
+      ]
     })
   }, [])
 
@@ -500,7 +565,9 @@ function UploadForm({
         <Label>Visibility</Label>
         <select
           value={visibility}
-          onChange={(e) => setVisibility(e.target.value as "public" | "authenticated")}
+          onChange={(e) =>
+            setVisibility(e.target.value as "public" | "authenticated")
+          }
           className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
           <option value="public">Public — visible to everyone</option>
@@ -516,7 +583,14 @@ function UploadForm({
       </div>
 
       <div className="space-y-2">
-        <Label>Access Tags {visibility === "public" && <span className="text-muted-foreground font-normal">(not applicable for public)</span>}</Label>
+        <Label>
+          Access Tags{" "}
+          {visibility === "public" && (
+            <span className="text-muted-foreground font-normal">
+              (not applicable for public)
+            </span>
+          )}
+        </Label>
         <div className="flex gap-2">
           <Input
             value={tagInput}
@@ -530,14 +604,24 @@ function UploadForm({
             placeholder="Add a tag and press Enter"
             className="flex-1"
           />
-          <Button type="button" variant="outline" size="sm" onClick={addTag} className="h-9">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={addTag}
+            className="h-9"
+          >
             Add
           </Button>
         </div>
         {tags.length > 0 && (
           <div className="flex flex-wrap gap-1.5 pt-1">
             {tags.map((tag) => (
-              <Badge key={tag} variant="secondary" className="gap-1 pr-1 font-normal">
+              <Badge
+                key={tag}
+                variant="secondary"
+                className="gap-1 pr-1 font-normal"
+              >
                 {tag}
                 <button
                   type="button"
@@ -558,9 +642,15 @@ function UploadForm({
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
         <CardTitle className="text-base">
-          Add Document to <span className="text-muted-foreground">{collectionName}</span>
+          Add Document to{" "}
+          <span className="text-muted-foreground">{collectionName}</span>
         </CardTitle>
-        <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onClose}
+          className="h-8 w-8"
+        >
           <X className="h-4 w-4" />
         </Button>
       </CardHeader>

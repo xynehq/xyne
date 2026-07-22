@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react'
-import { Check, X } from 'lucide-react'
+import React, { useState, useRef, useEffect } from "react"
+import { Check, X } from "lucide-react"
 
 interface Option {
   value: string
@@ -18,11 +18,11 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   options,
   value,
   onChange,
-  placeholder = 'Select...',
+  placeholder = "Select...",
   disabled = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
+  const [searchQuery, setSearchQuery] = useState("")
   const ref = useRef<HTMLDivElement>(null)
 
   // Close dropdown when clicking outside
@@ -30,22 +30,22 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
     const handleClickOutside = (event: MouseEvent) => {
       if (ref.current && !ref.current.contains(event.target as Node)) {
         setIsOpen(false)
-        setSearchQuery('')
+        setSearchQuery("")
       }
     }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
-  const filteredOptions = options.filter(option =>
-    option.label.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredOptions = options.filter((option) =>
+    option.label.toLowerCase().includes(searchQuery.toLowerCase()),
   )
 
   const toggleOption = (optionValue: string) => {
     if (disabled) return
 
     if (value.includes(optionValue)) {
-      onChange(value.filter(v => v !== optionValue))
+      onChange(value.filter((v) => v !== optionValue))
     } else {
       onChange([...value, optionValue])
     }
@@ -54,25 +54,25 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   const removeOption = (optionValue: string, e: React.MouseEvent) => {
     if (disabled) return
     e.stopPropagation()
-    onChange(value.filter(v => v !== optionValue))
+    onChange(value.filter((v) => v !== optionValue))
   }
 
   const handleSelectAll = () => {
     if (disabled) return
 
     // Check if all filtered options are selected
-    const allFilteredSelected = filteredOptions.every(option =>
-      value.includes(option.value)
+    const allFilteredSelected = filteredOptions.every((option) =>
+      value.includes(option.value),
     )
 
     if (allFilteredSelected) {
       // Deselect all filtered options
-      const filteredValues = filteredOptions.map(o => o.value)
-      onChange(value.filter(v => !filteredValues.includes(v)))
+      const filteredValues = filteredOptions.map((o) => o.value)
+      onChange(value.filter((v) => !filteredValues.includes(v)))
     } else {
       // Select all filtered options (merge with existing selections)
       const newValues = [...value]
-      filteredOptions.forEach(option => {
+      filteredOptions.forEach((option) => {
         if (!newValues.includes(option.value)) {
           newValues.push(option.value)
         }
@@ -81,11 +81,12 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
     }
   }
 
-  const allFilteredSelected = filteredOptions.length > 0 &&
-    filteredOptions.every(option => value.includes(option.value))
+  const allFilteredSelected =
+    filteredOptions.length > 0 &&
+    filteredOptions.every((option) => value.includes(option.value))
 
-  const selectedLabels = value.map(v =>
-    options.find(o => o.value === v)?.label || v
+  const selectedLabels = value.map(
+    (v) => options.find((o) => o.value === v)?.label || v,
   )
 
   return (
@@ -95,8 +96,8 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
         onClick={() => !disabled && setIsOpen(!isOpen)}
         className={`min-h-[42px] px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 transition-colors ${
           disabled
-            ? 'cursor-not-allowed opacity-50 bg-gray-50 dark:bg-gray-900'
-            : 'cursor-pointer hover:border-gray-400 dark:hover:border-gray-500'
+            ? "cursor-not-allowed opacity-50 bg-gray-50 dark:bg-gray-900"
+            : "cursor-pointer hover:border-gray-400 dark:hover:border-gray-500"
         }`}
       >
         {value.length === 0 ? (
@@ -154,12 +155,15 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
                   <div
                     className={`w-4 h-4 rounded border flex items-center justify-center ${
                       allFilteredSelected
-                        ? 'bg-black dark:bg-white border-black dark:border-white'
-                        : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600'
+                        ? "bg-black dark:bg-white border-black dark:border-white"
+                        : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600"
                     }`}
                   >
                     {allFilteredSelected && (
-                      <Check className="w-3 h-3 text-white dark:text-black" strokeWidth={3} />
+                      <Check
+                        className="w-3 h-3 text-white dark:text-black"
+                        strokeWidth={3}
+                      />
                     )}
                   </div>
                   <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
@@ -177,12 +181,15 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
                     <div
                       className={`w-4 h-4 rounded border flex items-center justify-center ${
                         value.includes(option.value)
-                          ? 'bg-black dark:bg-white border-black dark:border-white'
-                          : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600'
+                          ? "bg-black dark:bg-white border-black dark:border-white"
+                          : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600"
                       }`}
                     >
                       {value.includes(option.value) && (
-                        <Check className="w-3 h-3 text-white dark:text-black" strokeWidth={3} />
+                        <Check
+                          className="w-3 h-3 text-white dark:text-black"
+                          strokeWidth={3}
+                        />
                       )}
                     </div>
                     <span className="text-sm text-gray-900 dark:text-gray-100">

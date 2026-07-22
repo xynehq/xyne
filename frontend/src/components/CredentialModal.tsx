@@ -1,16 +1,13 @@
 import { useState, useEffect } from "react"
-import { 
-  Dialog, 
-  DialogContent
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select"
 import { Globe2 } from "lucide-react"
 
@@ -29,30 +26,30 @@ interface CredentialModalProps {
   variant?: "minimal" | "full" // Controls UI features
 }
 
-export function CredentialModal({ 
+export function CredentialModal({
   open,
   onOpenChange,
-  onSave, 
+  onSave,
   initialData = {},
-  variant = "minimal"
+  variant = "minimal",
 }: CredentialModalProps) {
   const [formData, setFormData] = useState<CredentialData>({
     name: initialData.name || "",
     user: initialData.user || "",
     password: initialData.password || "",
-    allowedDomains: initialData.allowedDomains || "All"
+    allowedDomains: initialData.allowedDomains || "All",
   })
 
   // Generate credential name based on user input
   const generateCredentialName = (user: string) => {
     if (!user.trim()) return "Unnamed Credential"
-    
+
     // If it looks like an email, use the username part
-    if (user.includes('@')) {
-      const username = user.split('@')[0]
+    if (user.includes("@")) {
+      const username = user.split("@")[0]
       return `${username} (Basic Auth)`
     }
-    
+
     // Otherwise use the username directly
     return `${user} (Basic Auth)`
   }
@@ -60,12 +57,16 @@ export function CredentialModal({
   // Update form data when initialData changes or modal opens
   useEffect(() => {
     if (open) {
-      const name = initialData.name || (initialData.user ? generateCredentialName(initialData.user) : "Unnamed Credential")
+      const name =
+        initialData.name ||
+        (initialData.user
+          ? generateCredentialName(initialData.user)
+          : "Unnamed Credential")
       setFormData({
         name: name,
         user: initialData.user || "",
         password: initialData.password || "",
-        allowedDomains: initialData.allowedDomains || "All"
+        allowedDomains: initialData.allowedDomains || "All",
       })
     }
   }, [initialData, open])
@@ -76,14 +77,19 @@ export function CredentialModal({
   }
 
   const updateField = (field: keyof CredentialData, value: string) => {
-    setFormData(prev => {
+    setFormData((prev) => {
       const newData = { ...prev, [field]: value }
-      
+
       // Auto-update credential name when user field changes (only if name wasn't manually edited)
-      if (field === 'user' && (!initialData.name || prev.name === generateCredentialName(prev.user) || prev.name === "Unnamed Credential")) {
+      if (
+        field === "user" &&
+        (!initialData.name ||
+          prev.name === generateCredentialName(prev.user) ||
+          prev.name === "Unnamed Credential")
+      ) {
         newData.name = generateCredentialName(value)
       }
-      
+
       return newData
     })
   }
@@ -104,7 +110,10 @@ export function CredentialModal({
                 onFocus={(e) => {
                   // Prevent auto-selection of text on focus
                   setTimeout(() => {
-                    e.target.setSelectionRange(e.target.value.length, e.target.value.length)
+                    e.target.setSelectionRange(
+                      e.target.value.length,
+                      e.target.value.length,
+                    )
                   }, 0)
                 }}
                 onMouseUp={(e) => {
@@ -118,7 +127,7 @@ export function CredentialModal({
               <p className="text-sm text-gray-500">Basic Auth</p>
             </div>
           </div>
-          <Button 
+          <Button
             onClick={handleSave}
             className="bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white px-6 flex-shrink-0 mr-6 rounded-full"
           >
@@ -146,11 +155,15 @@ export function CredentialModal({
                       </button>
                     </div>
                   </div>
-                  
+
                   <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-6">
                     <div className="flex items-center gap-2">
-                      <span className="text-purple-700 text-sm">✨ Ask Assistant</span>
-                      <span className="text-sm text-purple-600">for setup instructions</span>
+                      <span className="text-purple-700 text-sm">
+                        ✨ Ask Assistant
+                      </span>
+                      <span className="text-sm text-purple-600">
+                        for setup instructions
+                      </span>
                     </div>
                   </div>
                 </>
@@ -184,7 +197,9 @@ export function CredentialModal({
                     {variant === "full" && (
                       <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
                         <span className="text-xs text-gray-500">Fixed</span>
-                        <span className="text-xs text-gray-500">Expression</span>
+                        <span className="text-xs text-gray-500">
+                          Expression
+                        </span>
                       </div>
                     )}
                   </div>
@@ -194,9 +209,11 @@ export function CredentialModal({
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Allowed HTTP Request Domains
                   </label>
-                  <Select 
-                    value={formData.allowedDomains} 
-                    onValueChange={(value) => updateField("allowedDomains", value)}
+                  <Select
+                    value={formData.allowedDomains}
+                    onValueChange={(value) =>
+                      updateField("allowedDomains", value)
+                    }
                   >
                     <SelectTrigger className="w-full">
                       <SelectValue />
@@ -217,7 +234,10 @@ export function CredentialModal({
                 <span className="w-4 h-4 rounded-full border border-gray-300 flex items-center justify-center">
                   <span className="text-xs">ℹ</span>
                 </span>
-                <span>Enterprise plan users can pull in credentials from external vaults.</span>
+                <span>
+                  Enterprise plan users can pull in credentials from external
+                  vaults.
+                </span>
                 <button className="text-blue-600 underline hover:no-underline">
                   More info
                 </button>

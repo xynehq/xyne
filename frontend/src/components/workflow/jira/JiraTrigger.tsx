@@ -3,8 +3,8 @@
  * UI for configuring Jira webhook triggers
  */
 
-import React, { useState } from 'react'
-import { JiraIcon } from '../WorkflowIcons'
+import React, { useState } from "react"
+import { JiraIcon } from "../WorkflowIcons"
 
 interface JiraTriggerProps {
   onSave: (config: JiraTriggerConfig) => void
@@ -20,12 +20,12 @@ export interface JiraTriggerConfig {
 }
 
 const JIRA_EVENTS = [
-  { value: 'jira:issue_created', label: 'Issue Created' },
-  { value: 'jira:issue_updated', label: 'Issue Updated' },
-  { value: 'jira:issue_deleted', label: 'Issue Deleted' },
-  { value: 'comment_created', label: 'Comment Created' },
-  { value: 'comment_updated', label: 'Comment Updated' },
-  { value: 'comment_deleted', label: 'Comment Deleted' },
+  { value: "jira:issue_created", label: "Issue Created" },
+  { value: "jira:issue_updated", label: "Issue Updated" },
+  { value: "jira:issue_deleted", label: "Issue Deleted" },
+  { value: "comment_created", label: "Comment Created" },
+  { value: "comment_updated", label: "Comment Updated" },
+  { value: "comment_deleted", label: "Comment Deleted" },
 ]
 
 export const JiraTrigger: React.FC<JiraTriggerProps> = ({
@@ -33,11 +33,14 @@ export const JiraTrigger: React.FC<JiraTriggerProps> = ({
   initialConfig,
 }) => {
   const [config, setConfig] = useState<JiraTriggerConfig>({
-    domain: initialConfig?.domain || '',
-    email: initialConfig?.email || '',
-    apiToken: initialConfig?.apiToken || '',
-    events: initialConfig?.events || ['jira:issue_created', 'jira:issue_updated'],
-    jqlFilter: initialConfig?.jqlFilter || '',
+    domain: initialConfig?.domain || "",
+    email: initialConfig?.email || "",
+    apiToken: initialConfig?.apiToken || "",
+    events: initialConfig?.events || [
+      "jira:issue_created",
+      "jira:issue_updated",
+    ],
+    jqlFilter: initialConfig?.jqlFilter || "",
   })
 
   const [showPassword, setShowPassword] = useState(false)
@@ -54,12 +57,12 @@ export const JiraTrigger: React.FC<JiraTriggerProps> = ({
   const handleSave = () => {
     // Validate required fields
     if (!config.domain || !config.email || !config.apiToken) {
-      alert('Please fill in all required fields')
+      alert("Please fill in all required fields")
       return
     }
 
     if (config.events.length === 0) {
-      alert('Please select at least one event')
+      alert("Please select at least one event")
       return
     }
 
@@ -92,9 +95,7 @@ export const JiraTrigger: React.FC<JiraTriggerProps> = ({
             type="text"
             placeholder="your-domain.atlassian.net"
             value={config.domain}
-            onChange={(e) =>
-              setConfig({ ...config, domain: e.target.value })
-            }
+            onChange={(e) => setConfig({ ...config, domain: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <p className="text-xs text-gray-500 mt-1">
@@ -123,7 +124,7 @@ export const JiraTrigger: React.FC<JiraTriggerProps> = ({
           </label>
           <div className="relative">
             <input
-              type={showPassword ? 'text' : 'password'}
+              type={showPassword ? "text" : "password"}
               placeholder="Your Jira API token"
               value={config.apiToken}
               onChange={(e) =>
@@ -136,7 +137,7 @@ export const JiraTrigger: React.FC<JiraTriggerProps> = ({
               onClick={() => setShowPassword(!showPassword)}
               className="absolute right-3 top-1/2 transform -translate-y-1/2 text-sm text-gray-500 hover:text-gray-700"
             >
-              {showPassword ? 'Hide' : 'Show'}
+              {showPassword ? "Hide" : "Show"}
             </button>
           </div>
           <p className="text-xs text-gray-500 mt-1">
@@ -154,7 +155,9 @@ export const JiraTrigger: React.FC<JiraTriggerProps> = ({
 
       {/* Events Section */}
       <div className="space-y-3">
-        <h4 className="text-sm font-medium text-gray-700">Events to Listen *</h4>
+        <h4 className="text-sm font-medium text-gray-700">
+          Events to Listen *
+        </h4>
         <div className="space-y-2">
           {JIRA_EVENTS.map((event) => (
             <label
@@ -181,9 +184,7 @@ export const JiraTrigger: React.FC<JiraTriggerProps> = ({
         <textarea
           placeholder='project = "PROJ" AND issuetype = "Bug"'
           value={config.jqlFilter}
-          onChange={(e) =>
-            setConfig({ ...config, jqlFilter: e.target.value })
-          }
+          onChange={(e) => setConfig({ ...config, jqlFilter: e.target.value })}
           rows={2}
           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
         />

@@ -305,50 +305,50 @@ export const modelDetailsMap: Record<
   //     },
   //   },
   // },
-  [getActualModelName(Models.Vertex_Claude_Sonnet_4)]:{
-    name:"vertex-claude-sonnet-4",
-    cost:{
-      onDemand:{
+  [getActualModelName(Models.Vertex_Claude_Sonnet_4)]: {
+    name: "vertex-claude-sonnet-4",
+    cost: {
+      onDemand: {
         pricePerThousandInputTokens: 0.003,
         pricePerThousandOutputTokens: 0.015,
-      }
-    }
+      },
+    },
   },
-  [getActualModelName(Models.Vertex_Gemini_2_5_Flash)]:{
-    name:"vertex-gemini-2-5-flash",
-    cost:{
-      onDemand:{
+  [getActualModelName(Models.Vertex_Gemini_2_5_Flash)]: {
+    name: "vertex-gemini-2-5-flash",
+    cost: {
+      onDemand: {
         pricePerThousandInputTokens: 0.0003,
         pricePerThousandOutputTokens: 0.0025,
-      }
-    }
+      },
+    },
   },
-  [getActualModelName(Models.Vertex_Gemini_2_5_Pro)]:{
-    name:"vertex-gemini-2-5-pro",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.00125,
-        pricePerThousandOutputTokens:0.01
-      }
-    }
+  [getActualModelName(Models.Vertex_Gemini_2_5_Pro)]: {
+    name: "vertex-gemini-2-5-pro",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.00125,
+        pricePerThousandOutputTokens: 0.01,
+      },
+    },
   },
-  [getActualModelName(Models.Vertex_Gemini_3_Pro)]:{
-    name:"vertex-gemini-3-pro-preview",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.00125,
-        pricePerThousandOutputTokens:0.01
-      }
-    }
+  [getActualModelName(Models.Vertex_Gemini_3_Pro)]: {
+    name: "vertex-gemini-3-pro-preview",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.00125,
+        pricePerThousandOutputTokens: 0.01,
+      },
+    },
   },
-  [getActualModelName(Models.Vertex_Gemini_3_Flash)]:{
-    name:"vertex-gemini-3-flash-preview",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.0003,
-        pricePerThousandOutputTokens:0.0025,
-      }
-    }
+  [getActualModelName(Models.Vertex_Gemini_3_Flash)]: {
+    name: "vertex-gemini-3-flash-preview",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.0003,
+        pricePerThousandOutputTokens: 0.0025,
+      },
+    },
   },
   // [getActualModelName(Models.GLM_4_5)]:{
   //   name:"glm-45-fp8",
@@ -360,135 +360,135 @@ export const modelDetailsMap: Record<
   //   }
   // },
   // kimi models
-  [getActualModelName(Models.KIMI_LATEST)]:{
-    name:"kimi-latest",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.0006,
-        pricePerThousandOutputTokens:0.000003,
-      }
-    }
+  [getActualModelName(Models.KIMI_LATEST)]: {
+    name: "kimi-latest",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.0006,
+        pricePerThousandOutputTokens: 0.000003,
+      },
+    },
   },
-  [getActualModelName(Models.PRIVATE_LARGE)]:{
-    name:"private-large",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.0006,
-        pricePerThousandOutputTokens:0.000003,
-      }
-    }
+  [getActualModelName(Models.PRIVATE_LARGE)]: {
+    name: "private-large",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.0006,
+        pricePerThousandOutputTokens: 0.000003,
+      },
+    },
   },
-  [getActualModelName(Models.GLM_LATEST)]:{
-    name:"glm-latest",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.0006,
-        pricePerThousandOutputTokens:0.0000022,
-      }
-    }
+  [getActualModelName(Models.GLM_LATEST)]: {
+    name: "glm-latest",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.0006,
+        pricePerThousandOutputTokens: 0.0000022,
+      },
+    },
   },
   // GLM Models
-  [getActualModelName(Models.GLM_45_AIR)]:{
-    name:"glm-45-air-curriculum-learning",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.0006,
-        pricePerThousandOutputTokens:0.000003,
-      }
-    }
+  [getActualModelName(Models.GLM_45_AIR)]: {
+    name: "glm-45-air-curriculum-learning",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.0006,
+        pricePerThousandOutputTokens: 0.000003,
+      },
+    },
   },
-  [getActualModelName(Models.GLM_FLASH)]:{
-    name:"glm-flash-experimental",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.0006,
-        pricePerThousandOutputTokens:0.000003,
-      }
-    }
+  [getActualModelName(Models.GLM_FLASH)]: {
+    name: "glm-flash-experimental",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.0006,
+        pricePerThousandOutputTokens: 0.000003,
+      },
+    },
   },
-  [getActualModelName(Models.GLM_PRIVATE)]:{
-    name:"glm-private",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.0006,
-        pricePerThousandOutputTokens:0.000003,
-      }
-    }
+  [getActualModelName(Models.GLM_PRIVATE)]: {
+    name: "glm-private",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.0006,
+        pricePerThousandOutputTokens: 0.000003,
+      },
+    },
   },
-  [getActualModelName(Models.OPEN_LARGE)]:{
-    name:"open-large",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.0006,
-        pricePerThousandOutputTokens:0.0000022,
-      }
-    }
+  [getActualModelName(Models.OPEN_LARGE)]: {
+    name: "open-large",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.0006,
+        pricePerThousandOutputTokens: 0.0000022,
+      },
+    },
   },
   // DeepSeek Models
-  [getActualModelName(Models.DEEPSEEK)]:{
-    name:"deepseek",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.0006,
-        pricePerThousandOutputTokens:0.000003,
-      }
-    }
+  [getActualModelName(Models.DEEPSEEK)]: {
+    name: "deepseek",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.0006,
+        pricePerThousandOutputTokens: 0.000003,
+      },
+    },
   },
   // Minmax Models
-  [getActualModelName(Models.MINIMAX_2_5)]:{
-    name:"minimax-2-5",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.0006,
-        pricePerThousandOutputTokens:0.000003,
-      }
-    }
+  [getActualModelName(Models.MINIMAX_2_5)]: {
+    name: "minimax-2-5",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.0006,
+        pricePerThousandOutputTokens: 0.000003,
+      },
+    },
   },
-  [getActualModelName(Models.MINIMAX_M2)]:{
-    name:"minimax-m2",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.0006,
-        pricePerThousandOutputTokens:0.000003,
-      }
-    }
+  [getActualModelName(Models.MINIMAX_M2)]: {
+    name: "minimax-m2",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.0006,
+        pricePerThousandOutputTokens: 0.000003,
+      },
+    },
   },
   // OpenAI Models
-  [getActualModelName(Models.OPEN_FAST)]:{
-    name:"open-fast",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.0006,
-        pricePerThousandOutputTokens:0.000003,
-      }
-    }
+  [getActualModelName(Models.OPEN_FAST)]: {
+    name: "open-fast",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.0006,
+        pricePerThousandOutputTokens: 0.000003,
+      },
+    },
   },
-  [getActualModelName(Models.LiteLLM_Claude_Sonnet_4_6)]:{
-    name:"claude-sonnet-4-6",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.003,
-        pricePerThousandOutputTokens:0.015,
-      }
-    }
+  [getActualModelName(Models.LiteLLM_Claude_Sonnet_4_6)]: {
+    name: "claude-sonnet-4-6",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.003,
+        pricePerThousandOutputTokens: 0.015,
+      },
+    },
   },
-  [getActualModelName(Models.LiteLLM_Claude_Opus_4_6)]:{
-    name:"claude-opus-4-6",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.005,
-        pricePerThousandOutputTokens:0.025,
-      }
-    }
+  [getActualModelName(Models.LiteLLM_Claude_Opus_4_6)]: {
+    name: "claude-opus-4-6",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.005,
+        pricePerThousandOutputTokens: 0.025,
+      },
+    },
   },
-  [getActualModelName(Models.LiteLLM_Claude_Haiku_4_5)]:{
-    name:"claude-haiku-4-5",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.0008,
-        pricePerThousandOutputTokens:0.004,
-      }
-    }
+  [getActualModelName(Models.LiteLLM_Claude_Haiku_4_5)]: {
+    name: "claude-haiku-4-5",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.0008,
+        pricePerThousandOutputTokens: 0.004,
+      },
+    },
   },
   // [getActualModelName(Models.LiteLLM_Gemini_3_Pro)]:{
   //   name:"gemini-3-pro-preview",
@@ -499,23 +499,23 @@ export const modelDetailsMap: Record<
   //     }
   //   }
   // },
-  [getActualModelName(Models.LiteLLM_Gemini_3_Flash)]:{
-    name:"gemini-3-flash-preview",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.0005,
-        pricePerThousandOutputTokens:0.000003,
-      }
-    }
+  [getActualModelName(Models.LiteLLM_Gemini_3_Flash)]: {
+    name: "gemini-3-flash-preview",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.0005,
+        pricePerThousandOutputTokens: 0.000003,
+      },
+    },
   },
-  [getActualModelName(Models.NEMOTRON)]:{
-    name:"nemotron",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.0006,
-        pricePerThousandOutputTokens:0.000003,
-      }
-    }
+  [getActualModelName(Models.NEMOTRON)]: {
+    name: "nemotron",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.0006,
+        pricePerThousandOutputTokens: 0.000003,
+      },
+    },
   },
 }
 

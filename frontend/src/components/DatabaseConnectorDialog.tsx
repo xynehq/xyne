@@ -113,11 +113,14 @@ async function rotateCredentials(body: {
   newUsername: string
   newPassword: string
 }) {
-  const res = await authFetch("/api/v1/connectors/database/rotate-credentials", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  })
+  const res = await authFetch(
+    "/api/v1/connectors/database/rotate-credentials",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  )
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
     throw new Error(data?.message || res.statusText)
@@ -135,7 +138,10 @@ interface DatabaseConnectorDialogProps {
   } | null
 }
 
-function RequiredLabel({ children, htmlFor }: { children: React.ReactNode; htmlFor: string }) {
+function RequiredLabel({
+  children,
+  htmlFor,
+}: { children: React.ReactNode; htmlFor: string }) {
   return (
     <Label htmlFor={htmlFor}>
       {children} <span className="text-destructive">*</span>
@@ -159,7 +165,10 @@ function parsePort(value: string | null, defaultValue: number = 5432): number {
   return parsed
 }
 
-function parseBatchSize(value: string | null, defaultValue: number = 1000): number {
+function parseBatchSize(
+  value: string | null,
+  defaultValue: number = 1000,
+): number {
   if (!value) return defaultValue
   const parsed = parseInt(value, 10)
   if (Number.isNaN(parsed)) return defaultValue
@@ -212,9 +221,7 @@ function RotateCredentialsDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Change credentials</DialogTitle>
-          <DialogDescription>
-            Enter new database credentials.
-          </DialogDescription>
+          <DialogDescription>Enter new database credentials.</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
@@ -302,12 +309,13 @@ export function DatabaseConnectorDialog({
   const editForm = editingConnector
     ? {
         name: editingConnector.name || "",
-        engine: editingConnector.config?.engine || "postgres" as const,
+        engine: editingConnector.config?.engine || ("postgres" as const),
         host: editingConnector.config?.host || "",
         port: editingConnector.config?.port || 5432,
         database: editingConnector.config?.database || "",
         schema: editingConnector.config?.schema || "",
-        tablesInclude: editingConnector.config?.tables?.include?.join(", ") || "",
+        tablesInclude:
+          editingConnector.config?.tables?.include?.join(", ") || "",
         tablesIgnore: editingConnector.config?.tables?.ignore?.join(", ") || "",
         tablesEmbed: editingConnector.config?.tables?.embed?.join(", ") || "",
         watermarkColumn: editingConnector.config?.watermarkColumn || "",
@@ -392,7 +400,9 @@ export function DatabaseConnectorDialog({
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {editingConnector ? "Edit database connection" : "New database connection"}
+              {editingConnector
+                ? "Edit database connection"
+                : "New database connection"}
             </DialogTitle>
             <DialogDescription>
               {editingConnector
@@ -400,7 +410,12 @@ export function DatabaseConnectorDialog({
                 : "Connect a Postgres or MySQL database to sync tables into search. MVP: Postgres only."}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={editingConnector ? handleUpdateSubmit : handleCreateSubmit} className="space-y-4">
+          <form
+            onSubmit={
+              editingConnector ? handleUpdateSubmit : handleCreateSubmit
+            }
+            className="space-y-4"
+          >
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <RequiredLabel htmlFor="name">Connection name</RequiredLabel>
@@ -420,7 +435,9 @@ export function DatabaseConnectorDialog({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="postgres">PostgreSQL</SelectItem>
-                    <SelectItem value="mysql" disabled>MySQL (coming soon)</SelectItem>
+                    <SelectItem value="mysql" disabled>
+                      MySQL (coming soon)
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -499,11 +516,15 @@ export function DatabaseConnectorDialog({
                 <Label>Credentials</Label>
                 <div className="flex items-center gap-4 p-3 bg-muted rounded-md">
                   <div className="flex-1">
-                    <span className="text-sm text-muted-foreground">Username: </span>
+                    <span className="text-sm text-muted-foreground">
+                      Username:{" "}
+                    </span>
                     <span className="text-sm font-medium">••••••••</span>
                   </div>
                   <div className="flex-1">
-                    <span className="text-sm text-muted-foreground">Password: </span>
+                    <span className="text-sm text-muted-foreground">
+                      Password:{" "}
+                    </span>
                     <span className="text-sm font-medium">••••••••</span>
                   </div>
                   <Button
@@ -546,8 +567,11 @@ export function DatabaseConnectorDialog({
                 placeholder="users,messages"
               />
               <p className="text-xs text-muted-foreground">
-                <strong>Embed:</strong> Full table data is copied into the Knowledge Base (uses storage; answers query it via DuckDB).{" "}
-                <strong>Schema-only:</strong> Only table structure is stored; when answering, live SQL runs on your database. List table names here to embed; all other synced tables are schema-only.
+                <strong>Embed:</strong> Full table data is copied into the
+                Knowledge Base (uses storage; answers query it via DuckDB).{" "}
+                <strong>Schema-only:</strong> Only table structure is stored;
+                when answering, live SQL runs on your database. List table names
+                here to embed; all other synced tables are schema-only.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-4">

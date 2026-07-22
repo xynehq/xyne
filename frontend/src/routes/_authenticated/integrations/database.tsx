@@ -1,7 +1,4 @@
-import {
-  createFileRoute,
-  useRouterState,
-} from "@tanstack/react-router"
+import { createFileRoute, useRouterState } from "@tanstack/react-router"
 import { useState } from "react"
 import { toast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
@@ -121,7 +118,7 @@ export const DatabaseIntegration = ({
     config: any
   } | null>(null)
   const [expandedConnectors, setExpandedConnectors] = useState<Set<string>>(
-    new Set()
+    new Set(),
   )
 
   const { data: connectors = [], isPending } = useQuery({
@@ -184,8 +181,8 @@ export const DatabaseIntegration = ({
             <CardHeader>
               <CardTitle>Your database connections</CardTitle>
               <CardDescription>
-                Click on a connector to view tables. Use the menu for sync, edit,
-                and delete actions.
+                Click on a connector to view tables. Use the menu for sync,
+                edit, and delete actions.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -307,7 +304,7 @@ function ConnectorRow({
     e.stopPropagation()
     if (
       !confirm(
-        "Delete this database connector? Synced data in Knowledge Base will be removed."
+        "Delete this database connector? Synced data in Knowledge Base will be removed.",
       )
     )
       return
@@ -424,33 +421,34 @@ function ConnectorRow({
                 {syncState.tables.map((t: any) => {
                   const embedTables = syncState.embedTables ?? []
                   const isEmbed = embedTables.some(
-                    (name: string) => name.toLowerCase() === t.tableName?.toLowerCase(),
+                    (name: string) =>
+                      name.toLowerCase() === t.tableName?.toLowerCase(),
                   )
                   return (
-                  <TableRow key={t.tableName}>
-                    <TableCell>{t.tableName}</TableCell>
-                    <TableCell>{isEmbed ? "Data" : "Schema"}</TableCell>
-                    <TableCell>{t.rowsSynced ?? 0}</TableCell>
-                    <TableCell>
-                      {t.updatedAt ? formatDate(t.updatedAt) : "—"}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-8"
-                        onClick={() => handleSyncTable(t.tableName)}
-                        disabled={syncingTable !== null}
-                      >
-                        {syncingTable === t.tableName ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <RefreshCw className="w-4 h-4" />
-                        )}
-                        <span className="ml-1">Sync</span>
-                      </Button>
-                    </TableCell>
-                  </TableRow>
+                    <TableRow key={t.tableName}>
+                      <TableCell>{t.tableName}</TableCell>
+                      <TableCell>{isEmbed ? "Data" : "Schema"}</TableCell>
+                      <TableCell>{t.rowsSynced ?? 0}</TableCell>
+                      <TableCell>
+                        {t.updatedAt ? formatDate(t.updatedAt) : "—"}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8"
+                          onClick={() => handleSyncTable(t.tableName)}
+                          disabled={syncingTable !== null}
+                        >
+                          {syncingTable === t.tableName ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-4 h-4" />
+                          )}
+                          <span className="ml-1">Sync</span>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
                   )
                 })}
               </TableBody>
@@ -467,9 +465,7 @@ function ConnectorRow({
   )
 }
 
-export const Route = createFileRoute(
-  "/_authenticated/integrations/database",
-)({
+export const Route = createFileRoute("/_authenticated/integrations/database")({
   component: () => {
     const matches = useRouterState({ select: (s) => s.matches })
     const ctx = matches[matches.length - 1].context as {

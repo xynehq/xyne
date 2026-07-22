@@ -17,7 +17,9 @@ import { DatabaseEngine } from "./types"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 
-const Logger = getLogger(Subsystem.Integrations).child({ module: "postgres-client" })
+const Logger = getLogger(Subsystem.Integrations).child({
+  module: "postgres-client",
+})
 
 export class PostgresClient {
   private sql: Sql<{}> | null = null
@@ -52,10 +54,7 @@ export class PostgresClient {
     if (this.sql) return
     const { host, port, database } = this.config
     const schema = this.getSchema()
-    Logger.info(
-      { host, port, database, schema },
-      "PostgresClient: connecting",
-    )
+    Logger.info({ host, port, database, schema }, "PostgresClient: connecting")
     const url = this.getConnectionString()
     this.sql = postgres(url, {
       max: 2,
@@ -93,7 +92,10 @@ export class PostgresClient {
   async listTables(): Promise<TableInfo[]> {
     if (!this.sql) throw new Error("Not connected")
     const schema = this.getSchema()
-    Logger.debug({ schema }, "PostgresClient: listTables querying information_schema")
+    Logger.debug(
+      { schema },
+      "PostgresClient: listTables querying information_schema",
+    )
     const rows = await this.sql`
       SELECT table_name
       FROM information_schema.tables
@@ -106,7 +108,11 @@ export class PostgresClient {
       schema,
     }))
     Logger.info(
-      { schema, tableCount: tables.length, tableNames: tables.map((t) => t.name) },
+      {
+        schema,
+        tableCount: tables.length,
+        tableNames: tables.map((t) => t.name),
+      },
       "PostgresClient: listTables result",
     )
     return tables
@@ -121,13 +127,17 @@ export class PostgresClient {
       WHERE table_schema = ${schema} AND table_name = ${table}
       ORDER BY ordinal_position
     `
-    return (rows as unknown as { column_name: string; data_type: string; is_nullable: string }[]).map(
-      (r) => ({
-        name: r.column_name,
-        type: r.data_type,
-        nullable: r.is_nullable === "YES",
-      }),
-    )
+    return (
+      rows as unknown as {
+        column_name: string
+        data_type: string
+        is_nullable: string
+      }[]
+    ).map((r) => ({
+      name: r.column_name,
+      type: r.data_type,
+      nullable: r.is_nullable === "YES",
+    }))
   }
 
   async getPrimaryKeyColumns(table: string): Promise<string[]> {
@@ -151,7 +161,11 @@ export class PostgresClient {
 
   /** Foreign keys for a table. Used for schema-only docs and SQL generation. */
   async getForeignKeyColumns(table: string): Promise<
-    { columns: string[]; referencedTable: string; referencedColumns: string[] }[]
+    {
+      columns: string[]
+      referencedTable: string
+      referencedColumns: string[]
+    }[]
   > {
     if (!this.sql) throw new Error("Not connected")
     const schema = this.getSchema()
@@ -170,13 +184,17 @@ export class PostgresClient {
         AND tc.table_name = ${table}
       GROUP BY tc.constraint_name, ccu.table_name
     `
-    return (rows as unknown as { columns: string[]; referenced_table: string; referenced_columns: string[] }[]).map(
-      (r) => ({
-        columns: r.columns,
-        referencedTable: r.referenced_table,
-        referencedColumns: r.referenced_columns,
-      }),
-    )
+    return (
+      rows as unknown as {
+        columns: string[]
+        referenced_table: string
+        referenced_columns: string[]
+      }[]
+    ).map((r) => ({
+      columns: r.columns,
+      referencedTable: r.referenced_table,
+      referencedColumns: r.referenced_columns,
+    }))
   }
 
   /** Full schema for one table (columns, PK, FKs, optional row count and column stats). Used for schema-only sync. */
@@ -197,9 +215,9 @@ export class PostgresClient {
     }))
     let rowCount: number | undefined
     if (options?.includeRowCount) {
-      const countRows = await this.sql!.unsafe(
+      const countRows = (await this.sql!.unsafe(
         `SELECT count(*)::int AS c FROM ${PostgresClient.safeIdentifier(schema)}.${PostgresClient.safeIdentifier(tableName)}`,
-      ) as { c: number }[]
+      )) as { c: number }[]
       rowCount = countRows[0]?.c
     }
     const columnList = columns.map((c) => ({
@@ -229,7 +247,9 @@ export class PostgresClient {
 
   /** True if Postgres type supports MIN/MAX/AVG/STDDEV (numeric). */
   private static isNumericType(dataType: string): boolean {
-    return /^(integer|bigint|smallint|numeric|decimal|real|double precision)$/i.test(dataType)
+    return /^(integer|bigint|smallint|numeric|decimal|real|double precision)$/i.test(
+      dataType,
+    )
   }
 
   /** True if Postgres type supports MIN/MAX (date/time). */
@@ -248,7 +268,10 @@ export class PostgresClient {
   ): Promise<Record<string, ColumnStats>> {
     if (!this.sql) throw new Error("Not connected")
     const schema = this.getSchema()
-    const sampleRows = Math.min(Math.max(options?.sampleRows ?? 10_000, 1), 50_000)
+    const sampleRows = Math.min(
+      Math.max(options?.sampleRows ?? 10_000, 1),
+      50_000,
+    )
     const timeoutMs = options?.timeoutMs ?? 30_000
     const quotedSchema = PostgresClient.safeIdentifier(schema)
     const quotedTable = PostgresClient.safeIdentifier(tableName)
@@ -264,7 +287,9 @@ export class PostgresClient {
           `${base}, MIN(${q}) AS _min_${i}, MAX(${q}) AS _max_${i}, AVG(${q}) AS _avg_${i}, STDDEV(${q}) AS _stddev_${i}`,
         )
       } else if (PostgresClient.isDateTimeType(c.type)) {
-        selects.push(`${base}, MIN(${q})::text AS _min_${i}, MAX(${q})::text AS _max_${i}`)
+        selects.push(
+          `${base}, MIN(${q})::text AS _min_${i}, MAX(${q})::text AS _max_${i}`,
+        )
       } else {
         selects.push(base)
       }
@@ -292,10 +317,13 @@ export class PostgresClient {
         const maxVal = row[`_max_${i}`]
         const avgVal = row[`_avg_${i}`]
         const stdVal = row[`_stddev_${i}`]
-        if (minVal !== null && minVal !== undefined) stats.min = minVal as number
-        if (maxVal !== null && maxVal !== undefined) stats.max = maxVal as number
+        if (minVal !== null && minVal !== undefined)
+          stats.min = minVal as number
+        if (maxVal !== null && maxVal !== undefined)
+          stats.max = maxVal as number
         if (typeof avgVal === "number") stats.avg = avgVal
-        if (typeof stdVal === "number" && !Number.isNaN(stdVal)) stats.stddev = stdVal
+        if (typeof stdVal === "number" && !Number.isNaN(stdVal))
+          stats.stddev = stdVal
       } else if (PostgresClient.isDateTimeType(type)) {
         const minVal = row[`_min_${i}`]
         const maxVal = row[`_max_${i}`]
@@ -313,7 +341,10 @@ export class PostgresClient {
       colMeta
         .filter((c) => {
           const s = out[c.name]
-          return s?.distinctCount != null && s.distinctCount <= maxDistinctForSampleValues
+          return (
+            s?.distinctCount != null &&
+            s.distinctCount <= maxDistinctForSampleValues
+          )
         })
         .map((c) => c.name),
     )
@@ -346,7 +377,11 @@ export class PostgresClient {
             values.push(v)
           } else {
             const s = typeof v === "string" ? v : String(v)
-            values.push(s.length > sampleStringMaxLen ? s.slice(0, sampleStringMaxLen) + "…" : s)
+            values.push(
+              s.length > sampleStringMaxLen
+                ? s.slice(0, sampleStringMaxLen) + "…"
+                : s,
+            )
           }
         }
         if (values.length > 0) out[name].sampleValues = values
@@ -370,7 +405,8 @@ export class PostgresClient {
     const rowLimit = options?.rowLimit ?? 1000
     const trimmed = sql.trimEnd().replace(/;\s*$/, "")
     const limited = `SELECT * FROM (${trimmed}) AS __xyne_limited LIMIT $1`
-    const sqlPreview = trimmed.length > 200 ? trimmed.slice(0, 200) + "…" : trimmed
+    const sqlPreview =
+      trimmed.length > 200 ? trimmed.slice(0, 200) + "…" : trimmed
     Logger.info(
       { sqlPreview, timeoutMs, rowLimit },
       "PostgresClient: executeReadOnlyQuery start",
@@ -441,7 +477,8 @@ export class PostgresClient {
         isNumeric && typeof state.lastUpdatedAt === "number"
           ? state.lastUpdatedAt
           : isNumeric && typeof state.lastUpdatedAt === "string"
-            ? Number(state.lastUpdatedAt) || new Date(state.lastUpdatedAt).getTime()
+            ? Number(state.lastUpdatedAt) ||
+              new Date(state.lastUpdatedAt).getTime()
             : new Date(state.lastUpdatedAt).toISOString()
 
       if (state.lastPk) {
@@ -456,30 +493,32 @@ export class PostgresClient {
             `lastPk cursor length does not match primary key columns for table ${schema}.${table}`,
           )
         }
-        const pkPlaceholders = cursorValues.map((_, i) => `$${i + 2}`).join(", ")
+        const pkPlaceholders = cursorValues
+          .map((_, i) => `$${i + 2}`)
+          .join(", ")
         const params: (string | number | boolean | Date | null)[] = [
           param,
           ...(cursorValues as (string | number | boolean | Date | null)[]),
           batchSize,
         ]
         const limitParam = `$${params.length}`
-        const rows = await this.sql.unsafe(
+        const rows = (await this.sql.unsafe(
           `SELECT * FROM ${fromClause}
            WHERE (${quotedWatermark} > $1) OR (${quotedWatermark} = $1 AND (${orderByClause}) > (${pkPlaceholders}))
            ORDER BY ${quotedWatermark} ASC, ${orderByClause}
            LIMIT ${limitParam}`,
           params,
-        ) as DbRow[]
+        )) as DbRow[]
         return rows
       }
 
-      const rows = await this.sql.unsafe(
+      const rows = (await this.sql.unsafe(
         `SELECT * FROM ${fromClause}
          WHERE ${quotedWatermark} > $1
          ORDER BY ${quotedWatermark} ASC, ${orderByClause}
          LIMIT $2`,
         [param, batchSize],
-      ) as DbRow[]
+      )) as DbRow[]
       return rows
     }
 
@@ -501,22 +540,22 @@ export class PostgresClient {
         batchSize,
       ]
       const limitParam = `$${params.length}`
-      const rows = await this.sql.unsafe(
+      const rows = (await this.sql.unsafe(
         `SELECT * FROM ${fromClause}
          WHERE (${quotedPkCols.join(", ")}) > (${placeholders})
          ORDER BY ${orderByClause}
          LIMIT ${limitParam}`,
-        params
-      ) as DbRow[]
+        params,
+      )) as DbRow[]
       return rows
     }
 
-    const rows = await this.sql.unsafe(
+    const rows = (await this.sql.unsafe(
       `SELECT * FROM ${fromClause}
        ORDER BY ${orderByClause}
        LIMIT $1`,
-      [batchSize]
-    ) as DbRow[]
+      [batchSize],
+    )) as DbRow[]
     return rows
   }
 }

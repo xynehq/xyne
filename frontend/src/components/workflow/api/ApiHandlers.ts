@@ -134,23 +134,27 @@ interface WorkflowExecutionsResponse {
 // Helper function to extract data from Hono client response
 async function extractResponseData<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ message: "Network error" }))
-    throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+    const errorData = await response
+      .json()
+      .catch(() => ({ message: "Network error" }))
+    throw new Error(
+      errorData.message || `HTTP ${response.status}: ${response.statusText}`,
+    )
   }
 
   const responseData = await response.json()
-  
+
   // Extract data from success wrapper if present
   if (responseData.success && responseData.data !== undefined) {
     return responseData.data as T
   }
-  
+
   // If no success wrapper, return the response with success flag removed
   if (responseData.success !== undefined) {
     const { success, ...rest } = responseData
     return rest as T
   }
-  
+
   return responseData as T
 }
 
@@ -174,7 +178,9 @@ export const workflowTemplatesAPI = {
     const response = await api.workflow.templates[id].execute.$post({
       json: options,
     })
-    return extractResponseData<{ workflowId: string; rootStepId: string }>(response)
+    return extractResponseData<{ workflowId: string; rootStepId: string }>(
+      response,
+    )
   },
 }
 
@@ -255,7 +261,6 @@ export const templatesAPI = {
   },
 }
 
-
 // Workflow Executions API
 export const workflowExecutionsAPI = {
   /**
@@ -280,20 +285,24 @@ export const workflowExecutionsAPI = {
     if (params.id) query.id = params.id
 
     const response = await api.workflow.executions.$get({ query })
-    
+
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ message: "Network error" }))
-      throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+      const errorData = await response
+        .json()
+        .catch(() => ({ message: "Network error" }))
+      throw new Error(
+        errorData.message || `HTTP ${response.status}: ${response.statusText}`,
+      )
     }
 
     const responseData = await response.json()
-    
-    // For workflow executions, we need to return the complete response structure 
+
+    // For workflow executions, we need to return the complete response structure
     // (success, data, pagination, filters) as the frontend expects these properties
     if (responseData.success !== undefined) {
       return responseData as WorkflowExecutionsResponse
     }
-    
+
     return responseData as WorkflowExecutionsResponse
   },
 
@@ -367,27 +376,31 @@ export const workflowExecutionsAPI = {
         method: "POST",
         body: formData,
         credentials: "include", // This ensures cookies are sent for authentication
-      }
+      },
     )
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ message: "Network error" }))
-      throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+      const errorData = await response
+        .json()
+        .catch(() => ({ message: "Network error" }))
+      throw new Error(
+        errorData.message || `HTTP ${response.status}: ${response.statusText}`,
+      )
     }
 
     const responseData = await response.json()
-    
+
     // Extract data from success wrapper if present
     if (responseData.success && responseData.data !== undefined) {
       return responseData.data
     }
-    
+
     // If no success wrapper, return the response with success flag removed
     if (responseData.success !== undefined) {
       const { success, ...rest } = responseData
       return rest
     }
-    
+
     return responseData
   },
 }
@@ -461,24 +474,33 @@ export const workflowToolsAPI = {
 
       try {
         // Fetch all credentials of the required type
-        console.log("🔍 Fetching all credentials for auth type:", webhookConfig.authentication)
-        const allCredentials = await credentialsAPI.fetchByType(webhookConfig.authentication as "basic" | "bearer" | "api_key")
+        console.log(
+          "🔍 Fetching all credentials for auth type:",
+          webhookConfig.authentication,
+        )
+        const allCredentials = await credentialsAPI.fetchByType(
+          webhookConfig.authentication as "basic" | "bearer" | "api_key",
+        )
 
         if (allCredentials.length === 0) {
           console.log("ℹ️ No credentials found for this auth type")
           return []
         }
 
-        console.log(`✅ Found ${allCredentials.length} credentials of type ${webhookConfig.authentication}`)
+        console.log(
+          `✅ Found ${allCredentials.length} credentials of type ${webhookConfig.authentication}`,
+        )
 
         // Map all credentials with isSelected flag based on selectedCredential
-        const credentialData = allCredentials.map(credential => {
+        const credentialData = allCredentials.map((credential) => {
           const isSelected = credential.id === webhookConfig.selectedCredential
 
           // Create base64 encoding of user:password for basic auth
           const basicAuth = btoa(`${credential.user}:${credential.password}`)
 
-          console.log(`📋 Processing credential: ${credential.name}, isSelected: ${isSelected}`)
+          console.log(
+            `📋 Processing credential: ${credential.name}, isSelected: ${isSelected}`,
+          )
 
           return {
             user: credential.user,
@@ -486,11 +508,14 @@ export const workflowToolsAPI = {
             basic_auth: basicAuth,
             isSelected,
             name: credential.name,
-            allowedDomains: credential.allowedDomains
+            allowedDomains: credential.allowedDomains,
           }
         })
 
-        console.log("📦 Formatted credential data with all credentials:", credentialData)
+        console.log(
+          "📦 Formatted credential data with all credentials:",
+          credentialData,
+        )
         return credentialData
       } catch (error) {
         console.error("❌ Error formatting credential data:", error)
@@ -511,8 +536,10 @@ export const workflowToolsAPI = {
         requestBody: webhookConfig.requestBody,
         title: `Webhook: ${webhookConfig.path}`,
         description: `${webhookConfig.httpMethod} ${webhookConfig.webhookUrl} • ${
-          webhookConfig.authentication === 'none' ? 'No authentication' : 'Basic authentication'
-        }`
+          webhookConfig.authentication === "none"
+            ? "No authentication"
+            : "Basic authentication"
+        }`,
       },
       config: {
         // Store behavior configuration in config column
@@ -523,11 +550,14 @@ export const workflowToolsAPI = {
         options: webhookConfig.options || {},
         requestBody: webhookConfig.requestBody,
         credentials: credentialArray, // Array of credential objects with base64 auth
-        selectedCredential: webhookConfig.selectedCredential
-      }
+        selectedCredential: webhookConfig.selectedCredential,
+      },
     }
 
-    console.log("📋 Final tool data to send to backend:", JSON.stringify(toolData, null, 2))
+    console.log(
+      "📋 Final tool data to send to backend:",
+      JSON.stringify(toolData, null, 2),
+    )
 
     try {
       // Check if webhook type is supported by the backend
@@ -541,7 +571,9 @@ export const workflowToolsAPI = {
       // Check if it's a validation error for unsupported tool type
       if (error instanceof Error && error.message.includes("webhook")) {
         console.log("⚠️ Backend doesn't support 'webhook' tool type yet")
-        console.log("🔄 This is expected during development - webhook type needs to be added to backend validation")
+        console.log(
+          "🔄 This is expected during development - webhook type needs to be added to backend validation",
+        )
 
         // For now, return a mock response to unblock frontend development
         const mockResponse = {
@@ -550,7 +582,7 @@ export const workflowToolsAPI = {
           value: toolData.value,
           config: toolData.config,
           createdAt: new Date().toISOString(),
-          note: "Mock response - backend needs webhook tool type support"
+          note: "Mock response - backend needs webhook tool type support",
         }
 
         console.log("🔧 Returning mock response for development:", mockResponse)
@@ -571,14 +603,19 @@ export const workflowToolsAPI = {
     apiToken: string
   }): Promise<{ success: boolean; message: string }> {
     try {
-      const response = await api.workflow.tools.jira['test-connection'].$post({
+      const response = await api.workflow.tools.jira["test-connection"].$post({
         json: credentials,
       })
 
       // Don't use extractResponseData here - we need to preserve the success flag
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "Network error" }))
-        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+        const errorData = await response
+          .json()
+          .catch(() => ({ message: "Network error" }))
+        throw new Error(
+          errorData.message ||
+            `HTTP ${response.status}: ${response.statusText}`,
+        )
       }
 
       return await response.json()
@@ -601,13 +638,18 @@ export const workflowToolsAPI = {
     filters?: { jqlFilter?: string }
   }): Promise<{ success: boolean; webhookId: string; message: string }> {
     try {
-      const response = await api.workflow.tools.jira['register-webhook'].$post({
+      const response = await api.workflow.tools.jira["register-webhook"].$post({
         json: config,
       })
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "Network error" }))
-        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+        const errorData = await response
+          .json()
+          .catch(() => ({ message: "Network error" }))
+        throw new Error(
+          errorData.message ||
+            `HTTP ${response.status}: ${response.statusText}`,
+        )
       }
 
       return await response.json()
@@ -633,7 +675,7 @@ export const workflowToolsAPI = {
       queryParams?: Record<string, string>
       options?: Record<string, any>
       requestBody?: string
-    }
+    },
   ): Promise<any> {
     // Format credential data for backend storage
     const formatCredentialData = async () => {
@@ -643,14 +685,16 @@ export const workflowToolsAPI = {
 
       try {
         // Fetch all credentials of the required type
-        const allCredentials = await credentialsAPI.fetchByType(webhookConfig.authentication as "basic" | "bearer" | "api_key")
+        const allCredentials = await credentialsAPI.fetchByType(
+          webhookConfig.authentication as "basic" | "bearer" | "api_key",
+        )
 
         if (allCredentials.length === 0) {
           return []
         }
 
         // Map all credentials with isSelected flag based on selectedCredential
-        const credentialData = allCredentials.map(credential => {
+        const credentialData = allCredentials.map((credential) => {
           const isSelected = credential.id === webhookConfig.selectedCredential
 
           // Create base64 encoding of user:password for basic auth
@@ -662,7 +706,7 @@ export const workflowToolsAPI = {
             basic_auth: basicAuth,
             isSelected,
             name: credential.name,
-            allowedDomains: credential.allowedDomains
+            allowedDomains: credential.allowedDomains,
           }
         })
 
@@ -686,8 +730,10 @@ export const workflowToolsAPI = {
         requestBody: webhookConfig.requestBody,
         title: `Webhook: ${webhookConfig.path}`,
         description: `${webhookConfig.httpMethod} ${webhookConfig.webhookUrl} • ${
-          webhookConfig.authentication === 'none' ? 'No authentication' : 'Basic authentication'
-        }`
+          webhookConfig.authentication === "none"
+            ? "No authentication"
+            : "Basic authentication"
+        }`,
       },
       config: {
         // Store behavior configuration in config column
@@ -698,8 +744,8 @@ export const workflowToolsAPI = {
         options: webhookConfig.options || {},
         requestBody: webhookConfig.requestBody,
         credentials: credentialArray, // Array of credential objects with base64 auth
-        selectedCredential: webhookConfig.selectedCredential
-      }
+        selectedCredential: webhookConfig.selectedCredential,
+      },
     }
 
     const response = await this.updateTool(toolId, toolData)
@@ -737,7 +783,7 @@ export const workflowToolsAPI = {
         body: httpConfig.body,
         bodyType: httpConfig.bodyType,
         title: httpConfig.title || `${httpConfig.method} ${httpConfig.url}`,
-        description: `${httpConfig.method} ${httpConfig.url}${httpConfig.authentication && httpConfig.authentication !== 'none' ? ` • ${httpConfig.authentication} auth` : ''}`
+        description: `${httpConfig.method} ${httpConfig.url}${httpConfig.authentication && httpConfig.authentication !== "none" ? ` • ${httpConfig.authentication} auth` : ""}`,
       },
       config: {
         // Store authentication and advanced options in config column
@@ -745,13 +791,18 @@ export const workflowToolsAPI = {
         authConfig: httpConfig.authConfig || {},
         timeout: httpConfig.timeout || 30000,
         followRedirects: httpConfig.followRedirects !== false,
-      }
+      },
     }
 
-    console.log("📋 Final tool data to send to backend:", JSON.stringify(toolData, null, 2))
+    console.log(
+      "📋 Final tool data to send to backend:",
+      JSON.stringify(toolData, null, 2),
+    )
 
     try {
-      console.log("🚀 Attempting to create HTTP request tool with backend API...")
+      console.log(
+        "🚀 Attempting to create HTTP request tool with backend API...",
+      )
       const response = await this.createTool(toolData)
       console.log("✅ Backend response:", response)
       return response
@@ -761,7 +812,9 @@ export const workflowToolsAPI = {
       // Check if it's a validation error for unsupported tool type
       if (error instanceof Error && error.message.includes("http_request")) {
         console.log("⚠️ Backend doesn't support 'http_request' tool type yet")
-        console.log("🔄 This is expected during development - http_request type needs to be added to backend validation")
+        console.log(
+          "🔄 This is expected during development - http_request type needs to be added to backend validation",
+        )
 
         // For now, return a mock response to unblock frontend development
         const mockResponse = {
@@ -770,7 +823,7 @@ export const workflowToolsAPI = {
           value: toolData.value,
           config: toolData.config,
           createdAt: new Date().toISOString(),
-          note: "Mock response - backend needs http_request tool type support"
+          note: "Mock response - backend needs http_request tool type support",
         }
 
         console.log("🔧 Returning mock response for development:", mockResponse)
@@ -796,8 +849,13 @@ export const workflowToolsAPI = {
       })
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "Network error" }))
-        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+        const errorData = await response
+          .json()
+          .catch(() => ({ message: "Network error" }))
+        throw new Error(
+          errorData.message ||
+            `HTTP ${response.status}: ${response.statusText}`,
+        )
       }
 
       return await response.json()
@@ -817,13 +875,18 @@ export const workflowToolsAPI = {
     webhookId: string
   }): Promise<{ success: boolean; message: string }> {
     try {
-      const response = await api.workflow.tools.jira['delete-webhook'].$post({
+      const response = await api.workflow.tools.jira["delete-webhook"].$post({
         json: config,
       })
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "Network error" }))
-        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+        const errorData = await response
+          .json()
+          .catch(() => ({ message: "Network error" }))
+        throw new Error(
+          errorData.message ||
+            `HTTP ${response.status}: ${response.statusText}`,
+        )
       }
 
       return await response.json()
@@ -848,7 +911,13 @@ export const workflowToolsAPI = {
     issueTypes: Array<{ id: string; name: string }>
     epics: Array<{ key: string; summary: string; projectKey?: string }>
     components: Array<{ id: string; name: string }>
-    issues: Array<{ key: string; summary: string; status?: string; issuetype?: string; priority?: string }>
+    issues: Array<{
+      key: string
+      summary: string
+      status?: string
+      issuetype?: string
+      priority?: string
+    }>
   }> {
     try {
       const response = await api.workflow.tools.jira.metadata.$post({
@@ -856,8 +925,13 @@ export const workflowToolsAPI = {
       })
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "Network error" }))
-        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+        const errorData = await response
+          .json()
+          .catch(() => ({ message: "Network error" }))
+        throw new Error(
+          errorData.message ||
+            `HTTP ${response.status}: ${response.statusText}`,
+        )
       }
 
       const result = await response.json()
@@ -901,8 +975,10 @@ export const workflowToolsAPI = {
         testWebhookUrl: jiraConfig.testWebhookUrl,
         productionWebhookUrl: jiraConfig.productionWebhookUrl,
         webhookId: jiraConfig.webhookId,
-        title: jiraConfig.title || 'Jira Trigger',
-        description: jiraConfig.description || `Jira webhook for events: ${jiraConfig.events.join(', ')}`,
+        title: jiraConfig.title || "Jira Trigger",
+        description:
+          jiraConfig.description ||
+          `Jira webhook for events: ${jiraConfig.events.join(", ")}`,
         events: jiraConfig.events,
         jqlFilter: jiraConfig.jqlFilter,
         simpleFilters: jiraConfig.simpleFilters,
@@ -916,14 +992,17 @@ export const workflowToolsAPI = {
         events: jiraConfig.events,
         productionWebhookUrl: jiraConfig.productionWebhookUrl,
         testWebhookUrl: jiraConfig.testWebhookUrl,
-      }
+      },
     }
 
     try {
       const response = await this.createTool(toolData)
       return response
     } catch (error) {
-      console.error("Failed to create Jira tool:", error instanceof Error ? error.message : error)
+      console.error(
+        "Failed to create Jira tool:",
+        error instanceof Error ? error.message : error,
+      )
       throw error
     }
   },
@@ -945,7 +1024,7 @@ export const workflowToolsAPI = {
       timeout?: number
       followRedirects?: boolean
       title?: string
-    }
+    },
   ): Promise<any> {
     console.log("🌐 Updating HTTP request configuration...")
     console.log("📋 HTTP config input:", httpConfig)
@@ -961,17 +1040,20 @@ export const workflowToolsAPI = {
         body: httpConfig.body,
         bodyType: httpConfig.bodyType,
         title: httpConfig.title || `${httpConfig.method} ${httpConfig.url}`,
-        description: `${httpConfig.method} ${httpConfig.url}${httpConfig.authentication && httpConfig.authentication !== 'none' ? ` • ${httpConfig.authentication} auth` : ''}`
+        description: `${httpConfig.method} ${httpConfig.url}${httpConfig.authentication && httpConfig.authentication !== "none" ? ` • ${httpConfig.authentication} auth` : ""}`,
       },
       config: {
         authentication: httpConfig.authentication || "none",
         authConfig: httpConfig.authConfig || {},
         timeout: httpConfig.timeout || 30000,
         followRedirects: httpConfig.followRedirects !== false,
-      }
+      },
     }
 
-    console.log("📋 Final tool data to send to backend:", JSON.stringify(toolData, null, 2))
+    console.log(
+      "📋 Final tool data to send to backend:",
+      JSON.stringify(toolData, null, 2),
+    )
 
     try {
       const response = await this.updateTool(toolId, toolData)
@@ -988,7 +1070,7 @@ export const workflowToolsAPI = {
           value: toolData.value,
           config: toolData.config,
           updatedAt: new Date().toISOString(),
-          note: "Mock response - backend needs http_request tool type support"
+          note: "Mock response - backend needs http_request tool type support",
         }
 
         console.log("🔧 Returning mock response for development:", mockResponse)
@@ -1024,7 +1106,7 @@ export const workflowToolsAPI = {
         epics?: string[]
         issues?: string[]
       }
-    }
+    },
   ): Promise<any> {
     // Prepare data for workflow_tool table
     const toolData = {
@@ -1035,8 +1117,10 @@ export const workflowToolsAPI = {
         testWebhookUrl: jiraConfig.testWebhookUrl,
         productionWebhookUrl: jiraConfig.productionWebhookUrl,
         webhookId: jiraConfig.webhookId,
-        title: jiraConfig.title || 'Jira Trigger',
-        description: jiraConfig.description || `Jira webhook for events: ${jiraConfig.events.join(', ')}`,
+        title: jiraConfig.title || "Jira Trigger",
+        description:
+          jiraConfig.description ||
+          `Jira webhook for events: ${jiraConfig.events.join(", ")}`,
         events: jiraConfig.events,
         jqlFilter: jiraConfig.jqlFilter,
         simpleFilters: jiraConfig.simpleFilters,
@@ -1050,14 +1134,17 @@ export const workflowToolsAPI = {
         events: jiraConfig.events,
         productionWebhookUrl: jiraConfig.productionWebhookUrl,
         testWebhookUrl: jiraConfig.testWebhookUrl,
-      }
+      },
     }
 
     try {
       const response = await this.updateTool(toolId, toolData)
       return response
     } catch (error) {
-      console.error("Failed to update Jira tool:", error instanceof Error ? error.message : error)
+      console.error(
+        "Failed to update Jira tool:",
+        error instanceof Error ? error.message : error,
+      )
       throw error
     }
   },
@@ -1121,7 +1208,9 @@ export const workflowStepsAPI = {
   async linkSteps(_sourceStepId: string, _targetStepId: string): Promise<any> {
     // Note: This specific endpoint doesn't exist in current routes
     // You may need to use updateStep to modify nextStepIds instead
-    throw new Error("linkSteps endpoint not available in current API. Use updateStep to modify nextStepIds.")
+    throw new Error(
+      "linkSteps endpoint not available in current API. Use updateStep to modify nextStepIds.",
+    )
   },
 }
 
@@ -1136,10 +1225,10 @@ export const credentialsAPI = {
   async fetchAll(): Promise<Credential[]> {
     try {
       // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 300))
+      await new Promise((resolve) => setTimeout(resolve, 300))
       return [...mockCredentials] // Return a copy to prevent external modification
     } catch (error) {
-      console.error('Failed to fetch credentials:', error)
+      console.error("Failed to fetch credentials:", error)
       return []
     }
   },
@@ -1147,9 +1236,11 @@ export const credentialsAPI = {
   /**
    * Fetch credentials by type
    */
-  async fetchByType(type: "basic" | "bearer" | "api_key"): Promise<Credential[]> {
+  async fetchByType(
+    type: "basic" | "bearer" | "api_key",
+  ): Promise<Credential[]> {
     const allCredentials = await this.fetchAll()
-    return allCredentials.filter(cred => cred.type === type)
+    return allCredentials.filter((cred) => cred.type === type)
   },
 
   /**
@@ -1178,11 +1269,11 @@ export const credentialsAPI = {
       mockCredentials.push(newCredential)
 
       // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 500))
+      await new Promise((resolve) => setTimeout(resolve, 500))
 
       return newCredential
     } catch (error) {
-      console.error('Failed to create credential:', error)
+      console.error("Failed to create credential:", error)
       throw error
     }
   },
@@ -1190,10 +1281,15 @@ export const credentialsAPI = {
   /**
    * Update an existing credential
    */
-  async update(credentialId: string, updates: Partial<Credential>): Promise<Credential> {
+  async update(
+    credentialId: string,
+    updates: Partial<Credential>,
+  ): Promise<Credential> {
     try {
-      const credentialIndex = mockCredentials.findIndex(cred => cred.id === credentialId)
-      
+      const credentialIndex = mockCredentials.findIndex(
+        (cred) => cred.id === credentialId,
+      )
+
       if (credentialIndex === -1) {
         throw new Error(`Credential with ID ${credentialId} not found`)
       }
@@ -1209,11 +1305,11 @@ export const credentialsAPI = {
       mockCredentials[credentialIndex] = updatedCredential
 
       // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 500))
+      await new Promise((resolve) => setTimeout(resolve, 500))
 
       return updatedCredential
     } catch (error) {
-      console.error('Failed to update credential:', error)
+      console.error("Failed to update credential:", error)
       throw error
     }
   },
@@ -1223,8 +1319,10 @@ export const credentialsAPI = {
    */
   async delete(credentialId: string): Promise<void> {
     try {
-      const credentialIndex = mockCredentials.findIndex(cred => cred.id === credentialId)
-      
+      const credentialIndex = mockCredentials.findIndex(
+        (cred) => cred.id === credentialId,
+      )
+
       if (credentialIndex === -1) {
         throw new Error(`Credential with ID ${credentialId} not found`)
       }
@@ -1233,11 +1331,11 @@ export const credentialsAPI = {
       mockCredentials.splice(credentialIndex, 1)
 
       // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 300))
+      await new Promise((resolve) => setTimeout(resolve, 300))
 
       console.log(`Credential ${credentialId} deleted`)
     } catch (error) {
-      console.error('Failed to delete credential:', error)
+      console.error("Failed to delete credential:", error)
       throw error
     }
   },
@@ -1245,26 +1343,32 @@ export const credentialsAPI = {
   /**
    * Test credential validity
    */
-  async testCredential(credentialId: string): Promise<{ isValid: boolean; message?: string }> {
+  async testCredential(
+    credentialId: string,
+  ): Promise<{ isValid: boolean; message?: string }> {
     try {
-      const credential = mockCredentials.find(cred => cred.id === credentialId)
-      
+      const credential = mockCredentials.find(
+        (cred) => cred.id === credentialId,
+      )
+
       if (!credential) {
         throw new Error(`Credential with ID ${credentialId} not found`)
       }
 
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+
       // Use the credential's isValid property
       const isValid = credential.isValid || false
-      
+
       return {
         isValid,
-        message: isValid ? "Credential is valid" : "Credential authentication failed"
+        message: isValid
+          ? "Credential is valid"
+          : "Credential authentication failed",
       }
     } catch (error) {
-      console.error('Failed to test credential:', error)
+      console.error("Failed to test credential:", error)
       return { isValid: false, message: "Failed to test credential" }
     }
-  }
+  },
 }

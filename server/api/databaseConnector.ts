@@ -32,7 +32,6 @@ import { getErrorMessage } from "@/utils"
 
 const { JwtPayloadKey } = config
 
-
 const Logger = getLogger(Subsystem.Api).child({ module: "databaseConnector" })
 
 export const triggerSyncSchema = z.object({
@@ -60,16 +59,26 @@ export function assertDatabaseConnectorConfig(connector: {
     })
   }
   if (!connector.credentials?.trim()) {
-    throw new HTTPException(400, { message: "Database connector missing credentials" })
+    throw new HTTPException(400, {
+      message: "Database connector missing credentials",
+    })
   }
   let creds: DatabaseCredentialsPayload
   try {
     creds = JSON.parse(connector.credentials) as DatabaseCredentialsPayload
   } catch {
-    throw new HTTPException(400, { message: "Invalid database connector credentials" })
+    throw new HTTPException(400, {
+      message: "Invalid database connector credentials",
+    })
   }
-  if (creds.kind !== "database" || typeof creds.username !== "string" || typeof creds.password !== "string") {
-    throw new HTTPException(400, { message: "Invalid database connector credentials" })
+  if (
+    creds.kind !== "database" ||
+    typeof creds.username !== "string" ||
+    typeof creds.password !== "string"
+  ) {
+    throw new HTTPException(400, {
+      message: "Invalid database connector credentials",
+    })
   }
   const base = config as Omit<DatabaseConnectorConfig, "auth">
   return {
@@ -89,55 +98,75 @@ export function getDatabaseConnectorConfig(connector: {
 }): DatabaseConnectorConfig | null {
   if (connector.type !== ConnectorType.Database) return null
   const config = connector.config as Record<string, unknown>
-  if (!config?.engine || !config?.host || !config?.database || !connector.credentials?.trim()) return null
+  if (
+    !config?.engine ||
+    !config?.host ||
+    !config?.database ||
+    !connector.credentials?.trim()
+  )
+    return null
   let creds: DatabaseCredentialsPayload
   try {
     creds = JSON.parse(connector.credentials) as DatabaseCredentialsPayload
   } catch {
     return null
   }
-  if (creds.kind !== "database" || typeof creds.username !== "string" || typeof creds.password !== "string") return null
+  if (
+    creds.kind !== "database" ||
+    typeof creds.username !== "string" ||
+    typeof creds.password !== "string"
+  )
+    return null
   const base = config as Omit<DatabaseConnectorConfig, "auth">
-  return { ...base, auth: { username: creds.username, password: creds.password } }
+  return {
+    ...base,
+    auth: { username: creds.username, password: creds.password },
+  }
 }
 
 export const TriggerDatabaseSyncApi = async (c: Context) => {
-    const { sub: email, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
-    if (!email) throw new HTTPException(401, { message: "Unauthorized" })
-    const syncBody = await c.req.json()
-    const { connectorId } = triggerSyncSchema.parse(syncBody)
-    const userWorkspace = await getUserAndWorkspaceByEmail(db, workspaceExternalId, email)
-    if (!userWorkspace) throw new HTTPException(404, { message: "User or workspace not found" })
+  const { sub: email, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
+  if (!email) throw new HTTPException(401, { message: "Unauthorized" })
+  const syncBody = await c.req.json()
+  const { connectorId } = triggerSyncSchema.parse(syncBody)
+  const userWorkspace = await getUserAndWorkspaceByEmail(
+    db,
+    workspaceExternalId,
+    email,
+  )
+  if (!userWorkspace)
+    throw new HTTPException(404, { message: "User or workspace not found" })
 
-    const connector = await getDatabaseConnectorForUser(
-      db,
-      connectorId,
-      userWorkspace.user.id,
-      userWorkspace.workspace.id,
-    )
-    if (!connector) throw new HTTPException(404, { message: "Connector not found" })
-    const dbConfig = assertDatabaseConnectorConfig(connector)
+  const connector = await getDatabaseConnectorForUser(
+    db,
+    connectorId,
+    userWorkspace.user.id,
+    userWorkspace.workspace.id,
+  )
+  if (!connector)
+    throw new HTTPException(404, { message: "Connector not found" })
+  const dbConfig = assertDatabaseConnectorConfig(connector)
 
-    const kbContext: DatabaseSyncKbContext = {
-      workspaceId: connector.workspaceId,
-      workspaceExternalId: connector.workspaceExternalId,
-      userId: connector.userId,
-      userEmail: email,
-      connectorName: connector.name,
-      getOrCreateKbCollection: getOrCreateDatabaseConnectorKbCollectionId,
-    }
+  const kbContext: DatabaseSyncKbContext = {
+    workspaceId: connector.workspaceId,
+    workspaceExternalId: connector.workspaceExternalId,
+    userId: connector.userId,
+    userEmail: email,
+    connectorName: connector.name,
+    getOrCreateKbCollection: getOrCreateDatabaseConnectorKbCollectionId,
+  }
 
-    try {
-      const result = await syncDatabase(dbConfig, String(connector.id), kbContext)
-      return c.json({
-        success: true,
-        tablesSynced: result.tablesSynced,
-        rowsSynced: result.rowsSynced,
-      })
-    } catch (err) {
-      Logger.error({ err, connectorId }, "Database sync failed")
-      throw new HTTPException(500, {
-        message: "Failed to sync database connector",
+  try {
+    const result = await syncDatabase(dbConfig, String(connector.id), kbContext)
+    return c.json({
+      success: true,
+      tablesSynced: result.tablesSynced,
+      rowsSynced: result.rowsSynced,
+    })
+  } catch (err) {
+    Logger.error({ err, connectorId }, "Database sync failed")
+    throw new HTTPException(500, {
+      message: "Failed to sync database connector",
     })
   }
 }
@@ -146,9 +175,15 @@ export const GetDatabaseSyncStateApi = async (c: Context) => {
   const { sub: email, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
   if (!email) throw new HTTPException(401, { message: "Unauthorized" })
   const connectorId = c.req.param("connectorId")
-  if (!connectorId) throw new HTTPException(400, { message: "connectorId is required" })
-  const userWorkspace = await getUserAndWorkspaceByEmail(db, workspaceExternalId, email)
-  if (!userWorkspace) throw new HTTPException(404, { message: "User or workspace not found" })
+  if (!connectorId)
+    throw new HTTPException(400, { message: "connectorId is required" })
+  const userWorkspace = await getUserAndWorkspaceByEmail(
+    db,
+    workspaceExternalId,
+    email,
+  )
+  if (!userWorkspace)
+    throw new HTTPException(404, { message: "User or workspace not found" })
 
   const connector = await getDatabaseConnectorForUser(
     db,
@@ -156,7 +191,8 @@ export const GetDatabaseSyncStateApi = async (c: Context) => {
     userWorkspace.user.id,
     userWorkspace.workspace.id,
   )
-  if (!connector) throw new HTTPException(404, { message: "Connector not found" })
+  if (!connector)
+    throw new HTTPException(404, { message: "Connector not found" })
 
   const tables = await getSyncStateRowsByConnectorId(String(connector.id))
   const config = connector.config as Record<string, unknown>
@@ -166,77 +202,86 @@ export const GetDatabaseSyncStateApi = async (c: Context) => {
 }
 
 export const CreateDatabaseConnectorApi = async (c: Context) => {
-    const { sub: email, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
-    if (!email) {
-      throw new HTTPException(401, { message: "Unauthorized" })
-    }
-    const userWorkspace = await getUserAndWorkspaceByEmail(
-      db,
-      workspaceExternalId,
-      email,
-    )
-    if (!userWorkspace) {
-      throw new HTTPException(404, { message: "User or workspace not found" })
-    }
-    const raw = await c.req.json()
-    const body = createDatabaseConnectorSchema.parse(raw)
-    const tables: DatabaseConnectorConfig["tables"] = {}
-    if (body.tablesInclude?.trim()) {
-      tables.include = body.tablesInclude.split(",").map((s) => s.trim()).filter(Boolean)
-    }
-    if (body.tablesIgnore?.trim()) {
-      tables.ignore = body.tablesIgnore.split(",").map((s) => s.trim()).filter(Boolean)
-    }
-    if (body.tablesEmbed?.trim()) {
-      tables.embed = body.tablesEmbed.split(",").map((s) => s.trim()).filter(Boolean)
-    }
-    const config = {
-      engine: body.engine as DatabaseEngine,
-      host: body.host,
-      port: body.port,
-      database: body.database,
-      schema: body.schema || undefined,
-      tables: Object.keys(tables).length ? tables : undefined,
-      batchSize: body.batchSize,
-      concurrency: 2,
-      watermarkColumn: body.watermarkColumn || undefined,
-      cdcEnabled: false,
-    } as Omit<DatabaseConnectorConfig, "auth">
-    const credentialsPayload: DatabaseCredentialsPayload = {
-      kind: "database",
-      username: body.username,
-      password: body.password,
-    }
-    const credentialsStr = JSON.stringify(credentialsPayload)
-    try {
-      const connector = await insertConnector(
-        db,
-        userWorkspace.user.workspaceId as number,
-        userWorkspace.user.id,
-        userWorkspace.workspace.externalId,
-        body.name,
-        ConnectorType.Database,
-        AuthType.Custom,
-        Apps.Database,
-        config as unknown as Record<string, unknown>,
-        credentialsStr,
-        null,
-        null,
-        null,
-        ConnectorStatus.Connected,
-      )
-      return c.json({
-        success: true,
-        id: connector!.externalId,
-        cId: connector!.id,
-      })
-    } catch (err) {
-      Logger.error({ err }, "Create database connector failed")
-      throw new HTTPException(500, {
-        message: "Failed to create database connector",
-      })
-    }
+  const { sub: email, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
+  if (!email) {
+    throw new HTTPException(401, { message: "Unauthorized" })
   }
+  const userWorkspace = await getUserAndWorkspaceByEmail(
+    db,
+    workspaceExternalId,
+    email,
+  )
+  if (!userWorkspace) {
+    throw new HTTPException(404, { message: "User or workspace not found" })
+  }
+  const raw = await c.req.json()
+  const body = createDatabaseConnectorSchema.parse(raw)
+  const tables: DatabaseConnectorConfig["tables"] = {}
+  if (body.tablesInclude?.trim()) {
+    tables.include = body.tablesInclude
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+  }
+  if (body.tablesIgnore?.trim()) {
+    tables.ignore = body.tablesIgnore
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+  }
+  if (body.tablesEmbed?.trim()) {
+    tables.embed = body.tablesEmbed
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+  }
+  const config = {
+    engine: body.engine as DatabaseEngine,
+    host: body.host,
+    port: body.port,
+    database: body.database,
+    schema: body.schema || undefined,
+    tables: Object.keys(tables).length ? tables : undefined,
+    batchSize: body.batchSize,
+    concurrency: 2,
+    watermarkColumn: body.watermarkColumn || undefined,
+    cdcEnabled: false,
+  } as Omit<DatabaseConnectorConfig, "auth">
+  const credentialsPayload: DatabaseCredentialsPayload = {
+    kind: "database",
+    username: body.username,
+    password: body.password,
+  }
+  const credentialsStr = JSON.stringify(credentialsPayload)
+  try {
+    const connector = await insertConnector(
+      db,
+      userWorkspace.user.workspaceId as number,
+      userWorkspace.user.id,
+      userWorkspace.workspace.externalId,
+      body.name,
+      ConnectorType.Database,
+      AuthType.Custom,
+      Apps.Database,
+      config as unknown as Record<string, unknown>,
+      credentialsStr,
+      null,
+      null,
+      null,
+      ConnectorStatus.Connected,
+    )
+    return c.json({
+      success: true,
+      id: connector!.externalId,
+      cId: connector!.id,
+    })
+  } catch (err) {
+    Logger.error({ err }, "Create database connector failed")
+    throw new HTTPException(500, {
+      message: "Failed to create database connector",
+    })
+  }
+}
 
 export const deleteDatabaseConnectorSchema = z.object({
   connectorId: z.string().min(1),
@@ -258,8 +303,13 @@ export const DeleteDatabaseConnectorApi = async (c: Context) => {
 
   const rawBody = await c.req.json()
   const { connectorId } = deleteDatabaseConnectorSchema.parse(rawBody)
-  const userWorkspace = await getUserAndWorkspaceByEmail(db, workspaceExternalId, email)
-  if (!userWorkspace) throw new HTTPException(404, { message: "User or workspace not found" })
+  const userWorkspace = await getUserAndWorkspaceByEmail(
+    db,
+    workspaceExternalId,
+    email,
+  )
+  if (!userWorkspace)
+    throw new HTTPException(404, { message: "User or workspace not found" })
 
   const connector = await getDatabaseConnectorForUser(
     db,
@@ -267,9 +317,12 @@ export const DeleteDatabaseConnectorApi = async (c: Context) => {
     userWorkspace.user.id,
     userWorkspace.workspace.id,
   )
-  if (!connector) throw new HTTPException(404, { message: "Connector not found" })
+  if (!connector)
+    throw new HTTPException(404, { message: "Connector not found" })
   if (connector.type !== ConnectorType.Database) {
-    throw new HTTPException(400, { message: "Connector is not a database connector" })
+    throw new HTTPException(400, {
+      message: "Connector is not a database connector",
+    })
   }
 
   const state = (connector.state as Record<string, unknown>) || {}
@@ -379,7 +432,9 @@ export const UpdateDatabaseConnectorApi = async (c: Context) => {
     throw new HTTPException(404, { message: "Connector not found" })
   }
   if (connector.type !== ConnectorType.Database) {
-    throw new HTTPException(400, { message: "Connector is not a database connector" })
+    throw new HTTPException(400, {
+      message: "Connector is not a database connector",
+    })
   }
 
   // Build the updated config - check for presence (undefined) not truthy to allow clearing filters
@@ -391,18 +446,35 @@ export const UpdateDatabaseConnectorApi = async (c: Context) => {
 
   const tables: DatabaseConnectorConfig["tables"] = {}
   tables.include = hasTablesInclude
-    ? (body.tablesInclude!.trim() ? body.tablesInclude!.split(",").map((s) => s.trim()).filter(Boolean) : [])
+    ? body.tablesInclude!.trim()
+      ? body
+          .tablesInclude!.split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : []
     : []
   tables.ignore = hasTablesIgnore
-    ? (body.tablesIgnore!.trim() ? body.tablesIgnore!.split(",").map((s) => s.trim()).filter(Boolean) : [])
+    ? body.tablesIgnore!.trim()
+      ? body
+          .tablesIgnore!.split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : []
     : []
   tables.embed = hasTablesEmbed
-    ? (body.tablesEmbed!.trim() ? body.tablesEmbed!.split(",").map((s) => s.trim()).filter(Boolean) : [])
+    ? body.tablesEmbed!.trim()
+      ? body
+          .tablesEmbed!.split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : []
     : []
 
   const tablesConfig =
     hasTablesInclude || hasTablesIgnore || hasTablesEmbed
-      ? (Object.keys(tables).length ? tables : undefined)
+      ? Object.keys(tables).length
+        ? tables
+        : undefined
       : []
 
   const updatedConfig = {
@@ -425,14 +497,18 @@ export const UpdateDatabaseConnectorApi = async (c: Context) => {
 
     // When connector name changes, rename the linked KB collection to match (same pattern as creation: "Database: <name>")
     const state = (connector.state as Record<string, unknown>) || {}
-    const kbCollectionId = typeof state.kbCollectionId === "string" ? state.kbCollectionId : null
+    const kbCollectionId =
+      typeof state.kbCollectionId === "string" ? state.kbCollectionId : null
     if (body.name !== connector.name && kbCollectionId) {
       try {
         await updateCollection(db, kbCollectionId, {
           name: `Database: ${body.name}`,
         })
       } catch (kbErr) {
-        Logger.warn({ err: kbErr, kbCollectionId }, "KB collection rename failed after connector update; connector update succeeded")
+        Logger.warn(
+          { err: kbErr, kbCollectionId },
+          "KB collection rename failed after connector update; connector update succeeded",
+        )
       }
     }
 
@@ -462,8 +538,13 @@ export const RotateCredentialsApi = async (c: Context) => {
   const raw = await c.req.json()
   const body = rotateCredentialsSchema.parse(raw)
 
-  const userWorkspace = await getUserAndWorkspaceByEmail(db, workspaceExternalId, email)
-  if (!userWorkspace) throw new HTTPException(404, { message: "User or workspace not found" })
+  const userWorkspace = await getUserAndWorkspaceByEmail(
+    db,
+    workspaceExternalId,
+    email,
+  )
+  if (!userWorkspace)
+    throw new HTTPException(404, { message: "User or workspace not found" })
 
   const connector = await getDatabaseConnectorForUser(
     db,
@@ -471,14 +552,17 @@ export const RotateCredentialsApi = async (c: Context) => {
     userWorkspace.user.id,
     userWorkspace.workspace.id,
   )
-  if (!connector) throw new HTTPException(404, { message: "Connector not found" })
+  if (!connector)
+    throw new HTTPException(404, { message: "Connector not found" })
   if (connector.type !== ConnectorType.Database) {
-    throw new HTTPException(400, { message: "Connector is not a database connector" })
+    throw new HTTPException(400, {
+      message: "Connector is not a database connector",
+    })
   }
 
   // Get connector config to test new credentials
   const config = connector.config as Record<string, unknown>
-  
+
   // Build test config with new credentials
   const testConfig: DatabaseConnectorConfig = {
     engine: config.engine as DatabaseEngine,
@@ -486,14 +570,14 @@ export const RotateCredentialsApi = async (c: Context) => {
     port: config.port as number,
     database: config.database as string,
     schema: config.schema as string | undefined,
-    batchSize: config.batchSize as number ?? 1000,
+    batchSize: (config.batchSize as number) ?? 1000,
     auth: { username: body.newUsername, password: body.newPassword },
   }
 
   // Test the new credentials by attempting to connect
   const { createClient } = await import("@/integrations/database/client")
   const client = createClient(testConfig)
-  
+
   try {
     await client.connect()
     await client.disconnect()
@@ -517,7 +601,9 @@ export const RotateCredentialsApi = async (c: Context) => {
       credentials: credentialsStr,
     })
 
-    Logger.info(`Rotated credentials for database connector: ${body.connectorId}`)
+    Logger.info(
+      `Rotated credentials for database connector: ${body.connectorId}`,
+    )
 
     return c.json({ success: true })
   } catch (err) {
@@ -538,8 +624,13 @@ export const SyncDatabaseTableApi = async (c: Context) => {
 
   const rawBody = await c.req.json()
   const { connectorId, tableName } = syncTableSchema.parse(rawBody)
-  const userWorkspace = await getUserAndWorkspaceByEmail(db, workspaceExternalId, email)
-  if (!userWorkspace) throw new HTTPException(404, { message: "User or workspace not found" })
+  const userWorkspace = await getUserAndWorkspaceByEmail(
+    db,
+    workspaceExternalId,
+    email,
+  )
+  if (!userWorkspace)
+    throw new HTTPException(404, { message: "User or workspace not found" })
 
   const connector = await getDatabaseConnectorForUser(
     db,
@@ -547,7 +638,8 @@ export const SyncDatabaseTableApi = async (c: Context) => {
     userWorkspace.user.id,
     userWorkspace.workspace.id,
   )
-  if (!connector) throw new HTTPException(404, { message: "Connector not found" })
+  if (!connector)
+    throw new HTTPException(404, { message: "Connector not found" })
   const dbConfig = assertDatabaseConnectorConfig(connector)
 
   const kbContext: DatabaseSyncKbContext = {
@@ -560,7 +652,12 @@ export const SyncDatabaseTableApi = async (c: Context) => {
   }
 
   try {
-    const result = await syncSingleTable(dbConfig, String(connector.id), tableName, kbContext)
+    const result = await syncSingleTable(
+      dbConfig,
+      String(connector.id),
+      tableName,
+      kbContext,
+    )
     return c.json({
       success: true,
       tableName,

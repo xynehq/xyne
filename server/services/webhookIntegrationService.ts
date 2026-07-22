@@ -35,7 +35,7 @@ export class WebhookIntegrationService {
     workflowTemplateId: string,
     config: WebhookToolConfig,
     userId: number,
-    workspaceId: number
+    workspaceId: number,
   ): Promise<{ toolId: string; webhookUrl: string }> {
     try {
       // Create the webhook tool in the database
@@ -47,7 +47,7 @@ export class WebhookIntegrationService {
           workspaceId: workspaceId,
           value: {
             path: config.path,
-            webhookUrl: config.webhookUrl
+            webhookUrl: config.webhookUrl,
           },
           config: {
             httpMethod: config.httpMethod,
@@ -56,8 +56,8 @@ export class WebhookIntegrationService {
             responseMode: config.responseMode,
             headers: config.headers || {},
             queryParams: config.queryParams || {},
-            options: config.options || {}
-          }
+            options: config.options || {},
+          },
         })
         .returning()
 
@@ -66,16 +66,17 @@ export class WebhookIntegrationService {
         config.path,
         workflowTemplateId,
         tool.id,
-        config
+        config,
       )
 
-      Logger.info(`Created webhook tool ${tool.id} for template ${workflowTemplateId}`)
+      Logger.info(
+        `Created webhook tool ${tool.id} for template ${workflowTemplateId}`,
+      )
 
       return {
         toolId: tool.id,
-        webhookUrl: config.webhookUrl
+        webhookUrl: config.webhookUrl,
       }
-
     } catch (error) {
       Logger.error(`Failed to create webhook tool: ${error}`)
       throw new Error(`Failed to create webhook tool: ${error}`)
@@ -84,7 +85,7 @@ export class WebhookIntegrationService {
 
   async updateWebhookTool(
     toolId: string,
-    config: Partial<WebhookToolConfig>
+    config: Partial<WebhookToolConfig>,
   ): Promise<{ toolId: string; webhookUrl?: string }> {
     try {
       // Get existing tool
@@ -110,18 +111,20 @@ export class WebhookIntegrationService {
       const updatedValue = {
         ...existingValue,
         ...(config.path && { path: config.path }),
-        ...(config.webhookUrl && { webhookUrl: config.webhookUrl })
+        ...(config.webhookUrl && { webhookUrl: config.webhookUrl }),
       }
 
       const updatedConfig = {
         ...existingConfig,
         ...(config.httpMethod && { httpMethod: config.httpMethod }),
         ...(config.authentication && { authentication: config.authentication }),
-        ...(config.selectedCredential !== undefined && { selectedCredential: config.selectedCredential }),
+        ...(config.selectedCredential !== undefined && {
+          selectedCredential: config.selectedCredential,
+        }),
         ...(config.responseMode && { responseMode: config.responseMode }),
         ...(config.headers && { headers: config.headers }),
         ...(config.queryParams && { queryParams: config.queryParams }),
-        ...(config.options && { options: config.options })
+        ...(config.options && { options: config.options }),
       }
 
       await db
@@ -129,22 +132,26 @@ export class WebhookIntegrationService {
         .set({
           value: updatedValue,
           config: updatedConfig,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(workflowTool.id, toolId))
 
       // Re-register webhook with new configuration
       if (config.path) {
-        const fullConfig = { ...existingConfig, ...updatedConfig, path: config.path }
+        const fullConfig = {
+          ...existingConfig,
+          ...updatedConfig,
+          path: config.path,
+        }
         // Get workflow template ID from step template
         const templateId = await this.getWorkflowTemplateIdFromTool(toolId)
-        
+
         if (templateId) {
           await webhookRegistry.registerWebhook(
             config.path,
             templateId,
             toolId,
-            fullConfig as WebhookToolConfig
+            fullConfig as WebhookToolConfig,
           )
         }
       }
@@ -153,9 +160,8 @@ export class WebhookIntegrationService {
 
       return {
         toolId,
-        webhookUrl: config.webhookUrl
+        webhookUrl: config.webhookUrl,
       }
-
     } catch (error) {
       Logger.error(`Failed to update webhook tool: ${error}`)
       throw new Error(`Failed to update webhook tool: ${error}`)
@@ -176,26 +182,25 @@ export class WebhookIntegrationService {
       }
 
       const value = tool.value as any
-      
+
       // Unregister webhook
       if (value?.path) {
         await webhookRegistry.unregisterWebhook(value.path)
       }
 
       // Delete tool from database
-      await db
-        .delete(workflowTool)
-        .where(eq(workflowTool.id, toolId))
+      await db.delete(workflowTool).where(eq(workflowTool.id, toolId))
 
       Logger.info(`Deleted webhook tool ${toolId}`)
-
     } catch (error) {
       Logger.error(`Failed to delete webhook tool: ${error}`)
       throw new Error(`Failed to delete webhook tool: ${error}`)
     }
   }
 
-  async getWebhookToolConfig(toolId: string): Promise<WebhookToolConfig | null> {
+  async getWebhookToolConfig(
+    toolId: string,
+  ): Promise<WebhookToolConfig | null> {
     try {
       const [tool] = await db
         .select()
@@ -211,29 +216,28 @@ export class WebhookIntegrationService {
       const config = tool.config as any
 
       return {
-        webhookUrl: value?.webhookUrl || '',
-        httpMethod: config?.httpMethod || 'POST',
-        path: value?.path || '',
-        authentication: config?.authentication || 'none',
+        webhookUrl: value?.webhookUrl || "",
+        httpMethod: config?.httpMethod || "POST",
+        path: value?.path || "",
+        authentication: config?.authentication || "none",
         selectedCredential: config?.selectedCredential,
-        responseMode: config?.responseMode || 'immediately',
+        responseMode: config?.responseMode || "immediately",
         options: config?.options || {},
         headers: config?.headers || {},
-        queryParams: config?.queryParams || {}
+        queryParams: config?.queryParams || {},
       }
-
     } catch (error) {
       Logger.error(`Failed to get webhook tool config: ${error}`)
       return null
     }
   }
 
-  private async getWorkflowTemplateIdFromTool(toolId: string): Promise<string | null> {
+  private async getWorkflowTemplateIdFromTool(
+    toolId: string,
+  ): Promise<string | null> {
     try {
       // This is a simplified approach - in a real implementation you'd properly join the tables
-      const steps = await db
-        .select()
-        .from(workflowStepTemplate)
+      const steps = await db.select().from(workflowStepTemplate)
 
       for (const step of steps) {
         if (step.toolIds && step.toolIds.includes(toolId)) {
@@ -242,7 +246,6 @@ export class WebhookIntegrationService {
       }
 
       return null
-
     } catch (error) {
       Logger.error(`Failed to get workflow template ID: ${error}`)
       return null
@@ -267,25 +270,29 @@ export class WebhookIntegrationService {
               config.path,
               templateId,
               tool.id,
-              config
+              config,
             )
           }
         } catch (error) {
-          Logger.error(`Failed to register existing webhook tool ${tool.id}: ${error}`)
+          Logger.error(
+            `Failed to register existing webhook tool ${tool.id}: ${error}`,
+          )
         }
       }
 
       Logger.info(`Registered ${webhookTools.length} existing webhook tools`)
-
     } catch (error) {
       Logger.error(`Failed to register existing webhook tools: ${error}`)
     }
   }
 
-  async validateWebhookPath(path: string, excludeToolId?: string): Promise<boolean> {
+  async validateWebhookPath(
+    path: string,
+    excludeToolId?: string,
+  ): Promise<boolean> {
     try {
-      const cleanPath = path.startsWith('/') ? path : `/${path}`
-      
+      const cleanPath = path.startsWith("/") ? path : `/${path}`
+
       // Check if path is already registered in memory
       const existingWebhook = webhookRegistry.getWebhook(cleanPath)
       if (existingWebhook && existingWebhook.toolId !== excludeToolId) {
@@ -300,7 +307,7 @@ export class WebhookIntegrationService {
 
       for (const tool of tools) {
         if (tool.id === excludeToolId) continue
-        
+
         const value = tool.value as any
         if (value?.path === cleanPath) {
           return false
@@ -308,7 +315,6 @@ export class WebhookIntegrationService {
       }
 
       return true
-
     } catch (error) {
       Logger.error(`Failed to validate webhook path: ${error}`)
       return false

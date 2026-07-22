@@ -484,7 +484,7 @@ export const getAISDKProviderByModel = (
             ? AIProviders.GoogleAI
             : VertexProjectId && VertexRegion
               ? AIProviders.VertexAI
-                : null
+              : null
   switch (providerType) {
     case AIProviders.VertexAI: {
       if (!VertexProjectId || !VertexRegion) {
@@ -1424,7 +1424,6 @@ export const baselineRAGOffJsonStream = (
     ],
   }
 
-
   const updatedMessages: Message[] = messages
     ? [...messages, baseMessage]
     : [baseMessage]
@@ -2205,9 +2204,11 @@ export const extractBestDocumentIndexes = async (
 ): Promise<number[]> => {
   try {
     if (!params.modelId) {
-      const agenticModel = defaultBestModelAgenticMode && defaultBestModelAgenticMode !== "" as Models
-        ? defaultBestModelAgenticMode as Models 
-        : null
+      const agenticModel =
+        defaultBestModelAgenticMode &&
+        defaultBestModelAgenticMode !== ("" as Models)
+          ? (defaultBestModelAgenticMode as Models)
+          : null
 
       params.modelId = agenticModel || defaultBestModel
     }

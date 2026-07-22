@@ -382,137 +382,137 @@ export const AdminChatsTable = ({
             <div className="flex flex-col sm:flex-row gap-4">
               {/* Search */}
               <div className="relative flex-1">
-              <input
-                type="text"
-                placeholder="Search by chat title, user name, email, or agent..."
-                value={searchInput}
-                onChange={(e) => {
-                  const newValue = e.target.value
-                  onSearchInputChange(newValue)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    onSearch()
-                  }
-                }}
-                className="w-full pl-2 pr-16 py-2 text-sm border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
-              />
-              <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
-                {searchInput && (
+                <input
+                  type="text"
+                  placeholder="Search by chat title, user name, email, or agent..."
+                  value={searchInput}
+                  onChange={(e) => {
+                    const newValue = e.target.value
+                    onSearchInputChange(newValue)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      onSearch()
+                    }
+                  }}
+                  className="w-full pl-2 pr-16 py-2 text-sm border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                />
+                <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
+                  {searchInput && (
+                    <button
+                      type="button"
+                      onClick={onClearSearch}
+                      className="p-1 hover:bg-muted rounded-sm transition-colors"
+                      title="Clear search"
+                    >
+                      <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={onClearSearch}
+                    onClick={onSearch}
                     className="p-1 hover:bg-muted rounded-sm transition-colors"
-                    title="Clear search"
+                    title="Search"
                   >
-                    <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                    <Search className="h-3 w-3 text-muted-foreground hover:text-foreground" />
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={onSearch}
-                  className="p-1 hover:bg-muted rounded-sm transition-colors"
-                  title="Search"
-                >
-                  <Search className="h-3 w-3 text-muted-foreground hover:text-foreground" />
-                </button>
-              </div>
-            </div>
-
-            {/* Filter Dropdown */}
-            <div className="relative">
-              <select
-                value={filterType}
-                onChange={(e) =>
-                  onFilterTypeChange(
-                    e.target.value as "all" | "agent" | "normal",
-                  )
-                }
-                className="appearance-none bg-background border border-input rounded-md px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
-              >
-                <option value="all">All Chats</option>
-                <option value="agent">Agent Chats</option>
-                <option value="normal">Normal Chats</option>
-              </select>
-              <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
-                <Filter className="h-4 w-4 text-muted-foreground" />
-              </div>
-            </div>
-
-            {/* User Filter Dropdown - Only show if not filtering by specific user */}
-            {showUserFilter && (
-              <div className="relative">
-                <select
-                  value={userFilter}
-                  onChange={(e) =>
-                    onUserFilterChange(
-                      e.target.value === "all" ? "all" : e.target.value,
-                    )
-                  }
-                  className="appearance-none bg-background border border-input rounded-md px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent min-w-[150px]"
-                  disabled={loadingUsers}
-                >
-                  <option value="all">All Users</option>
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id.toString()}>
-                      {user.name} ({user.email})
-                    </option>
-                  ))}
-                </select>
-                <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
-                  {loadingUsers ? (
-                    <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
-                  ) : (
-                    <Users className="h-4 w-4 text-muted-foreground" />
-                  )}
                 </div>
               </div>
-            )}
 
-            {/* Date Range Picker */}
-            <DateRangePicker
-              from={dateFrom}
-              to={dateTo}
-              onSelect={onDateChange}
-              placeholder="Select date range"
-            />
-
-            {/* Sort Dropdown */}
-            <div className="relative">
-              <select
-                value={sortBy}
-                onChange={(e) =>
-                  onSortByChange(
-                    e.target.value as
-                      | "created"
-                      | "messages"
-                      | "cost"
-                      | "tokens",
-                  )
-                }
-                className="appearance-none bg-background border border-input rounded-md px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
-              >
-                <option value="created">Sort by Date</option>
-                <option value="messages">Sort by Messages</option>
-                <option value="cost">Sort by Cost</option>
-                <option value="tokens">Sort by Tokens</option>
-              </select>
-              <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
-                <svg
-                  className="h-4 w-4 text-muted-foreground"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+              {/* Filter Dropdown */}
+              <div className="relative">
+                <select
+                  value={filterType}
+                  onChange={(e) =>
+                    onFilterTypeChange(
+                      e.target.value as "all" | "agent" | "normal",
+                    )
+                  }
+                  className="appearance-none bg-background border border-input rounded-md px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
+                  <option value="all">All Chats</option>
+                  <option value="agent">Agent Chats</option>
+                  <option value="normal">Normal Chats</option>
+                </select>
+                <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                  <Filter className="h-4 w-4 text-muted-foreground" />
+                </div>
               </div>
-            </div>
+
+              {/* User Filter Dropdown - Only show if not filtering by specific user */}
+              {showUserFilter && (
+                <div className="relative">
+                  <select
+                    value={userFilter}
+                    onChange={(e) =>
+                      onUserFilterChange(
+                        e.target.value === "all" ? "all" : e.target.value,
+                      )
+                    }
+                    className="appearance-none bg-background border border-input rounded-md px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent min-w-[150px]"
+                    disabled={loadingUsers}
+                  >
+                    <option value="all">All Users</option>
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id.toString()}>
+                        {user.name} ({user.email})
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                    {loadingUsers ? (
+                      <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
+                    ) : (
+                      <Users className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Date Range Picker */}
+              <DateRangePicker
+                from={dateFrom}
+                to={dateTo}
+                onSelect={onDateChange}
+                placeholder="Select date range"
+              />
+
+              {/* Sort Dropdown */}
+              <div className="relative">
+                <select
+                  value={sortBy}
+                  onChange={(e) =>
+                    onSortByChange(
+                      e.target.value as
+                        | "created"
+                        | "messages"
+                        | "cost"
+                        | "tokens",
+                    )
+                  }
+                  className="appearance-none bg-background border border-input rounded-md px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                >
+                  <option value="created">Sort by Date</option>
+                  <option value="messages">Sort by Messages</option>
+                  <option value="cost">Sort by Cost</option>
+                  <option value="tokens">Sort by Tokens</option>
+                </select>
+                <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                  <svg
+                    className="h-4 w-4 text-muted-foreground"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 9l-7 7-7-7"
+                    />
+                  </svg>
+                </div>
+              </div>
 
               {/* Clear All Filters Button */}
               <button
@@ -658,7 +658,8 @@ export const AdminChatsTable = ({
                   {userFilter !== "all" &&
                     ` • User: ${users.find((u) => u.id.toString() === userFilter)?.name || "Unknown"}`}
                   {sortBy !== "created" && ` • Sorted by ${sortBy}`}
-                  {(dateFrom || dateTo) && ` • Date: ${dateFrom ? format(new Date(dateFrom), 'dd/MM/yyyy') : 'Any'} - ${dateTo ? format(new Date(dateTo), 'dd/MM/yyyy') : 'Any'}`}
+                  {(dateFrom || dateTo) &&
+                    ` • Date: ${dateFrom ? format(new Date(dateFrom), "dd/MM/yyyy") : "Any"} - ${dateTo ? format(new Date(dateTo), "dd/MM/yyyy") : "Any"}`}
                 </div>
               )}
             </div>

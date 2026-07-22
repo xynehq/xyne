@@ -23,8 +23,12 @@ export function Layout() {
               <span className="text-sm font-bold text-[#FF4F4F]">X</span>
             </div>
             <div className="min-w-0">
-              <h1 className="text-sm font-semibold tracking-tight truncate">Xyne SDK</h1>
-              <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+              <h1 className="text-sm font-semibold tracking-tight truncate">
+                Xyne SDK
+              </h1>
+              <p className="text-xs text-muted-foreground truncate">
+                {user?.email}
+              </p>
             </div>
           </div>
         </div>
@@ -54,7 +58,11 @@ export function Layout() {
             onClick={toggle}
             className="flex items-center gap-3 px-3 py-2 w-full rounded-md text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
           >
-            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            {theme === "dark" ? (
+              <Sun className="h-4 w-4" />
+            ) : (
+              <Moon className="h-4 w-4" />
+            )}
             {theme === "dark" ? "Light Mode" : "Dark Mode"}
           </button>
           <button

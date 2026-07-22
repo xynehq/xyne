@@ -125,8 +125,10 @@ export function isKeycloakWebLoginEnabled(): boolean {
     getBooleanEnv("KEYCLOAK_WEB_ENABLED", false) &&
     Boolean(process.env.KEYCLOAK_PUBLIC_BASE_URL?.trim()) &&
     Boolean(
-      (process.env.KEYCLOAK_INTERNAL_BASE_URL ||
-        process.env.KEYCLOAK_PUBLIC_BASE_URL)?.trim(),
+      (
+        process.env.KEYCLOAK_INTERNAL_BASE_URL ||
+        process.env.KEYCLOAK_PUBLIC_BASE_URL
+      )?.trim(),
     ) &&
     Boolean(process.env.KEYCLOAK_REALM?.trim()) &&
     Boolean(process.env.KEYCLOAK_CLIENT_ID?.trim()) &&
@@ -148,12 +150,12 @@ export function getKeycloakWebConfig(): KeycloakWebConfig | null {
   }
 
   return {
-    publicBaseUrl: trimTrailingSlash(getRequiredEnv("KEYCLOAK_PUBLIC_BASE_URL")),
+    publicBaseUrl: trimTrailingSlash(
+      getRequiredEnv("KEYCLOAK_PUBLIC_BASE_URL"),
+    ),
     internalBaseUrl: trimTrailingSlash(
-      (
-        process.env.KEYCLOAK_INTERNAL_BASE_URL ||
-        process.env.KEYCLOAK_PUBLIC_BASE_URL
-      )!.trim(),
+      (process.env.KEYCLOAK_INTERNAL_BASE_URL ||
+        process.env.KEYCLOAK_PUBLIC_BASE_URL)!.trim(),
     ),
     realm: getRequiredEnv("KEYCLOAK_REALM"),
     clientId: getRequiredEnv("KEYCLOAK_CLIENT_ID"),

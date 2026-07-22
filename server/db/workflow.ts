@@ -111,10 +111,11 @@ export const getAccessibleWorkflowTemplatesWithRole = async (
   trx: TxnOrClient,
   workspaceId: number,
   userId: number,
-): Promise<(
-  SelectWorkflowTemplate & {
+): Promise<
+  (SelectWorkflowTemplate & {
     role: string
-  })[]> => {
+  })[]
+> => {
   const templates = await trx
     .selectDistinct({
       id: workflowTemplate.id,
@@ -145,15 +146,15 @@ export const getAccessibleWorkflowTemplatesWithRole = async (
         ),
       ),
     )
-  
+
   if (!templates || templates.length === 0) {
     return []
   }
 
   // Add role field based on ownership and permissions
-  return templates.map(template => ({
+  return templates.map((template) => ({
     ...selectWorkflowTemplateSchema.parse(template),
-    role: template.role || UserWorkflowRole.Viewer //default user role for public workflow
+    role: template.role || UserWorkflowRole.Viewer, //default user role for public workflow
   }))
 }
 
@@ -267,7 +268,7 @@ export const getWorkflowExecutionByIdWithChecks = async (
   trx: TxnOrClient,
   id: string,
   workspaceId: number,
-  userId: number
+  userId: number,
 ): Promise<SelectWorkflowExecution | null> => {
   const [execution] = await trx
     .select()
@@ -422,17 +423,17 @@ export const getWorkflowStepExecutionByIdWithChecks = async (
     .from(workflowStepExecution)
     .innerJoin(
       workflowExecution,
-      eq(workflowStepExecution.workflowExecutionId, workflowExecution.id)
+      eq(workflowStepExecution.workflowExecutionId, workflowExecution.id),
     )
     .where(
       and(
         eq(workflowStepExecution.id, id),
         eq(workflowExecution.userId, userId),
-        eq(workflowExecution.workspaceId, workspaceId)
-      )
+        eq(workflowExecution.workspaceId, workspaceId),
+      ),
     )
     .limit(1)
-  
+
   if (!result || result.length === 0) {
     return null
   }

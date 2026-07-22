@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { CollectionItem, NewCollectionItem } from "../db/schema"
 
-process.env.ENCRYPTION_KEY ??=
-  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+process.env.ENCRYPTION_KEY ??= "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 process.env.SERVICE_ACCOUNT_ENCRYPTION_KEY ??=
   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
@@ -23,7 +22,9 @@ async function loadUpdateCollectionItem() {
   return module.updateCollectionItem
 }
 
-const createItem = (overrides: Partial<CollectionItem> = {}): CollectionItem => ({
+const createItem = (
+  overrides: Partial<CollectionItem> = {},
+): CollectionItem => ({
   id: "item-1",
   collectionId: "collection-alpha",
   parentId: null,

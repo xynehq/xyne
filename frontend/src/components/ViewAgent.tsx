@@ -69,7 +69,7 @@ const ViewAgent: React.FC<ViewAgentProps> = ({ agent, onBack }) => {
         let displayName = integration.name || "integration"
         const itemType = integration.type || "integration"
         const itemIcon = getItemIcon(itemType)
-         
+
         result.push({
           id: integration.id || "",
           name: displayName,

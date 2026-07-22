@@ -340,7 +340,6 @@ export interface LegacyWorkflowTemplate {
   updated_at?: string
 }
 
-
 export interface AgentToolData {
   agentId: string
   name: string

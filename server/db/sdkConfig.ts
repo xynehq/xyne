@@ -21,7 +21,10 @@ export const getSdkConfigByWorkspaceExternalId = async (
 export const getSdkConfigWithWorkspace = async (
   trx: TxnOrClient,
   workspaceExternalId: string,
-): Promise<{ config: SdkConfig; workspace: { id: number; externalId: string } } | null> => {
+): Promise<{
+  config: SdkConfig
+  workspace: { id: number; externalId: string }
+} | null> => {
   const [result] = await trx
     .select({
       config: sdkConfigs,
@@ -40,17 +43,19 @@ export const createSdkConfig = async (
   trx: TxnOrClient,
   data: NewSdkConfig,
 ): Promise<SdkConfig> => {
-  const [result] = await trx
-    .insert(sdkConfigs)
-    .values(data)
-    .returning()
+  const [result] = await trx.insert(sdkConfigs).values(data).returning()
   return result
 }
 
 export const updateSdkConfig = async (
   trx: TxnOrClient,
   workspaceExternalId: string,
-  updates: Partial<Pick<NewSdkConfig, "tokenSecret" | "tokenExpirySeconds" | "allowedOrigins" | "enabled">>,
+  updates: Partial<
+    Pick<
+      NewSdkConfig,
+      "tokenSecret" | "tokenExpirySeconds" | "allowedOrigins" | "enabled" | "spacesConfig"
+    >
+  >,
 ): Promise<SdkConfig> => {
   const [result] = await trx
     .update(sdkConfigs)

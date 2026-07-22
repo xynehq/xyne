@@ -8,8 +8,8 @@ import type {
   JiraIssueCreateInput,
   JiraIssueUpdateInput,
   JiraIssue,
-} from './types'
-import { JiraClient } from './client'
+} from "./types"
+import { JiraClient } from "./client"
 
 export class JiraActions {
   private client: JiraClient
@@ -31,13 +31,13 @@ export class JiraActions {
     try {
       // Validate required fields
       if (!input.projectKey) {
-        throw new Error('Project key is required')
+        throw new Error("Project key is required")
       }
       if (!input.summary) {
-        throw new Error('Summary is required')
+        throw new Error("Summary is required")
       }
       if (!input.issueType) {
-        throw new Error('Issue type is required')
+        throw new Error("Issue type is required")
       }
 
       // Create the issue
@@ -45,7 +45,9 @@ export class JiraActions {
 
       // Validate that required fields are present in the response
       if (!issue.key || !issue.self) {
-        throw new Error('Jira API returned incomplete issue data (missing key or self)')
+        throw new Error(
+          "Jira API returned incomplete issue data (missing key or self)",
+        )
       }
 
       return {
@@ -72,7 +74,7 @@ export class JiraActions {
     try {
       // Validate required fields
       if (!input.issueKey) {
-        throw new Error('Issue key is required')
+        throw new Error("Issue key is required")
       }
 
       // Check if at least one field is being updated
@@ -87,7 +89,7 @@ export class JiraActions {
         (input.customFields && Object.keys(input.customFields).length > 0)
 
       if (!hasUpdates) {
-        throw new Error('At least one field must be provided to update')
+        throw new Error("At least one field must be provided to update")
       }
 
       // Update the issue
@@ -95,7 +97,9 @@ export class JiraActions {
 
       // Validate that required fields are present in the response
       if (!issue.key || !issue.self) {
-        throw new Error('Jira API returned incomplete issue data (missing key or self)')
+        throw new Error(
+          "Jira API returned incomplete issue data (missing key or self)",
+        )
       }
 
       return {

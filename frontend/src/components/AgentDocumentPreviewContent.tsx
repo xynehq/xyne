@@ -74,7 +74,10 @@ function createAgentDocumentTableComponents() {
 /** Same Markdown pipeline as assistant messages in chat.tsx (minus citation links). */
 function AgentResponseMarkdown({ source }: { source: string }) {
   const { theme } = useTheme()
-  const tableComponents = useMemo(() => createAgentDocumentTableComponents(), [])
+  const tableComponents = useMemo(
+    () => createAgentDocumentTableComponents(),
+    [],
+  )
   const components = useMemo(
     () => ({
       code: MermaidCodeWrapper,
@@ -160,12 +163,12 @@ function AgentResponseMarkdown({ source }: { source: string }) {
 /**
  * Tabbed body for delegated agent output (used inside CitationPreview).
  */
-const AgentDocumentPreviewContent: React.FC<AgentDocumentPreviewContentProps> = ({
-  document: doc,
-}) => {
-  const [activeTab, setActiveTab] = useState<"content" | "reasoning" | "sources">(
-    "content",
-  )
+const AgentDocumentPreviewContent: React.FC<
+  AgentDocumentPreviewContentProps
+> = ({ document: doc }) => {
+  const [activeTab, setActiveTab] = useState<
+    "content" | "reasoning" | "sources"
+  >("content")
 
   const citations = doc.citations ?? []
 

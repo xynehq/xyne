@@ -17,8 +17,10 @@ type ExternalLiteLLMModelConfig = {
   description?: unknown
 }
 
-let externalModelConfigurationsCache: Record<string, ModelConfiguration> | null =
-  null
+let externalModelConfigurationsCache: Record<
+  string,
+  ModelConfiguration
+> | null = null
 let externalModelConfigurationsPath: string | undefined
 
 const normalizeProvider = (provider: unknown): AIProviders | null => {
@@ -77,9 +79,7 @@ const parseExternalModelConfig = (
       websearch:
         typeof config.websearch === "boolean" ? config.websearch : false,
       deepResearch:
-        typeof config.deepResearch === "boolean"
-          ? config.deepResearch
-          : false,
+        typeof config.deepResearch === "boolean" ? config.deepResearch : false,
       description:
         typeof config.description === "string" ? config.description : "",
     },

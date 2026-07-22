@@ -36,7 +36,8 @@ const StreamingReasoning: React.FC = () => {
   // Non-agent items belong to the main orchestrator box
   type NonAgentItem = FlatItem & { kind: "step" | "tool" }
   const mainItems = useMemo(
-    () => flatItems.filter((item): item is NonAgentItem => item.kind !== "agent"),
+    () =>
+      flatItems.filter((item): item is NonAgentItem => item.kind !== "agent"),
     [flatItems],
   )
 

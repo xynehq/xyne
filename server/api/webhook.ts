@@ -2,11 +2,11 @@ import { Hono, type Context } from "hono"
 import { z } from "zod"
 import { zValidator } from "@hono/zod-validator"
 import { db } from "@/db/client"
-import { 
-  workflowTemplate, 
-  workflowTool, 
+import {
+  workflowTemplate,
+  workflowTool,
   workflowStepTemplate,
-  workflowExecution
+  workflowExecution,
 } from "@/db/schema/workflows"
 import { eq, and } from "drizzle-orm"
 import { getLogger } from "@/logger"
@@ -36,43 +36,69 @@ const webhookConfigSchema = z.object({
 })
 
 // Webhook request handler
-export const handleWebhookRequest = async (c: Context, path: string): Promise<Response> => {
+export const handleWebhookRequest = async (
+  c: Context,
+  path: string,
+): Promise<Response> => {
   let webhookData: any = null
-  
+
   try {
     const method = c.req.method
     webhookData = webhookRegistry.getWebhook(path)
 
     if (!webhookData) {
-      await webhookAuthService.auditWebhookAccess(c, path, false, "Webhook not found")
-      throw new HTTPException(404, { message: `Webhook not found for path: ${path}` })
+      await webhookAuthService.auditWebhookAccess(
+        c,
+        path,
+        false,
+        "Webhook not found",
+      )
+      throw new HTTPException(404, {
+        message: `Webhook not found for path: ${path}`,
+      })
     }
 
     // Validate HTTP method
     if (method !== webhookData.httpMethod) {
-      await webhookAuthService.auditWebhookAccess(c, path, false, `Method ${method} not allowed`)
-      throw new HTTPException(405, { 
-        message: `Method ${method} not allowed. Expected ${webhookData.httpMethod}` 
+      await webhookAuthService.auditWebhookAccess(
+        c,
+        path,
+        false,
+        `Method ${method} not allowed`,
+      )
+      throw new HTTPException(405, {
+        message: `Method ${method} not allowed. Expected ${webhookData.httpMethod}`,
       })
     }
 
     // Validate authentication if required
-    if (webhookData.config.authentication !== 'none') {
+    if (webhookData.config.authentication !== "none") {
       const authValid = await webhookAuthService.validateAuthentication(c, {
         authentication: webhookData.config.authentication,
         selectedCredential: webhookData.config.selectedCredential,
-        headers: webhookData.config.headers
+        headers: webhookData.config.headers,
       })
-      
+
       if (!authValid) {
-        await webhookAuthService.auditWebhookAccess(c, path, false, "Authentication failed")
+        await webhookAuthService.auditWebhookAccess(
+          c,
+          path,
+          false,
+          "Authentication failed",
+        )
         throw new HTTPException(401, { message: "Authentication failed" })
       }
     }
 
     // Validate custom headers if specified
-    if (webhookData.config.headers && Object.keys(webhookData.config.headers).length > 0) {
-      await webhookAuthService.validateCustomHeaders(c, webhookData.config.headers)
+    if (
+      webhookData.config.headers &&
+      Object.keys(webhookData.config.headers).length > 0
+    ) {
+      await webhookAuthService.validateCustomHeaders(
+        c,
+        webhookData.config.headers,
+      )
     }
 
     // Extract request data
@@ -82,51 +108,54 @@ export const handleWebhookRequest = async (c: Context, path: string): Promise<Re
     const executionId = await executeWorkflowFromWebhook(
       webhookData.workflowTemplateId,
       requestData,
-      webhookData.config
+      webhookData.config,
     )
 
     // Return response based on response mode
     const response = await buildWebhookResponse(
       webhookData.config.responseMode,
       executionId,
-      requestData
+      requestData,
     )
 
     // Audit successful access
     await webhookAuthService.auditWebhookAccess(c, path, true)
 
     return c.json(response)
-
   } catch (error) {
     Logger.error(`Webhook error for path ${path}: ${error}`)
-    
+
     // Audit failed access if we have webhook data
     if (webhookData) {
-      await webhookAuthService.auditWebhookAccess(c, path, false, error instanceof Error ? error.message : "Unknown error")
+      await webhookAuthService.auditWebhookAccess(
+        c,
+        path,
+        false,
+        error instanceof Error ? error.message : "Unknown error",
+      )
     }
-    
+
     if (error instanceof HTTPException) {
       throw error
     }
-    
+
     throw new HTTPException(500, { message: "Internal webhook error" })
   }
 }
 
-
 // Extract request data
 async function extractRequestData(c: Context, config: WebhookConfig) {
-  const contentType = c.req.header('Content-Type') || ''
+  const contentType = c.req.header("Content-Type") || ""
   let body = null
 
   try {
-    if (contentType.includes('application/json')) {
+    if (contentType.includes("application/json")) {
       body = await c.req.json()
-    } else if (contentType.includes('application/x-www-form-urlencoded')) {
+    } else if (contentType.includes("application/x-www-form-urlencoded")) {
       body = await c.req.parseBody()
-    } else if (contentType.includes('text/')) {
+    } else if (contentType.includes("text/")) {
       body = await c.req.text()
-    } else if (c.req.method !== 'GET') {
+    } else if (c.req.method !== "GET") {
       body = await c.req.arrayBuffer()
     }
   } catch (error) {
@@ -137,7 +166,10 @@ async function extractRequestData(c: Context, config: WebhookConfig) {
   const headers: Record<string, string> = {}
   c.req.raw.headers.forEach((value, key) => {
     // Include most headers but exclude sensitive ones
-    if (!key.toLowerCase().includes('authorization') && !key.toLowerCase().includes('cookie')) {
+    if (
+      !key.toLowerCase().includes("authorization") &&
+      !key.toLowerCase().includes("cookie")
+    ) {
       headers[key] = value
     }
   })
@@ -149,7 +181,7 @@ async function extractRequestData(c: Context, config: WebhookConfig) {
     query: Object.fromEntries(new URL(c.req.url).searchParams.entries()),
     body,
     timestamp: new Date().toISOString(),
-    url: c.req.url
+    url: c.req.url,
   }
 }
 
@@ -157,7 +189,7 @@ async function extractRequestData(c: Context, config: WebhookConfig) {
 async function executeWorkflowFromWebhook(
   templateId: string,
   requestData: any,
-  config: WebhookConfig
+  config: WebhookConfig,
 ): Promise<string> {
   try {
     // Get template to fetch userId and workspaceId
@@ -171,17 +203,19 @@ async function executeWorkflowFromWebhook(
       throw new Error(`Workflow template not found: ${templateId}`)
     }
 
-    const executionId = await webhookExecutionService.executeWorkflowFromWebhook({
-      workflowTemplateId: templateId,
-      webhookPath: config.path,
-      requestData,
-      userId: template.userId,
-      workspaceId: template.workspaceId
-    })
+    const executionId =
+      await webhookExecutionService.executeWorkflowFromWebhook({
+        workflowTemplateId: templateId,
+        webhookPath: config.path,
+        requestData,
+        userId: template.userId,
+        workspaceId: template.workspaceId,
+      })
 
-    Logger.info(`Created workflow execution ${executionId} from webhook ${config.path}`)
+    Logger.info(
+      `Created workflow execution ${executionId} from webhook ${config.path}`,
+    )
     return executionId
-    
   } catch (error) {
     Logger.error(`Failed to execute workflow from webhook: ${error}`)
     throw new Error("Failed to execute workflow")
@@ -192,18 +226,18 @@ async function executeWorkflowFromWebhook(
 async function buildWebhookResponse(
   responseMode: string,
   executionId: string,
-  _requestData: any
+  _requestData: any,
 ) {
   switch (responseMode) {
-    case 'immediately':
+    case "immediately":
       return {
         success: true,
         message: "Webhook received and workflow started",
         executionId,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       }
-      
-    case 'wait_for_completion':
+
+    case "wait_for_completion":
       try {
         // Wait for execution to complete (with timeout)
         const result = await waitForExecution(executionId, 30000) // 30 second timeout
@@ -213,7 +247,7 @@ async function buildWebhookResponse(
           executionId,
           status: result.status,
           result: result.execution,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
         }
       } catch (error) {
         return {
@@ -221,14 +255,14 @@ async function buildWebhookResponse(
           message: "Webhook processed but workflow did not complete in time",
           executionId,
           status: "timeout",
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
         }
       }
-      
+
     default:
       return {
         success: true,
-        executionId
+        executionId,
       }
   }
 }
@@ -236,24 +270,27 @@ async function buildWebhookResponse(
 // Wait for execution completion
 async function waitForExecution(executionId: string, timeoutMs: number) {
   const startTime = Date.now()
-  
+
   while (Date.now() - startTime < timeoutMs) {
     try {
-      const status = await webhookExecutionService.getExecutionStatus(executionId)
-      
-      if (status.status === WorkflowStatus.COMPLETED || status.status === WorkflowStatus.FAILED) {
+      const status =
+        await webhookExecutionService.getExecutionStatus(executionId)
+
+      if (
+        status.status === WorkflowStatus.COMPLETED ||
+        status.status === WorkflowStatus.FAILED
+      ) {
         return status
       }
-      
+
       // Wait 1 second before checking again
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      
+      await new Promise((resolve) => setTimeout(resolve, 1000))
     } catch (error) {
       Logger.error(`Error checking execution status: ${error}`)
       break
     }
   }
-  
+
   throw new Error("Execution timeout")
 }
 
@@ -261,41 +298,57 @@ async function waitForExecution(executionId: string, timeoutMs: number) {
 export const webhookRouter = new Hono()
 
 // Register webhook (called when saving webhook tool)
-webhookRouter.post('/register', zValidator('json', webhookConfigSchema), async (c) => {
-  try {
-    const config = c.req.valid('json') 
-    const { workflowTemplateId, toolId } = c.req.query()
+webhookRouter.post(
+  "/register",
+  zValidator("json", webhookConfigSchema),
+  async (c) => {
+    try {
+      const config = c.req.valid("json")
+      const { workflowTemplateId, toolId } = c.req.query()
 
-    await webhookRegistry.registerWebhook(config.path, workflowTemplateId, toolId, config)
+      await webhookRegistry.registerWebhook(
+        config.path,
+        workflowTemplateId,
+        toolId,
+        config,
+      )
 
-    return c.json({ 
-      success: true, 
-      message: "Webhook registered successfully",
-      webhookUrl: `${new URL(c.req.url).origin}/workflow/webhook${config.path}`
-    })
-  } catch (error) {
-    throw new HTTPException(400, { message: `Failed to register webhook: ${error}` })
-  }
-})
+      return c.json({
+        success: true,
+        message: "Webhook registered successfully",
+        webhookUrl: `${new URL(c.req.url).origin}/workflow/webhook${config.path}`,
+      })
+    } catch (error) {
+      throw new HTTPException(400, {
+        message: `Failed to register webhook: ${error}`,
+      })
+    }
+  },
+)
 
 // Unregister webhook
-webhookRouter.delete('/unregister/:path', async (c) => {
+webhookRouter.delete("/unregister/:path", async (c) => {
   try {
-    const path = `/${c.req.param('path')}`
+    const path = `/${c.req.param("path")}`
     const success = await webhookRegistry.unregisterWebhook(path)
 
     if (!success) {
       throw new HTTPException(404, { message: "Webhook not found" })
     }
 
-    return c.json({ success: true, message: "Webhook unregistered successfully" })
+    return c.json({
+      success: true,
+      message: "Webhook unregistered successfully",
+    })
   } catch (error) {
-    throw new HTTPException(400, { message: `Failed to unregister webhook: ${error}` })
+    throw new HTTPException(400, {
+      message: `Failed to unregister webhook: ${error}`,
+    })
   }
 })
 
 // List all registered webhooks
-webhookRouter.get('/list', async (c) => {
+webhookRouter.get("/list", async (c) => {
   try {
     const webhooks = webhookRegistry.getAllWebhooks()
     return c.json({ success: true, webhooks })
@@ -305,63 +358,78 @@ webhookRouter.get('/list', async (c) => {
 })
 
 // Get webhook tool configuration
-webhookRouter.get('/tool/:toolId', async (c) => {
+webhookRouter.get("/tool/:toolId", async (c) => {
   try {
-    const toolId = c.req.param('toolId')
+    const toolId = c.req.param("toolId")
     const config = await webhookIntegrationService.getWebhookToolConfig(toolId)
-    
+
     if (!config) {
       throw new HTTPException(404, { message: "Webhook tool not found" })
     }
-    
+
     return c.json({ success: true, config })
   } catch (error) {
-    throw new HTTPException(500, { message: `Failed to get webhook config: ${error}` })
+    throw new HTTPException(500, {
+      message: `Failed to get webhook config: ${error}`,
+    })
   }
 })
 
 // Validate webhook path
-webhookRouter.post('/validate-path', zValidator('json', z.object({
-  path: z.string().min(1),
-  excludeToolId: z.string().optional()
-})), async (c) => {
-  try {
-    const { path, excludeToolId } = c.req.valid('json')
-    const isValid = await webhookIntegrationService.validateWebhookPath(path, excludeToolId)
-    
-    return c.json({ 
-      success: true, 
-      valid: isValid,
-      message: isValid ? "Path is available" : "Path is already in use"
-    })
-  } catch (error) {
-    throw new HTTPException(500, { message: `Failed to validate path: ${error}` })
-  }
-})
+webhookRouter.post(
+  "/validate-path",
+  zValidator(
+    "json",
+    z.object({
+      path: z.string().min(1),
+      excludeToolId: z.string().optional(),
+    }),
+  ),
+  async (c) => {
+    try {
+      const { path, excludeToolId } = c.req.valid("json")
+      const isValid = await webhookIntegrationService.validateWebhookPath(
+        path,
+        excludeToolId,
+      )
+
+      return c.json({
+        success: true,
+        valid: isValid,
+        message: isValid ? "Path is available" : "Path is already in use",
+      })
+    } catch (error) {
+      throw new HTTPException(500, {
+        message: `Failed to validate path: ${error}`,
+      })
+    }
+  },
+)
 
 // Get execution status
-webhookRouter.get('/execution/:executionId/status', async (c) => {
+webhookRouter.get("/execution/:executionId/status", async (c) => {
   try {
-    const executionId = c.req.param('executionId')
+    const executionId = c.req.param("executionId")
     const status = await webhookExecutionService.getExecutionStatus(executionId)
-    
+
     return c.json({ success: true, status })
   } catch (error) {
-    throw new HTTPException(500, { message: `Failed to get execution status: ${error}` })
+    throw new HTTPException(500, {
+      message: `Failed to get execution status: ${error}`,
+    })
   }
 })
 
 // Test webhook endpoint (for debugging)
-webhookRouter.post('/test/:path', async (c) => {
+webhookRouter.post("/test/:path", async (c) => {
   try {
-    const path = `/${c.req.param('path')}`
+    const path = `/${c.req.param("path")}`
     const method = c.req.method
-    
+
     Logger.info(`Testing webhook ${method} ${path}`)
-    
+
     // This simulates a webhook call for testing
     return await handleWebhookRequest(c, path)
-    
   } catch (error) {
     throw new HTTPException(500, { message: `Webhook test failed: ${error}` })
   }

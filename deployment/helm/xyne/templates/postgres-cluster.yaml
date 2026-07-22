@@ -1,0 +1,62 @@
+{{- if .Values.postgresql.enabled }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "xyne.fullname" . }}-postgresql-credentials
+  labels:
+    {{- include "xyne.labels" . | nindent 4 }}
+type: kubernetes.io/basic-auth
+stringData:
+  username: {{ .Values.postgresql.user | quote }}
+  password: {{ .Values.postgresql.password | quote }}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "xyne.fullname" . }}-postgresql
+  labels:
+    {{- include "xyne.labels" . | nindent 4 }}
+spec:
+  instances: {{ .Values.postgresql.instances | default 1 }}
+  imageName: {{ .Values.postgresql.image }}
+
+  bootstrap:
+    initdb:
+      database: {{ .Values.postgresql.database }}
+      owner: {{ .Values.postgresql.user }}
+      secret:
+        name: {{ include "xyne.fullname" . }}-postgresql-credentials
+      encoding: UTF8
+      localeCType: C
+      localeCollate: C
+
+  storage:
+    size: {{ .Values.postgresql.storage.size }}
+    {{- if .Values.postgresql.storage.storageClass }}
+    storageClassName: {{ .Values.postgresql.storage.storageClass | quote }}
+    {{- end }}
+
+  resources:
+    {{- toYaml .Values.postgresql.resources | nindent 4 }}
+
+  {{- if .Values.postgresql.backup.enabled }}
+  backup:
+    barmanObjectStore:
+      destinationPath: {{ .Values.postgresql.backup.destinationPath }}
+      {{- if .Values.postgresql.backup.s3 }}
+      s3Credentials:
+        accessKeyId:
+          name: {{ include "xyne.fullname" . }}-postgresql-backup
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: {{ include "xyne.fullname" . }}-postgresql-backup
+          key: SECRET_ACCESS_KEY
+      {{- end }}
+    retentionPolicy: {{ .Values.postgresql.backup.retentionPolicy | default "30d" | quote }}
+  {{- end }}
+
+  postgresql:
+    parameters:
+      shared_buffers: {{ .Values.postgresql.parameters.shared_buffers | default "256MB" | quote }}
+      effective_cache_size: {{ .Values.postgresql.parameters.effective_cache_size | default "512MB" | quote }}
+{{- end }}

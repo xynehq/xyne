@@ -6,7 +6,10 @@ import type { Models } from "@/ai/types"
 import { type Message } from "@aws-sdk/client-bedrock-runtime"
 import config from "@/config"
 import type { DatabaseTableSchemaDoc } from "@/integrations/database/types"
-import { duckdbSqlGeneratorPrompt, postgresSqlGeneratorPrompt } from "@/ai/prompts"
+import {
+  duckdbSqlGeneratorPrompt,
+  postgresSqlGeneratorPrompt,
+} from "@/ai/prompts"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "sqlInference",
@@ -25,36 +28,42 @@ export const analyzeQueryAndGenerateSQL = async (
   tableName: string,
   sheetName: string,
   schema: string,
-  fewShotSamples: string
+  fewShotSamples: string,
 ): Promise<DuckDBQuery | null> => {
-  const model : Models = config.sqlInferenceModel as Models
+  const model: Models = config.sqlInferenceModel as Models
   if (!model) {
-    Logger.warn("SQL inference model not set, returning null");
-    return null;
+    Logger.warn("SQL inference model not set, returning null")
+    return null
   }
-  Logger.debug(`Analyzing query and generating SQL`);
+  Logger.debug(`Analyzing query and generating SQL`)
 
   const stripNoise = (s: string) => {
-    let t = s.trim();
+    let t = s.trim()
     // remove all code fences
-    t = t.replace(/```(?:json)?/gi, "").replace(/```/g, "");
+    t = t.replace(/```(?:json)?/gi, "").replace(/```/g, "")
     // remove leading/trailing non-JSON text
-    const start = t.indexOf("{");
-    const end = t.lastIndexOf("}");
-    if (start !== -1 && end !== -1 && end > start) t = t.slice(start, end + 1);
-    return t.trim();
-  };
+    const start = t.indexOf("{")
+    const end = t.lastIndexOf("}")
+    if (start !== -1 && end !== -1 && end > start) t = t.slice(start, end + 1)
+    return t.trim()
+  }
 
-  const prompt = duckdbSqlGeneratorPrompt(query, tableName, sheetName, schema, fewShotSamples);
+  const prompt = duckdbSqlGeneratorPrompt(
+    query,
+    tableName,
+    sheetName,
+    schema,
+    fewShotSamples,
+  )
 
   try {
-    const provider = getProviderByModel(model);
-    
+    const provider = getProviderByModel(model)
+
     const messages: Message[] = [
       {
         role: "user",
-        content: [{ text: prompt }]
-      }
+        content: [{ text: prompt }],
+      },
     ]
 
     const modelParams = {
@@ -62,19 +71,20 @@ export const analyzeQueryAndGenerateSQL = async (
       temperature: 0.1,
       max_new_tokens: 512,
       stream: false,
-      systemPrompt: "You generate DuckDB SELECT statements only. Output valid JSON."
+      systemPrompt:
+        "You generate DuckDB SELECT statements only. Output valid JSON.",
     }
 
-    const response = await provider.converse(messages, modelParams);
-    const responseText = response.text || "";
-    const cleaned = stripNoise(responseText);
-    let parsedResponse: { sql: string | null; notes: string };
-    
+    const response = await provider.converse(messages, modelParams)
+    const responseText = response.text || ""
+    const cleaned = stripNoise(responseText)
+    let parsedResponse: { sql: string | null; notes: string }
+
     try {
-      parsedResponse = JSON.parse(cleaned);
+      parsedResponse = JSON.parse(cleaned)
     } catch (e) {
-      Logger.error("Failed to parse cleaned LLM response as JSON", { cleaned });
-      throw e;
+      Logger.error("Failed to parse cleaned LLM response as JSON", { cleaned })
+      throw e
     }
 
     if (!parsedResponse.sql) {
@@ -82,21 +92,21 @@ export const analyzeQueryAndGenerateSQL = async (
         { query, notes: parsedResponse?.notes ?? "no notes" },
         "DuckDB SQL not generated (model returned sql: null)",
       )
-      return null;
+      return null
     }
 
     const result: DuckDBQuery = {
       sql: parsedResponse.sql,
-      notes: parsedResponse.notes
-    };
+      notes: parsedResponse.notes,
+    }
 
     Logger.info({ sql: result.sql }, "DuckDB SQL generated")
     Logger.info({ notes: result.notes }, "DuckDB SQL notes")
 
-    return result;
+    return result
   } catch (error) {
-    Logger.error("Failed to generate DuckDB SQL:", error);
-    return null;
+    Logger.error("Failed to generate DuckDB SQL:", error)
+    return null
   }
 }
 
@@ -144,11 +154,14 @@ export const generatePostgresSQL = async (
           if (s.min !== undefined) parts.push(`min=${s.min}`)
           if (s.max !== undefined) parts.push(`max=${s.max}`)
           if (s.avg !== undefined) parts.push(`avg≈${Number(s.avg).toFixed(2)}`)
-          if (s.stddev !== undefined) parts.push(`stddev≈${Number(s.stddev).toFixed(2)}`)
+          if (s.stddev !== undefined)
+            parts.push(`stddev≈${Number(s.stddev).toFixed(2)}`)
           if (s.sampleValues?.length) {
             const preview =
               s.sampleValues.length <= 15
-                ? s.sampleValues.map((v) => (v === null ? "null" : String(v))).join(", ")
+                ? s.sampleValues
+                    .map((v) => (v === null ? "null" : String(v)))
+                    .join(", ")
                 : s.sampleValues
                     .slice(0, 12)
                     .map((v) => (v === null ? "null" : String(v)))
@@ -163,7 +176,7 @@ export const generatePostgresSQL = async (
     })
     .join("\n\n")
 
-  const prompt = postgresSqlGeneratorPrompt(query, schemaText, defaultSchema);
+  const prompt = postgresSqlGeneratorPrompt(query, schemaText, defaultSchema)
 
   try {
     const provider = getProviderByModel(model)
@@ -173,7 +186,8 @@ export const generatePostgresSQL = async (
       temperature: 0.1,
       max_new_tokens: 512,
       stream: false,
-      systemPrompt: "You generate Postgres SELECT statements only. Output valid JSON.",
+      systemPrompt:
+        "You generate Postgres SELECT statements only. Output valid JSON.",
     }
     const response = await provider.converse(messages, modelParams)
     const responseText = response.text || ""

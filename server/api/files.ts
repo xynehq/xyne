@@ -24,7 +24,10 @@ import { HTTPException } from "hono/http-exception"
 import { isValidFile, isImageFile, getFileType } from "shared/fileUtils"
 import { generateThumbnail, getThumbnailPath } from "@/utils/image"
 import { attachmentFileTypeMap, type AttachmentMetadata } from "@/shared/types"
-import { FileProcessorService, type SheetProcessingResult } from "@/services/fileProcessor"
+import {
+  FileProcessorService,
+  type SheetProcessingResult,
+} from "@/services/fileProcessor"
 import { Apps, fileSchema, KbItemsSchema } from "@xyne/vespa-ts/types"
 import { getBaseMimeType } from "@/integrations/dataSource/config"
 import { isDataSourceError } from "@/integrations/dataSource/errors"
@@ -230,7 +233,7 @@ export const handleAttachmentUpload = async (c: Context) => {
     }
 
     const attachmentMetadata: AttachmentMetadata[] = []
-    
+
     for (const file of files) {
       const fileBuffer = await file.arrayBuffer()
       const fileHash = createHash("sha256")
@@ -274,7 +277,10 @@ export const handleAttachmentUpload = async (c: Context) => {
             owner: email,
             photoLink: "",
             ownerEmail: email,
-            entity: attachmentFileTypeMap[getFileType({ type: file.type, name: file.name })],
+            entity:
+              attachmentFileTypeMap[
+                getFileType({ type: file.type, name: file.name })
+              ],
             chunks: [],
             chunks_pos: [],
             image_chunks: [`${file.name}`],
@@ -307,10 +313,10 @@ export const handleAttachmentUpload = async (c: Context) => {
             storageKey,
             file.name,
           )
-  
+
           // Ensure directory exists
           await mkdir(dirname(filePath), { recursive: true })
-  
+
           // Write file to disk
           await writeFile(filePath, new Uint8Array(fileBuffer))
 
@@ -328,20 +334,27 @@ export const handleAttachmentUpload = async (c: Context) => {
             false,
           )
 
-          if(processingResults.length > 0 && 'totalSheets' in processingResults[0]) {
+          if (
+            processingResults.length > 0 &&
+            "totalSheets" in processingResults[0]
+          ) {
             vespaId = `${fileId}_sheet_${(processingResults[0] as SheetProcessingResult).totalSheets}`
           }
           // Handle multiple processing results (e.g., for spreadsheets with multiple sheets)
-          for (const [resultIndex, processingResult] of processingResults.entries()) {
+          for (const [
+            resultIndex,
+            processingResult,
+          ] of processingResults.entries()) {
             let docId = fileId
             let fileName = file.name
 
             // For sheet processing results, append sheet information
-            if ('sheetName' in processingResult) {
+            if ("sheetName" in processingResult) {
               const sheetResult = processingResult as SheetProcessingResult
-              fileName = processingResults.length > 1 
-                ? `${file.name} / ${sheetResult.sheetName}`
-                : file.name
+              fileName =
+                processingResults.length > 1
+                  ? `${file.name} / ${sheetResult.sheetName}`
+                  : file.name
               docId = sheetResult.docId
             }
 
@@ -363,7 +376,10 @@ export const handleAttachmentUpload = async (c: Context) => {
               owner: email,
               photoLink: "",
               ownerEmail: email,
-              entity: attachmentFileTypeMap[getFileType({ type: file.type, name: file.name })],
+              entity:
+                attachmentFileTypeMap[
+                  getFileType({ type: file.type, name: file.name })
+                ],
               chunks: chunks,
               chunks_pos: chunks_pos,
               image_chunks: image_chunks,
@@ -380,10 +396,13 @@ export const handleAttachmentUpload = async (c: Context) => {
                 processingMethod: getBaseMimeType(file.type || "text/plain"),
                 lastModified: Date.now(),
                 filePath: filePath,
-                ...(('sheetName' in processingResult) && {
-                  sheetName: (processingResult as SheetProcessingResult).sheetName,
-                  sheetIndex: (processingResult as SheetProcessingResult).sheetIndex,
-                  totalSheets: (processingResult as SheetProcessingResult).totalSheets,
+                ...("sheetName" in processingResult && {
+                  sheetName: (processingResult as SheetProcessingResult)
+                    .sheetName,
+                  sheetIndex: (processingResult as SheetProcessingResult)
+                    .sheetIndex,
+                  totalSheets: (processingResult as SheetProcessingResult)
+                    .totalSheets,
                 }),
               }),
               createdAt: Date.now(),
@@ -437,7 +456,10 @@ export const handleAttachmentUpload = async (c: Context) => {
             // Try to remove empty parent directories
             let currentDir = dirname(filePath)
             const storageBaseDir = path.resolve(KB_STORAGE_ROOT)
-            while (currentDir !== storageBaseDir && currentDir.length > storageBaseDir.length) {
+            while (
+              currentDir !== storageBaseDir &&
+              currentDir.length > storageBaseDir.length
+            ) {
               const entries = await fs.readdir(currentDir).catch(() => null)
               if (entries && entries.length === 0) {
                 await fs.rmdir(currentDir).catch(() => {})
@@ -471,7 +493,10 @@ export const handleAttachmentUpload = async (c: Context) => {
   }
 }
 
-export const handleAttachmentDelete = async (attachments: AttachmentMetadata [], email: string) => {
+export const handleAttachmentDelete = async (
+  attachments: AttachmentMetadata[],
+  email: string,
+) => {
   const imageAttachmentFileIds: string[] = []
   const nonImageAttachmentFileIds: string[] = []
 
@@ -520,7 +545,7 @@ export const handleAttachmentDelete = async (attachments: AttachmentMetadata [],
           await fs.access(imageDir)
           await fs.rm(imageDir, { recursive: true, force: true })
           await DeleteDocument(fileId, fileSchema)
-          
+
           loggerWithChild({ email: email }).info(
             `Deleted image attachment directory: ${imageDir}`,
           )
@@ -554,7 +579,9 @@ export const handleAttachmentDelete = async (attachments: AttachmentMetadata [],
             const doc = await GetDocument(fileSchema, vespaId)
             if (doc?.fields) {
               const fields = doc.fields as any
-              const metadata = fields.metadata ? JSON.parse(fields.metadata as string) : {}
+              const metadata = fields.metadata
+                ? JSON.parse(fields.metadata as string)
+                : {}
               filePathToDelete = metadata.filePath
             }
           } catch (getErr) {
@@ -577,17 +604,23 @@ export const handleAttachmentDelete = async (attachments: AttachmentMetadata [],
             try {
               const resolvedPath = path.resolve(filePathToDelete)
               const storageBaseDir = path.resolve(KB_STORAGE_ROOT)
-              
+
               // Security: ensure path is under allowed directory
-              if (resolvedPath.startsWith(storageBaseDir + path.sep) || resolvedPath.startsWith(storageBaseDir + "/")) {
+              if (
+                resolvedPath.startsWith(storageBaseDir + path.sep) ||
+                resolvedPath.startsWith(storageBaseDir + "/")
+              ) {
                 await fs.unlink(resolvedPath)
                 loggerWithChild({ email: email }).info(
                   `Deleted non-image attachment file from disk: ${resolvedPath}`,
                 )
-                
+
                 // Try to remove empty parent directories
                 let currentDir = dirname(resolvedPath)
-                while (currentDir !== storageBaseDir && currentDir.length > storageBaseDir.length) {
+                while (
+                  currentDir !== storageBaseDir &&
+                  currentDir.length > storageBaseDir.length
+                ) {
                   const entries = await fs.readdir(currentDir).catch(() => null)
                   if (entries && entries.length === 0) {
                     await fs.rmdir(currentDir).catch(() => {})
@@ -603,7 +636,10 @@ export const handleAttachmentDelete = async (attachments: AttachmentMetadata [],
               }
             } catch (fileDeleteErr) {
               const fileDeleteMsg = getErrorMessage(fileDeleteErr)
-              if (!fileDeleteMsg.includes("ENOENT") && !fileDeleteMsg.includes("no such file")) {
+              if (
+                !fileDeleteMsg.includes("ENOENT") &&
+                !fileDeleteMsg.includes("no such file")
+              ) {
                 loggerWithChild({ email: email }).error(
                   fileDeleteErr,
                   `Failed to delete non-image attachment file from disk: ${filePathToDelete}`,
@@ -645,7 +681,10 @@ export const handleAttachmentDeleteApi = async (c: Context) => {
 
   try {
     // Get the attachment document from the file schema
-    const attachmentDoc = await GetDocument(fileSchema, expandSheetIds(fileId)[0])
+    const attachmentDoc = await GetDocument(
+      fileSchema,
+      expandSheetIds(fileId)[0],
+    )
 
     if (!attachmentDoc || !attachmentDoc.fields) {
       return c.json({ success: true, message: "Attachment already deleted" })
@@ -653,18 +692,25 @@ export const handleAttachmentDeleteApi = async (c: Context) => {
 
     // Check permissions - file schema has permissions array
     const fields = attachmentDoc.fields as any
-    const permissions = Array.isArray(fields.permissions) ? fields.permissions as string[] : []
+    const permissions = Array.isArray(fields.permissions)
+      ? (fields.permissions as string[])
+      : []
     if (!permissions.includes(email)) {
-      throw new HTTPException(403, { message: "Access denied to this attachment" })
+      throw new HTTPException(403, {
+        message: "Access denied to this attachment",
+      })
     }
-    
+
     await handleAttachmentDelete([attachment], email)
     return c.json({ success: true, message: "Attachment deleted successfully" })
   } catch (error) {
     if (error instanceof HTTPException) {
       throw error
     }
-    loggerWithChild({ email }).error({ err: error }, "Error checking attachment permissions")
+    loggerWithChild({ email }).error(
+      { err: error },
+      "Error checking attachment permissions",
+    )
     throw new HTTPException(500, { message: "Internal server error" })
   }
 }
@@ -685,7 +731,11 @@ export const handleAttachmentServe = async (c: Context) => {
     }
 
     // Validate fileId to prevent path traversal
-    if (fileId.includes("..") || fileId.includes("/") || fileId.includes("\\")) {
+    if (
+      fileId.includes("..") ||
+      fileId.includes("/") ||
+      fileId.includes("\\")
+    ) {
       throw new HTTPException(400, { message: "Invalid file ID" })
     }
 
@@ -698,18 +748,24 @@ export const handleAttachmentServe = async (c: Context) => {
 
     // Check permissions
     const fields = attachmentDoc.fields as any
-    const permissions = Array.isArray(fields.permissions) ? (fields.permissions as string[]) : []
+    const permissions = Array.isArray(fields.permissions)
+      ? (fields.permissions as string[])
+      : []
     if (!permissions.includes(email)) {
       throw new HTTPException(403, { message: "Access denied" })
     }
 
     // Get file path from metadata
     let resolvedPath: string | undefined
-    const metadata = fields.metadata ? JSON.parse(fields.metadata as string) : {}
+    const metadata = fields.metadata
+      ? JSON.parse(fields.metadata as string)
+      : {}
     resolvedPath = metadata.filePath
 
     if (!resolvedPath) {
-      throw new HTTPException(404, { message: "File path not found for attachment" })
+      throw new HTTPException(404, {
+        message: "File path not found for attachment",
+      })
     }
 
     // Security: resolve the path and ensure it is under one of the allowed base directories
@@ -720,8 +776,10 @@ export const handleAttachmentServe = async (c: Context) => {
       path.resolve(KB_STORAGE_ROOT),
     ]
 
-    const isAllowed = allowedBaseDirs.some((baseDir) =>
-      resolvedPath.startsWith(baseDir + path.sep) || resolvedPath.startsWith(baseDir + "/"),
+    const isAllowed = allowedBaseDirs.some(
+      (baseDir) =>
+        resolvedPath.startsWith(baseDir + path.sep) ||
+        resolvedPath.startsWith(baseDir + "/"),
     )
 
     if (!isAllowed) {
@@ -757,10 +815,7 @@ export const handleAttachmentServe = async (c: Context) => {
       headers: c.res.headers,
     })
   } catch (error) {
-    loggerWithChild({ email }).error(
-      error,
-      `Error serving attachment`,
-    )
+    loggerWithChild({ email }).error(error, `Error serving attachment`)
     throw error
   }
 }
@@ -781,7 +836,11 @@ export const handleThumbnailServe = async (c: Context) => {
     }
 
     // Validate fileId to prevent path traversal
-    if (fileId.includes("..") || fileId.includes("/") || fileId.includes("\\")) {
+    if (
+      fileId.includes("..") ||
+      fileId.includes("/") ||
+      fileId.includes("\\")
+    ) {
       throw new HTTPException(400, { message: "Invalid file ID" })
     }
 
@@ -794,18 +853,24 @@ export const handleThumbnailServe = async (c: Context) => {
 
     // Check permissions
     const fields = attachmentDoc.fields as any
-    const permissions = Array.isArray(fields.permissions) ? (fields.permissions as string[]) : []
+    const permissions = Array.isArray(fields.permissions)
+      ? (fields.permissions as string[])
+      : []
     if (!permissions.includes(email)) {
       throw new HTTPException(403, { message: "Access denied" })
     }
 
     // Get thumbnail path from metadata
     let resolvedPath: string | undefined
-    const metadata = fields.metadata ? JSON.parse(fields.metadata as string) : {}
+    const metadata = fields.metadata
+      ? JSON.parse(fields.metadata as string)
+      : {}
     resolvedPath = metadata.thumbnailPath
 
     if (!resolvedPath) {
-      throw new HTTPException(404, { message: "Thumbnail not found for attachment" })
+      throw new HTTPException(404, {
+        message: "Thumbnail not found for attachment",
+      })
     }
 
     // Security: resolve the path and ensure it is under one of the allowed base directories
@@ -816,8 +881,10 @@ export const handleThumbnailServe = async (c: Context) => {
       path.resolve(KB_STORAGE_ROOT),
     ]
 
-    const isAllowed = allowedBaseDirs.some((baseDir) =>
-      resolvedPath.startsWith(baseDir + path.sep) || resolvedPath.startsWith(baseDir + "/"),
+    const isAllowed = allowedBaseDirs.some(
+      (baseDir) =>
+        resolvedPath.startsWith(baseDir + path.sep) ||
+        resolvedPath.startsWith(baseDir + "/"),
     )
 
     if (!isAllowed) {

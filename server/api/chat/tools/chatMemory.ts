@@ -16,8 +16,9 @@ import { Subsystem } from "@/types"
 const Logger = getLogger(Subsystem.Chat).child({ tool: "searchChatHistory" })
 
 type ToolSchemaParameters<T> = Tool<T, Ctx>["schema"]["parameters"]
-const toToolSchemaParameters = <T>(schema: ZodType<T>): ToolSchemaParameters<T> =>
-  schema as unknown as ToolSchemaParameters<T>
+const toToolSchemaParameters = <T>(
+  schema: ZodType<T>,
+): ToolSchemaParameters<T> => schema as unknown as ToolSchemaParameters<T>
 
 export const searchChatHistoryTool: Tool<SearchChatHistoryInput, Ctx> = {
   schema: {
@@ -56,11 +57,9 @@ export const searchChatHistoryTool: Tool<SearchChatHistoryInput, Ctx> = {
     } catch (error) {
       const errMsg = getErrorMessage(error)
       Logger.error({ err: error, email, chatId }, "searchChatHistory failed")
-      return ToolResponse.error(
-        ToolErrorCodes.EXECUTION_FAILED,
-        errMsg,
-        { toolName: "searchChatHistory" },
-      )
+      return ToolResponse.error(ToolErrorCodes.EXECUTION_FAILED, errMsg, {
+        toolName: "searchChatHistory",
+      })
     }
   },
 }

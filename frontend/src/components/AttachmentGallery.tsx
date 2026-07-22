@@ -50,16 +50,13 @@ export const AttachmentGallery: React.FC<AttachmentGalleryProps> = ({
     if (images[currentImageIndex]) {
       const attachment = images[currentImageIndex]
       if (!attachment.url) {
-        console.error("Download failed: attachment URL is missing.");
-        return;
+        console.error("Download failed: attachment URL is missing.")
+        return
       }
       try {
-        const response = await authFetch(
-          attachment.url ?? "",
-          {
-            credentials: "include",
-          },
-        )
+        const response = await authFetch(attachment.url ?? "", {
+          credentials: "include",
+        })
         if (!response.ok) throw new Error("Download failed")
 
         const blob = await response.blob()

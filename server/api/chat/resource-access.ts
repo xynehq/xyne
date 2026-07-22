@@ -5,13 +5,13 @@ import { getConnectorByAppAndEmailId } from "@/db/connector"
 import { getAppSyncJobsByEmail } from "@/db/syncJob"
 import config from "@/config"
 import type { SelectPublicAgent } from "@/db/schema/agents"
-import { ifDocumentsExistInChatContainer, getDocumentOrNull } from "@/search/vespa"
+import {
+  ifDocumentsExistInChatContainer,
+  getDocumentOrNull,
+} from "@/search/vespa"
 import { isAppSelectionMap, parseAppSelections } from "./utils"
 import type { VespaFile } from "@xyne/vespa-ts/types"
-import type {
-  ResourceAccessItem,
-  ResourceAccessSummary,
-} from "./tool-schemas"
+import type { ResourceAccessItem, ResourceAccessSummary } from "./tool-schemas"
 import {
   buildKnowledgeBaseCollectionSelections,
   KnowledgeBaseScope,
@@ -66,9 +66,13 @@ const DRIVE_LIKE_APPS = new Set<Apps>([
   Apps.MicrosoftSharepoint,
 ])
 
-
 const CONNECTOR_READY_STATUSES: Partial<Record<Apps, ConnectorStatus[]>> = {
-  [Apps.Slack]: [ConnectorStatus.Authenticated, ConnectorStatus.Connected ,ConnectorStatus.Connecting , ConnectorStatus.Paused],
+  [Apps.Slack]: [
+    ConnectorStatus.Authenticated,
+    ConnectorStatus.Connected,
+    ConnectorStatus.Connecting,
+    ConnectorStatus.Paused,
+  ],
 }
 
 export async function getUserConnectorState(
@@ -120,10 +124,8 @@ export async function evaluateAgentResourceAccess(params: {
 }): Promise<ResourceAccessSummary[]> {
   const { agent, userEmail, connectorState } = params
 
-  const {
-    selectedApps,
-    selectedItems: selectionMap,
-  } = extractAgentSelections(agent)
+  const { selectedApps, selectedItems: selectionMap } =
+    extractAgentSelections(agent)
 
   const summaries: ResourceAccessSummary[] = []
 
@@ -342,7 +344,8 @@ function getConnectorGateStatus(
         ? { available: true }
         : {
             available: false,
-            reason: "Google Workspace directory is not connected for this user.",
+            reason:
+              "Google Workspace directory is not connected for this user.",
           }
     case Apps.MicrosoftDrive:
       return state.microsoftDriveConnected

@@ -42,7 +42,10 @@ export async function queueEpisodicMemoryExtraction(params: {
     logger.debug({ chatId: params.chatId }, "Queued episodic memory extraction")
   } catch (error) {
     logger.error(
-      { error: error instanceof Error ? error.message : String(error), chatId: params.chatId },
+      {
+        error: error instanceof Error ? error.message : String(error),
+        chatId: params.chatId,
+      },
       "Failed to queue episodic memory extraction",
     )
     throw error

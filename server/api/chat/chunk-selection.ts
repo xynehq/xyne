@@ -14,12 +14,12 @@ export async function getChunkCountPerDoc(
   searchResults: VespaSearchResult[],
   topN: number,
   email: string,
-  span?: Span
+  span?: Span,
 ): Promise<number[]> {
   const mainSpan = span?.startSpan("get_chunk_count_per_doc")
   mainSpan?.setAttribute("search_results_count", searchResults.length)
   mainSpan?.setAttribute("top_n", topN)
-  
+
   try {
     if (!searchResults || searchResults.length === 0) {
       loggerWithChild({ email }).warn("No search results provided")
@@ -29,12 +29,12 @@ export async function getChunkCountPerDoc(
 
     // Extract document relevance scores from search results
     const documentRelevances = searchResults.map((result, index) => {
-      const fields = result?.fields || {} as any
+      const fields = result?.fields || ({} as any)
       const docId = fields.docId || `doc_${index}`
       const textChunks = fields.chunks_summary || fields.chunks || []
-      const chunksLength = (Array.isArray(textChunks) ? textChunks.length : 0)
+      const chunksLength = Array.isArray(textChunks) ? textChunks.length : 0
       const relevanceScore = result.relevance || 0
-      
+
       return {
         docId,
         relevanceScore,
@@ -44,31 +44,42 @@ export async function getChunkCountPerDoc(
     })
 
     // Calculate total relevance across all documents
-    const totalRelevance = documentRelevances.reduce((sum, dr) => sum + dr.relevanceScore, 0)
-    
+    const totalRelevance = documentRelevances.reduce(
+      (sum, dr) => sum + dr.relevanceScore,
+      0,
+    )
+
     if (totalRelevance === 0) {
-      loggerWithChild({ email }).warn("Total relevance is 0, falling back to equal distribution")
+      loggerWithChild({ email }).warn(
+        "Total relevance is 0, falling back to equal distribution",
+      )
       // Fallback: distribute chunks equally if no relevance scores
       const chunksPerDoc = Math.ceil(topN / documentRelevances.length)
-      const result = documentRelevances.map((dr) => Math.min(chunksPerDoc, dr.chunksLength))
-      
+      const result = documentRelevances.map((dr) =>
+        Math.min(chunksPerDoc, dr.chunksLength),
+      )
+
       mainSpan?.setAttribute("fallback_used", true)
       mainSpan?.setAttribute("chunks_per_doc", chunksPerDoc)
       mainSpan?.end()
-      
+
       return result
     }
-    
+
     // Sort documents by their relevance score (highest first) but keep track of original indices
-    const sortedDocuments = [...documentRelevances].sort((a, b) => b.relevanceScore - a.relevanceScore)
-    
+    const sortedDocuments = [...documentRelevances].sort(
+      (a, b) => b.relevanceScore - a.relevanceScore,
+    )
+
     // Calculate chunks per document based on proportional relevance
     const chunksAllocation = new Array(documentRelevances.length).fill(0)
     let remainingChunks = topN
 
     let round = 1
     while (remainingChunks > 0) {
-      const active = sortedDocuments.filter(d => chunksAllocation[d.index] < d.chunksLength)
+      const active = sortedDocuments.filter(
+        (d) => chunksAllocation[d.index] < d.chunksLength,
+      )
 
       if (active.length === 0) break
 
@@ -78,7 +89,7 @@ export async function getChunkCountPerDoc(
       // If all remaining active docs have zero relevance, fall back to equal distribution among active
       if (sumActiveRel === 0) {
         loggerWithChild({ email }).warn(
-          `All active docs have zero relevance, falling back to equal distribution among ${active.length} docs`
+          `All active docs have zero relevance, falling back to equal distribution among ${active.length} docs`,
         )
         let assignedThisRound = 0
         for (const d of active) {
@@ -97,7 +108,12 @@ export async function getChunkCountPerDoc(
       // First pass: floor of proportional ideal, capped by capacity
       const floorAdds: Record<number, number> = {}
       let sumFloors = 0
-      const fracs: Array<{ idx: number; frac: number; rel: number; capLeft: number }> = []
+      const fracs: Array<{
+        idx: number
+        frac: number
+        rel: number
+        capLeft: number
+      }> = []
 
       for (const d of active) {
         const idx = d.index
@@ -124,25 +140,25 @@ export async function getChunkCountPerDoc(
       }
       remainingChunks -= assignedThisRound
       loggerWithChild({ email }).info(
-        `Round ${round} complete: totalAssigned=${assignedThisRound}, stillRemaining=${remainingChunks}`
+        `Round ${round} complete: totalAssigned=${assignedThisRound}, stillRemaining=${remainingChunks}`,
       )
       round++
     }
-    
+
     mainSpan?.setAttribute("total_documents", documentRelevances.length)
     mainSpan?.setAttribute("chunks_allocated", JSON.stringify(chunksAllocation))
     mainSpan?.setAttribute("total_relevance", totalRelevance)
     mainSpan?.end()
-    
+
     return chunksAllocation
-} catch (error) {
+  } catch (error) {
     mainSpan?.setAttribute("error", getErrorMessage(error))
     mainSpan?.end()
     loggerWithChild({ email }).error(
       error,
-      `Error in getChunkCountPerDoc: ${getErrorMessage(error)}`
+      `Error in getChunkCountPerDoc: ${getErrorMessage(error)}`,
     )
-    
+
     return []
   }
 }

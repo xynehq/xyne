@@ -30,7 +30,9 @@ export const initApiServerQueue = async () => {
   await sharedBoss.createQueue(CHAT_MEMORY_INDEXING_QUEUE_NAME)
   await sharedBoss.createQueue(EPISODIC_MEMORY_QUEUE_NAME)
 
-  Logger.info("API Server Queue initialization complete - ready for boss.send()")
+  Logger.info(
+    "API Server Queue initialization complete - ready for boss.send()",
+  )
 }
 
 // Error handling

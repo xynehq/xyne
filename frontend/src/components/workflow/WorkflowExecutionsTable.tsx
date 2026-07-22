@@ -72,7 +72,10 @@ export function WorkflowExecutionsTable({
         <div className="border border-gray-200 dark:border-gray-800 rounded-lg">
           <div className="h-12 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 animate-pulse"></div>
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-16 border-b border-gray-200 dark:border-gray-700 animate-pulse bg-white dark:bg-gray-900"></div>
+            <div
+              key={i}
+              className="h-16 border-b border-gray-200 dark:border-gray-700 animate-pulse bg-white dark:bg-gray-900"
+            ></div>
           ))}
         </div>
       </div>
@@ -87,7 +90,10 @@ export function WorkflowExecutionsTable({
           src={emptyStateIcon}
           alt="No executions"
           className="w-36 h-36 mb-2 dark:invert"
-          style={{ filter: 'brightness(0) saturate(100%) invert(47%) sepia(0%) saturate(0%) hue-rotate(180deg) brightness(92%) contrast(85%)' }}
+          style={{
+            filter:
+              "brightness(0) saturate(100%) invert(47%) sepia(0%) saturate(0%) hue-rotate(180deg) brightness(92%) contrast(85%)",
+          }}
         />
         <h3 className="font-medium text-gray-900 dark:text-gray-100 mb-2 text-lg">
           No executions yet
@@ -106,11 +112,21 @@ export function WorkflowExecutionsTable({
         <Table>
           <TableHeader>
             <TableRow className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-              <TableHead className="text-gray-900 dark:text-gray-100">Workflow Name</TableHead>
-              <TableHead className="text-gray-900 dark:text-gray-100">Workflow ID</TableHead>
-              <TableHead className="text-gray-900 dark:text-gray-100">Status</TableHead>
-              <TableHead className="text-gray-900 dark:text-gray-100">Started</TableHead>
-              <TableHead className="text-gray-900 dark:text-gray-100">Run Time</TableHead>
+              <TableHead className="text-gray-900 dark:text-gray-100">
+                Workflow Name
+              </TableHead>
+              <TableHead className="text-gray-900 dark:text-gray-100">
+                Workflow ID
+              </TableHead>
+              <TableHead className="text-gray-900 dark:text-gray-100">
+                Status
+              </TableHead>
+              <TableHead className="text-gray-900 dark:text-gray-100">
+                Started
+              </TableHead>
+              <TableHead className="text-gray-900 dark:text-gray-100">
+                Run Time
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -148,7 +164,9 @@ export function WorkflowExecutionsTable({
                     className="flex items-center gap-2"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Rows per page</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                      Rows per page
+                    </span>
                     <select
                       value={pageSize}
                       onChange={(e) =>

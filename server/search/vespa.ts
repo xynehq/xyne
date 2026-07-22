@@ -125,18 +125,24 @@ export const searchVespa = async (
   // This allows users to only see tickets from their assigned departments
   const emailOrPermission = options.permissionId || email
 
-  return await vespa.searchVespa.bind(vespa)(query, emailOrPermission, app, entity, {
-    ...options,
-    appFilters: options.appFilters, // Explicitly pass appFilters
-    recencyDecayRate:
-      options.recencyDecayRate || config.defaultRecencyDecayRate,
-    isSlackConnected,
-    isDriveConnected,
-    isGmailConnected,
-    isCalendarConnected,
-    isZohoDeskConnected,
-    processedCollectionSelections,
-  })
+  return await vespa.searchVespa.bind(vespa)(
+    query,
+    emailOrPermission,
+    app,
+    entity,
+    {
+      ...options,
+      appFilters: options.appFilters, // Explicitly pass appFilters
+      recencyDecayRate:
+        options.recencyDecayRate || config.defaultRecencyDecayRate,
+      isSlackConnected,
+      isDriveConnected,
+      isGmailConnected,
+      isCalendarConnected,
+      isZohoDeskConnected,
+      processedCollectionSelections,
+    },
+  )
 }
 
 export const searchVespaAgent = async (
@@ -201,15 +207,20 @@ export const searchVespaAgent = async (
   )
 }
 
-export const searchVespaInFiles = async (...args: Parameters<typeof vespa.searchVespaInFiles>) => {
+export const searchVespaInFiles = async (
+  ...args: Parameters<typeof vespa.searchVespaInFiles>
+) => {
   const result = await vespa.searchVespaInFiles.bind(vespa)(...args)
   return dedupeResponseChildren(result)
 }
-export const searchVespaKnowledgeBase = vespa.searchVespaKnowledgeBase.bind(vespa)
+export const searchVespaKnowledgeBase =
+  vespa.searchVespaKnowledgeBase.bind(vespa)
 export const groupVespaSearch = vespa.groupVespaSearch.bind(vespa)
 export const groupVespaSearchKnowledgeBase =
   vespa.groupVespaSearchKnowledgeBase.bind(vespa)
-export const autocomplete = async (...args: Parameters<typeof vespa.autocomplete>) => {
+export const autocomplete = async (
+  ...args: Parameters<typeof vespa.autocomplete>
+) => {
   const result = await vespa.autocomplete.bind(vespa)(...args)
   return dedupeResponseChildren(result)
 }
@@ -244,11 +255,11 @@ export const getItems = async (
   const processedCollectionSelections = await extractCollectionVespaIds({
     collectionSelections: params.collectionSelections,
   })
-  
+
   // Extract permissionId and use it if available, otherwise use email
   const { permissionId, email, ...restParams } = params
   const emailOrPermission = permissionId || email
-  
+
   return await vespa.getItems.bind(vespa)({
     processedCollectionSelections,
     driveIds,

@@ -21,14 +21,21 @@ import { insertMessage } from "@/db/message"
 import type { SelectMessage } from "@/db/schema"
 import type { TxnOrClient } from "@/types"
 import { MessageRole } from "@/types"
-import { textToChunkCitationIndex, textToCitationIndex, textToImageCitationIndex } from "@/api/chat/utils"
+import {
+  textToChunkCitationIndex,
+  textToCitationIndex,
+  textToImageCitationIndex,
+} from "@/api/chat/utils"
 import { parseMessageText } from "@/api/chat/chat"
 import { queueEpisodicMemoryExtraction } from "@/queue/episodic-memory-extraction"
 import { queueChatMemoryIndexing } from "@/queue/chat-memory-indexing"
 
-const Logger = getLogger(Subsystem.Vespa).child({ module: "chat-memory-indexer" })
+const Logger = getLogger(Subsystem.Vespa).child({
+  module: "chat-memory-indexer",
+})
 
-const NOISE_USER_PATTERN = /^(ok|thanks|got it|yes|no|hmm|sure|hello|hi|hey)\.?$/i
+const NOISE_USER_PATTERN =
+  /^(ok|thanks|got it|yes|no|hmm|sure|hello|hi|hey)\.?$/i
 
 function stripRagCitations(text: string): string {
   return text
@@ -126,10 +133,7 @@ export async function indexConversationTurn(params: {
   }
 
   await insertWithRetry(document, chatMemorySchema)
-  Logger.debug(
-    { chatId, docId },
-    "Indexed conversation turn to chat_memory",
-  )
+  Logger.debug({ chatId, docId }, "Indexed conversation turn to chat_memory")
 }
 
 /**
@@ -217,9 +221,7 @@ export async function maybeCompactAndIndex(params: {
       assistantMessage: assistant.message ?? "",
       assistantThinking: assistant.thinking ?? undefined,
       createdAt,
-    }).catch((err) =>
-      Logger.error(err, "Failed to queue chat memory indexing"),
-    )
+    }).catch((err) => Logger.error(err, "Failed to queue chat memory indexing"))
   }
 
   // 2. Queue episodic memory extraction for the archived messages only (include thinking for assistants); use messages without errors so we don't feed error text and pairs stay correct

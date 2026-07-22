@@ -24,7 +24,9 @@ export function AppConfigProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     authFetch("/api/v1/config", { credentials: "include" })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("config failed"))))
+      .then((r) =>
+        r.ok ? r.json() : Promise.reject(new Error("config failed")),
+      )
       .then((data: AppConfig) =>
         setConfig({
           agenticByDefault: data.agenticByDefault === true,

@@ -160,25 +160,24 @@ export const getName = (app: Apps, entity: Entity): string => {
     }
     return "Outlook"
   } else if (app === Apps.Attachment) {
-    if(entity === AttachmentEntity.Docs){
+    if (entity === AttachmentEntity.Docs) {
       return "Attachments Docs"
-    } else if(entity === AttachmentEntity.PDF){
+    } else if (entity === AttachmentEntity.PDF) {
       return "Attachments Pdfs"
-    } else if(entity === AttachmentEntity.PPT){
+    } else if (entity === AttachmentEntity.PPT) {
       return "Attachments PPTs"
-    } else if(entity === AttachmentEntity.Sheets){
+    } else if (entity === AttachmentEntity.Sheets) {
       return "Attachments Sheets"
-    } else if(entity === AttachmentEntity.Image){
+    } else if (entity === AttachmentEntity.Image) {
       return "Attachments Images"
-    } else if(entity === AttachmentEntity.Text) {
+    } else if (entity === AttachmentEntity.Text) {
       return "Attachments Text"
     } else {
       return "Attachments File"
     }
   } else if (app === Apps.Xyne) {
     return "Xyne"
-  }
-  else {
+  } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
   }
 }

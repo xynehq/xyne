@@ -215,7 +215,7 @@ export class OpenAIProvider extends BaseProvider {
         : undefined,
       tool_choice: params.tools ? (params.tool_choice ?? "auto") : undefined,
       parallel_tool_calls: params.tools
-        ? params.parallel_tool_calls ?? true
+        ? (params.parallel_tool_calls ?? true)
         : undefined,
       ...(modelParams.json ? { response_format: { type: "json_object" } } : {}),
     })

@@ -300,17 +300,16 @@ export const makeXyneJAFProvider = <Ctx>(
         // This mirrors the AI-SDK branch, but uses OpenAI-compatible `image_url`
         // content parts (data URL).
         const imageBudget =
-          IMAGE_CONTEXT_CONFIG.maxImagesPerCall !== undefined && IMAGE_CONTEXT_CONFIG.maxImagesPerCall >= 0
+          IMAGE_CONTEXT_CONFIG.maxImagesPerCall !== undefined &&
+          IMAGE_CONTEXT_CONFIG.maxImagesPerCall >= 0
             ? IMAGE_CONTEXT_CONFIG.maxImagesPerCall
             : 5
-        const { imageFileNamesForModel: selectedImages } = 
-        IMAGE_CONTEXT_CONFIG.enabled && runContext?.imageMemory
-        ?
-          getImageFileNamesForLlmFromStores(
-            runContext.imageMemory,
-            { maxImages: imageBudget },
-          )
-        : { imageFileNamesForModel: [] }
+        const { imageFileNamesForModel: selectedImages } =
+          IMAGE_CONTEXT_CONFIG.enabled && runContext?.imageMemory
+            ? getImageFileNamesForLlmFromStores(runContext.imageMemory, {
+                maxImages: imageBudget,
+              })
+            : { imageFileNamesForModel: [] }
         const userEmail = runContext?.user?.email || "unknown"
         if (selectedImages.length > 0) {
           const lastUserIndex = (() => {
@@ -321,9 +320,8 @@ export const makeXyneJAFProvider = <Ctx>(
           })()
 
           if (lastUserIndex !== -1) {
-            const imageParts = await buildLanguageModelImageParts(
-              selectedImages,
-            )
+            const imageParts =
+              await buildLanguageModelImageParts(selectedImages)
 
             if (imageParts.length > 0) {
               const lastUser = messages[lastUserIndex] as any
@@ -403,7 +401,6 @@ export const makeXyneJAFProvider = <Ctx>(
         if (agent.outputCodec) {
           params.response_format = { type: "json_object" }
         }
-
 
         throwIfStopRequested(stopSignal)
         const resp = await raceWithStop(
@@ -486,16 +483,18 @@ export const makeXyneJAFProvider = <Ctx>(
       //   agentName: agent.name,
       // })
       const imageBudget =
-        IMAGE_CONTEXT_CONFIG.maxImagesPerCall !== undefined && IMAGE_CONTEXT_CONFIG.maxImagesPerCall >= 0
+        IMAGE_CONTEXT_CONFIG.maxImagesPerCall !== undefined &&
+        IMAGE_CONTEXT_CONFIG.maxImagesPerCall >= 0
           ? IMAGE_CONTEXT_CONFIG.maxImagesPerCall
           : 5
-      const { imageFileNamesForModel: selectedImages, total, dropped } =
-        IMAGE_CONTEXT_CONFIG.enabled && runContext?.imageMemory
-        ?
-          getImageFileNamesForLlmFromStores(
-            runContext.imageMemory,
-            { maxImages: imageBudget },
-          )
+      const {
+        imageFileNamesForModel: selectedImages,
+        total,
+        dropped,
+      } = IMAGE_CONTEXT_CONFIG.enabled && runContext?.imageMemory
+        ? getImageFileNamesForLlmFromStores(runContext.imageMemory, {
+            maxImages: imageBudget,
+          })
         : { imageFileNamesForModel: [], total: 0, dropped: 0 }
       Logger.debug(
         {
@@ -610,7 +609,6 @@ export const makeXyneJAFProvider = <Ctx>(
         },
         "[JAF Provider] LLM request",
       )
-
 
       throwIfStopRequested(stopSignal)
       const result = await raceWithStop(

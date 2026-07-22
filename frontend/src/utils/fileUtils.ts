@@ -61,8 +61,8 @@ export const createFileSelectionHandlers = (
 export const validateAndDeduplicateFiles = (
   files: FileList | File[],
   toast: {
-    error: (options: { title: string; description: string }) => void;
-    warning: (options: { title: string; description: string }) => void;
+    error: (options: { title: string; description: string }) => void
+    warning: (options: { title: string; description: string }) => void
   },
 ) => {
   const fileArray = Array.from(files).filter(
@@ -104,7 +104,6 @@ export const validateAndDeduplicateFiles = (
 
   return Array.from(fileMap.values())
 }
-
 
 // build file tree
 export interface FileNode {

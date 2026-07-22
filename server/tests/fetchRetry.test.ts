@@ -62,7 +62,7 @@ describe("VespaClient", () => {
       vespaMaxRetryAttempts: 3,
       vespaRetryDelay: 100,
       queryEndpoint: queryendpoint,
-      feedEndpoint: feedEndpoint
+      feedEndpoint: feedEndpoint,
     })
   })
 
@@ -79,23 +79,22 @@ describe("VespaClient", () => {
     }
 
     global.fetch = withPreconnect(() =>
-      Promise.resolve(new Response(JSON.stringify(mockResponse), { status: 200 })),
+      Promise.resolve(
+        new Response(JSON.stringify(mockResponse), { status: 200 }),
+      ),
     )
 
     const result = await vespaClient.search(mockPayload)
 
     expect(result).toEqual(mockResponse)
     expect(global.fetch).toHaveBeenCalledTimes(1)
-    expect(global.fetch).toHaveBeenCalledWith(
-      `${queryendpoint}/search/`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(mockPayload),
+    expect(global.fetch).toHaveBeenCalledWith(`${queryendpoint}/search/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
       },
-    )
+      body: JSON.stringify(mockPayload),
+    })
   })
 
   test("search should not retry on 404", async () => {
@@ -151,7 +150,9 @@ describe("VespaClient", () => {
         ),
       )
 
-    global.fetch = Object.assign(fetchMock, { preconnect }) as unknown as typeof fetch
+    global.fetch = Object.assign(fetchMock, {
+      preconnect,
+    }) as unknown as typeof fetch
 
     // Mock setTimeout to speed up tests
     // @ts-ignore

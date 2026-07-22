@@ -444,7 +444,8 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: true,
     websearch: true,
     deepResearch: true,
-    description: "Proficient in reasoning across text, visuals, and programming.",
+    description:
+      "Proficient in reasoning across text, visuals, and programming.",
   },
   [Models.Vertex_Gemini_3_Flash]: {
     actualName: "gemini-3-flash-preview",
@@ -528,6 +529,15 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
   //   deepResearch: false,
   //   description: "Tailored for reasoning, coding, and agentic abilities",
   // },
+  [Models.LiteLLM_Claude_Sonnet_4_5]: {
+    actualName: "anthropic/claude-sonnet-4.5",
+    labelName: ModelDisplayNames.LITELLM_CLAUDE_SONNET_4_5,
+    provider: AIProviders.LiteLLM,
+    reasoning: true,
+    websearch: true,
+    deepResearch: true,
+    description: "Balanced for reasoning, long context windows.",
+  },
   [Models.LiteLLM_Claude_Sonnet_4_6]: {
     actualName: "claude-sonnet-4-5",
     labelName: ModelDisplayNames.LITELLM_CLAUDE_SONNET_4_6,
@@ -544,7 +554,8 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: true,
     websearch: true,
     deepResearch: true,
-    description: "The most intelligent, high-capability frontier model, optimized for complex reasoning, advanced coding, and autonomous agentic workflows.",
+    description:
+      "The most intelligent, high-capability frontier model, optimized for complex reasoning, advanced coding, and autonomous agentic workflows.",
   },
   [Models.LiteLLM_Claude_Haiku_4_5]: {
     actualName: "vertex_ai/claude-haiku-4-5@20251001",
@@ -553,7 +564,8 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: true,
     websearch: true,
     deepResearch: false,
-    description: "Fast Claude model for quick responses and lightweight reasoning.",
+    description:
+      "Fast Claude model for quick responses and lightweight reasoning.",
   },
   // [Models.LiteLLM_Gemini_3_Pro]: {
   //   actualName: "gemini-3-pro-preview",
@@ -590,7 +602,8 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: true,
     websearch: false,
     deepResearch: false,
-    description: "The private version of GLM(kimi), a general-purpose AI model.",
+    description:
+      "The private version of GLM(kimi), a general-purpose AI model.",
   },
   [Models.PRIVATE_LARGE]: {
     actualName: "private-large",
@@ -772,7 +785,7 @@ export const getModelValueFromLabel = (
   const modelEntry = Object.entries(getModelConfigurations()).find(
     ([modelKey, config]) => {
       const matches =
-        config.labelName === label && (config.provider === activeProvider)
+        config.labelName === label && config.provider === activeProvider
       return matches
     },
   )
@@ -813,7 +826,6 @@ export const getModelValueFromLabel = (
 
   return null
 }
-
 
 export const getActualNameFromEnum = (enumValue: string): string | null => {
   const modelConfig = getModelConfiguration(enumValue)

@@ -15,7 +15,7 @@ export function useGlobalUnreadTracker() {
   useEffect(() => {
     // Check if user is currently viewing a specific chat
     const isOnBuzzChatsPage = location.pathname.includes("/buzz/chats")
-    
+
     // Subscribe to direct messages
     const unsubscribeMessage = callNotificationClient.onDirectMessage(
       (message) => {
@@ -24,7 +24,7 @@ export function useGlobalUnreadTracker() {
         if (!isOnBuzzChatsPage) {
           incrementUnreadCount(message.sender.id)
         }
-      }
+      },
     )
 
     return () => {

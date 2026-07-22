@@ -10,9 +10,7 @@ type RawSearchArgs = Record<string, unknown> & {
   filters?: unknown
 }
 
-function isPlainObject(
-  value: unknown,
-): value is Record<string, unknown> {
+function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
@@ -22,10 +20,8 @@ function tryParseStructuredJsonString(value: unknown): unknown {
   const trimmed = value.trim()
   if (!trimmed) return value
 
-  const looksLikeObject =
-    trimmed.startsWith("{") && trimmed.endsWith("}")
-  const looksLikeArray =
-    trimmed.startsWith("[") && trimmed.endsWith("]")
+  const looksLikeObject = trimmed.startsWith("{") && trimmed.endsWith("}")
+  const looksLikeArray = trimmed.startsWith("[") && trimmed.endsWith("]")
 
   if (!looksLikeObject && !looksLikeArray) {
     return value
@@ -46,9 +42,7 @@ export function normalizeKnowledgeBaseToolArgs(
 
   if (toolName === "ls") {
     const normalizedArgs = { ...args } as RawLsArgs
-    normalizedArgs.target = tryParseStructuredJsonString(
-      normalizedArgs.target,
-    )
+    normalizedArgs.target = tryParseStructuredJsonString(normalizedArgs.target)
     return normalizedArgs
   }
 
@@ -57,9 +51,7 @@ export function normalizeKnowledgeBaseToolArgs(
   }
 
   const normalizedArgs = { ...args } as RawSearchArgs
-  normalizedArgs.filters = tryParseStructuredJsonString(
-    normalizedArgs.filters,
-  )
+  normalizedArgs.filters = tryParseStructuredJsonString(normalizedArgs.filters)
 
   if (!isPlainObject(normalizedArgs.filters)) {
     return normalizedArgs

@@ -695,7 +695,9 @@ export async function getOrCreateDatabaseConnectorKbCollectionId(
       })
       .from(connectors)
       .where(
-        byNumericId ? eq(connectors.id, Number(connectorId)) : eq(connectors.externalId, connectorId),
+        byNumericId
+          ? eq(connectors.id, Number(connectorId))
+          : eq(connectors.externalId, connectorId),
       )
       .limit(1)
       .for("update")
@@ -739,32 +741,32 @@ export async function getDatabaseConnectorExternalIdByKbCollectionId(
   return rows[0]?.externalId ?? null
 }
 
-  /**
-   * Clear kbCollectionId from any database connector that has this collection linked.
-   * Call when a KB collection (or an item in it) is deleted so the next sync creates a new collection.
-   */
-  export const clearDatabaseConnectorKbCollectionId = async (
-    trx: TxnOrClient,
-    collectionId: string,
-  ): Promise<void> => {
-    const rows = await trx
-      .select({ id: connectors.id, state: connectors.state })
-      .from(connectors)
-      .where(
-        and(
-          eq(connectors.app, Apps.Database),
-          sql`${connectors.state}->>'kbCollectionId' = ${collectionId}`,
-        ),
-      )
-    for (const row of rows) {
-      const state = (row.state as Record<string, unknown>) || {}
-      const { kbCollectionId: _removed, ...rest } = state
-      await trx
-        .update(connectors)
-        .set({
-          state: rest as (typeof connectors.$inferInsert)["state"],
-          updatedAt: new Date(),
-        })
-        .where(eq(connectors.id, row.id))
-    }
+/**
+ * Clear kbCollectionId from any database connector that has this collection linked.
+ * Call when a KB collection (or an item in it) is deleted so the next sync creates a new collection.
+ */
+export const clearDatabaseConnectorKbCollectionId = async (
+  trx: TxnOrClient,
+  collectionId: string,
+): Promise<void> => {
+  const rows = await trx
+    .select({ id: connectors.id, state: connectors.state })
+    .from(connectors)
+    .where(
+      and(
+        eq(connectors.app, Apps.Database),
+        sql`${connectors.state}->>'kbCollectionId' = ${collectionId}`,
+      ),
+    )
+  for (const row of rows) {
+    const state = (row.state as Record<string, unknown>) || {}
+    const { kbCollectionId: _removed, ...rest } = state
+    await trx
+      .update(connectors)
+      .set({
+        state: rest as (typeof connectors.$inferInsert)["state"],
+        updatedAt: new Date(),
+      })
+      .where(eq(connectors.id, row.id))
   }
+}

@@ -26,14 +26,18 @@ export function getDefaultDatabaseConfig(engine: DatabaseEngine): {
         ? process.env.DATABASE_CONNECTOR_MYSQL_PORT
         : null
   const parsedPort = portEnvVar ? parseInt(portEnvVar, 10) : defaultPort
-  const port = Number.isNaN(parsedPort) || parsedPort <= 0 ? defaultPort : parsedPort
+  const port =
+    Number.isNaN(parsedPort) || parsedPort <= 0 ? defaultPort : parsedPort
 
   // Parse batchSize with NaN validation
   const parsedBatchSize = parseInt(
     process.env.DATABASE_CONNECTOR_BATCH_SIZE || String(DEFAULT_BATCH_SIZE),
     10,
   )
-  const batchSize = Number.isNaN(parsedBatchSize) || parsedBatchSize <= 0 ? DEFAULT_BATCH_SIZE : parsedBatchSize
+  const batchSize =
+    Number.isNaN(parsedBatchSize) || parsedBatchSize <= 0
+      ? DEFAULT_BATCH_SIZE
+      : parsedBatchSize
 
   return {
     port,

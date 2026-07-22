@@ -1,5 +1,5 @@
-import React from 'react'
-import { X as LucideX } from 'lucide-react'
+import React from "react"
+import { X as LucideX } from "lucide-react"
 
 interface FilterBadgeProps {
   filters: string[]
@@ -15,11 +15,11 @@ export const FilterBadge: React.FC<FilterBadgeProps> = ({
   // Helper function to get display text for a filter part
   const getDisplayText = (part: string): string => {
     // Check if it's a Slack person (@ID) or channel (#ID)
-    if (part.startsWith('@')) {
+    if (part.startsWith("@")) {
       const id = part.substring(1)
       const name = idToNameMap[id]
       return name ? `@${name}` : part
-    } else if (part.startsWith('#')) {
+    } else if (part.startsWith("#")) {
       const id = part.substring(1)
       const name = idToNameMap[id]
       return name ? `#${name}` : part
@@ -32,7 +32,7 @@ export const FilterBadge: React.FC<FilterBadgeProps> = ({
     return (
       <input
         type="text"
-        placeholder='Add filters'
+        placeholder="Add filters"
         className="flex-1 bg-transparent border-0 outline-none text-sm text-gray-700 dark:text-gray-200 placeholder-gray-400 min-w-[100px] focus:outline-none focus:ring-0"
         readOnly
       />

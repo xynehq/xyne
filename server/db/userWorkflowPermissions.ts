@@ -101,15 +101,17 @@ export const getWorkflowUsers = async (
         id: workflowTemplate.id,
         name: workflowTemplate.name,
         description: workflowTemplate.description,
-        version: workflowTemplate.version
+        version: workflowTemplate.version,
       },
       role: userWorkflowPermissions.role,
     })
     .from(userWorkflowPermissions)
     .innerJoin(users, eq(userWorkflowPermissions.userId, users.id))
-    .innerJoin(workflowTemplate, eq(userWorkflowPermissions.workflowId, workflowTemplate.id))
+    .innerJoin(
+      workflowTemplate,
+      eq(userWorkflowPermissions.workflowId, workflowTemplate.id),
+    )
     .where(eq(userWorkflowPermissions.workflowId, workflowId))
-
 
   return z.array(userWorkflowPermissionWithDetailsSchema).parse(results)
 }

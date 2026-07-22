@@ -54,7 +54,7 @@ import {
   BookOpen,
   Eye,
   SlidersHorizontal,
-  CalendarDays
+  CalendarDays,
 } from "lucide-react"
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react"
 import { useTheme } from "@/components/ThemeContext"
@@ -103,7 +103,7 @@ type CurrentResp = {
 export const Route = createFileRoute("/_authenticated/agent")({
   validateSearch: z.object({
     agentId: z.string().optional(),
-    mode: z.enum(['edit', 'view']).optional(),
+    mode: z.enum(["edit", "view"]).optional(),
   }),
   component: AgentComponent,
 })
@@ -128,9 +128,9 @@ interface FetchedDataSource {
 }
 
 const CustomBadge: React.FC<CustomBadgeProps> = ({
-  text, 
-  onRemove, 
-  icon, 
+  text,
+  onRemove,
+  icon,
   appId,
   filterValue,
   onFilterChange,
@@ -142,109 +142,124 @@ const CustomBadge: React.FC<CustomBadgeProps> = ({
 
   // State for filter dropdown
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false)
-  const [filterNavigationPath, setFilterNavigationPath] = useState<Array<{
-    id: string
-    name: string
-    type: "filter-root" | "people" | "channels" | "timeline"
-  }>>([])
-  
+  const [filterNavigationPath, setFilterNavigationPath] = useState<
+    Array<{
+      id: string
+      name: string
+      type: "filter-root" | "people" | "channels" | "timeline"
+    }>
+  >([])
+
   // State for tracking selected items (needed for Timeline filter)
   const [selectedPeople, setSelectedPeople] = useState<Set<string>>(new Set())
-  const [selectedChannels, setSelectedChannels] = useState<Set<string>>(new Set())
-  
+  const [selectedChannels, setSelectedChannels] = useState<Set<string>>(
+    new Set(),
+  )
+
   // Parse selected people and channels from filterValue
   useEffect(() => {
     if (!filterValue) return
-    
-    const filters = filterValue.split(', ').filter(f => f.trim())
+
+    const filters = filterValue.split(", ").filter((f) => f.trim())
 
     if (appId === Apps.Slack) {
       // Parse people names (convert to IDs when needed)
-      const peopleNames = filters.filter(f => f.startsWith('@')).map(f => f.substring(1))
+      const peopleNames = filters
+        .filter((f) => f.startsWith("@"))
+        .map((f) => f.substring(1))
       setSelectedPeople(new Set(peopleNames))
-      
+
       // Parse channel IDs
-      const channelIds = filters.filter(f => f.startsWith('#')).map(f => f.substring(1))
+      const channelIds = filters
+        .filter((f) => f.startsWith("#"))
+        .map((f) => f.substring(1))
       setSelectedChannels(new Set(channelIds))
     }
   }, [filterValue, appId])
-  
+
   // Define filter options based on app
   const getFilterOptions = () => {
     if (appId === Apps.Slack) {
       return [
-        { label: 'People', value: '@people' },
-        { label: 'Channels', value: '#channel' },
-        { label: 'Timeline', value: '~timeline' }
+        { label: "People", value: "@people" },
+        { label: "Channels", value: "#channel" },
+        { label: "Timeline", value: "~timeline" },
       ]
     } else if (appId === Apps.Gmail) {
       return [
-        { label: 'People', value: '@people' },
-        { label: 'Timeline', value: '~timeline' }
+        { label: "People", value: "@people" },
+        { label: "Timeline", value: "~timeline" },
       ]
     }
     return []
   }
-  
+
   // Get icon for filter option
   const getFilterIcon = (label: string) => {
     switch (label) {
-      case 'People':
+      case "People":
         return <User className="w-4 h-4 text-gray-600 dark:text-gray-400" />
-      case 'Channels':
+      case "Channels":
         return <span className="text-gray-600 dark:text-gray-400">#</span>
-      case 'Timeline':
-        return <CalendarDays className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+      case "Timeline":
+        return (
+          <CalendarDays className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+        )
       default:
         return null
     }
   }
-  
-  const handleFilterOptionSelect = (option: { label: string; value: string }) => {
-    if (option.label === 'People') {
+
+  const handleFilterOptionSelect = (option: {
+    label: string
+    value: string
+  }) => {
+    if (option.label === "People") {
       setFilterNavigationPath([
-        { id: 'people', name: 'People', type: 'people' }
+        { id: "people", name: "People", type: "people" },
       ])
-    } else if (option.label === 'Channels') {
+    } else if (option.label === "Channels") {
       setFilterNavigationPath([
-        { id: 'channels', name: 'Channels', type: 'channels' }
+        { id: "channels", name: "Channels", type: "channels" },
       ])
-    } else if (option.label === 'Timeline') {
+    } else if (option.label === "Timeline") {
       setFilterNavigationPath([
-        { id: 'timeline', name: 'Timeline', type: 'timeline' }
+        { id: "timeline", name: "Timeline", type: "timeline" },
       ])
     }
   }
-  
+
   const handleRemoveFilter = (index: number) => {
-    const parts = filterValue?.split(', ').filter(p => p.trim()) || []
+    const parts = filterValue?.split(", ").filter((p) => p.trim()) || []
     const part = parts[index]
     const newParts = parts.filter((_, i) => i !== index)
-    onFilterChange?.(newParts.join(', '))
-    
+    onFilterChange?.(newParts.join(", "))
+
     // Update state based on filter type
-    if (part?.startsWith('#')) {
+    if (part?.startsWith("#")) {
       const channelId = part.substring(1)
-      setSelectedChannels(prev => {
+      setSelectedChannels((prev) => {
         const newSet = new Set(prev)
         newSet.delete(channelId)
         return newSet
       })
-    } else if (part?.startsWith('@')) {
+    } else if (part?.startsWith("@")) {
       const personId = part.substring(1)
-      setSelectedPeople(prev => {
+      setSelectedPeople((prev) => {
         const newSet = new Set(prev)
         newSet.delete(personId)
         return newSet
       })
     }
   }
-  
+
   return (
     <div className="flex items-center gap-3 w-full">
       {/* Fixed width section for app icon, name, and trash */}
       <div className="flex items-center gap-3 text-slate-700 dark:text-slate-200 text-base font-normal w-[200px] flex-shrink-0">
-        {icon && <span className="flex items-center flex-shrink-0">{icon}</span>}
+        {icon && (
+          <span className="flex items-center flex-shrink-0">{icon}</span>
+        )}
         <span className="truncate flex-1">{text}</span>
         <Trash2
           className="h-4 w-4 cursor-pointer text-gray-400 hover:text-red-500 dark:hover:text-red-400 flex-shrink-0"
@@ -285,7 +300,9 @@ const CustomBadge: React.FC<CustomBadgeProps> = ({
                             if (filterNavigationPath.length === 1) {
                               setFilterNavigationPath([])
                             } else {
-                              setFilterNavigationPath(prev => prev.slice(0, -1))
+                              setFilterNavigationPath((prev) =>
+                                prev.slice(0, -1),
+                              )
                             }
                           }}
                           className="p-0 h-auto w-auto text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 mr-2 flex-shrink-0"
@@ -348,9 +365,10 @@ const CustomBadge: React.FC<CustomBadgeProps> = ({
                         </DropdownMenuItem>
                       ))}
                     </>
-                  ) : filterNavigationPath[filterNavigationPath.length - 1]?.type === 'people' ? (
+                  ) : filterNavigationPath[filterNavigationPath.length - 1]
+                      ?.type === "people" ? (
                     // People selection view - different for Gmail vs Slack
-                    appId === 'gmail' ? (
+                    appId === "gmail" ? (
                       <GmailPeopleFilter
                         filterValue={filterValue}
                         onFilterChange={onFilterChange || (() => {})}
@@ -362,13 +380,15 @@ const CustomBadge: React.FC<CustomBadgeProps> = ({
                         onUpdateNameMapping={onUpdateSlackNameMapping}
                       />
                     )
-                  ) : filterNavigationPath[filterNavigationPath.length - 1]?.type === 'channels' ? (
+                  ) : filterNavigationPath[filterNavigationPath.length - 1]
+                      ?.type === "channels" ? (
                     <SlackChannelFilter
                       filterValue={filterValue}
                       onFilterChange={onFilterChange || (() => {})}
                       onUpdateNameMapping={onUpdateSlackNameMapping}
                     />
-                  ) : filterNavigationPath[filterNavigationPath.length - 1]?.type === 'timeline' ? (
+                  ) : filterNavigationPath[filterNavigationPath.length - 1]
+                      ?.type === "timeline" ? (
                     <TimelineFilter
                       filterValue={filterValue}
                       onFilterChange={onFilterChange || (() => {})}
@@ -381,7 +401,7 @@ const CustomBadge: React.FC<CustomBadgeProps> = ({
             </DropdownMenu>
             <div className="flex-1 flex flex-wrap items-center gap-1.5">
               <FilterBadge
-                filters={filterValue?.split(', ').filter(f => f.trim()) || []}
+                filters={filterValue?.split(", ").filter((f) => f.trim()) || []}
                 onRemoveFilter={handleRemoveFilter}
                 idToNameMap={slackIdToNameMap}
               />
@@ -448,7 +468,7 @@ export const availableIntegrationsList: IntegrationSource[] = [
     entity: "event",
     icon: getIcon(Apps.GoogleCalendar, "event", { w: 16, h: 16, mr: 8 }),
   },
-    {
+  {
     id: "zohodesk",
     name: "Zoho Desk",
     app: Apps.ZohoDesk,
@@ -654,7 +674,9 @@ function AgentComponent() {
   >({})
   // State for managing multiple filters per app (Gmail and Slack)
   const [appFilters, setAppFilters] = useState<Record<string, string[]>>({})
-  const [slackIdToNameMap, setSlackIdToNameMap] = useState<Record<string, string>>({})
+  const [slackIdToNameMap, setSlackIdToNameMap] = useState<
+    Record<string, string>
+  >({})
   const [isIntegrationMenuOpen, setIsIntegrationMenuOpen] = useState(false)
   const [selectedItemsInCollection, setSelectedItemsInCollection] = useState<
     Record<string, Set<string>>
@@ -1003,21 +1025,22 @@ function AgentComponent() {
     resetForm()
     setEditingAgent(agent)
     setViewMode("create")
-  }, [])// Empty deps because resetForm and setState functions are stable
-
-
+  }, []) // Empty deps because resetForm and setState functions are stable
 
   useEffect(() => {
-    const abortController = new AbortController()  // ✅ Create abort controller
+    const abortController = new AbortController() // ✅ Create abort controller
 
     const loadAgentForEdit = async () => {
-      if (agentId && mode === 'edit') {
+      if (agentId && mode === "edit") {
         try {
-          const response = await api.agent[":agentExternalId"].$get({
-            param: { agentExternalId: agentId },
-          }, {
-            signal: abortController.signal  // ✅ Pass abort signal to request
-          })
+          const response = await api.agent[":agentExternalId"].$get(
+            {
+              param: { agentExternalId: agentId },
+            },
+            {
+              signal: abortController.signal, // ✅ Pass abort signal to request
+            },
+          )
 
           // ✅ No need to check cancelled flag - request is aborted
           if (response.ok) {
@@ -1031,9 +1054,9 @@ function AgentComponent() {
           }
         } catch (error) {
           // ✅ AbortError is thrown when request is cancelled
-          if (error instanceof Error && error.name === 'AbortError') {
-            console.log('Agent fetch was cancelled')
-            return  // Don't show error toast for intentional cancellation
+          if (error instanceof Error && error.name === "AbortError") {
+            console.log("Agent fetch was cancelled")
+            return // Don't show error toast for intentional cancellation
           }
 
           toast.error({
@@ -1048,10 +1071,9 @@ function AgentComponent() {
     loadAgentForEdit()
 
     return () => {
-      abortController.abort()  // ✅ Actually cancel the HTTP request
+      abortController.abort() // ✅ Actually cancel the HTTP request
     }
-  }, [agentId, mode, handleEditAgent])  // ✅ Include handleEditAgent in deps
-
+  }, [agentId, mode, handleEditAgent]) // ✅ Include handleEditAgent in deps
 
   // Cleanup EventSource on component unmount to prevent memory leaks
   useEffect(() => {
@@ -1086,17 +1108,17 @@ function AgentComponent() {
         description: `An error occurred while fetching agents (${filter}).`,
       })
       console.error(`Fetch agents error (${filter}):`, error)
-    } 
+    }
   }
 
   const fetchAllAgentData = async () => {
-      setIsLoadingAgents(true)
+    setIsLoadingAgents(true)
     await Promise.all([
       fetchAgents("all"),
       fetchAgents("madeByMe"),
       fetchAgents("sharedToMe"),
     ])
-     setIsLoadingAgents(false)
+    setIsLoadingAgents(false)
   }
 
   useEffect(() => {
@@ -1854,138 +1876,164 @@ function AgentComponent() {
 
       if (users.length > 0) {
         loadAgentPermissions()
-      } 
+      }
       if (editingAgent.isPublic) {
         setSelectedUsers([]) // Clear users for public agents
       }
-      
+
       // Load existing filters from appIntegrations and fetch names for Slack IDs
       const loadFiltersWithNames = async () => {
-        if (editingAgent.appIntegrations && typeof editingAgent.appIntegrations === 'object') {
-          const appIntegrations = editingAgent.appIntegrations as Record<string, any>
+        if (
+          editingAgent.appIntegrations &&
+          typeof editingAgent.appIntegrations === "object"
+        ) {
+          const appIntegrations = editingAgent.appIntegrations as Record<
+            string,
+            any
+          >
           const loadedFilters: Record<string, string[]> = {}
           const slackIdsToFetch: string[] = []
-          
+
           // Check for Gmail filters
-          if (appIntegrations.gmail?.filters && Array.isArray(appIntegrations.gmail.filters)) {
+          if (
+            appIntegrations.gmail?.filters &&
+            Array.isArray(appIntegrations.gmail.filters)
+          ) {
             const gmailFilterStrings: string[] = []
-            
+
             for (const filter of appIntegrations.gmail.filters) {
               const filterParts: string[] = []
-              
+
               // Add from emails
               if (filter.from && Array.isArray(filter.from)) {
-                filterParts.push(...filter.from.map((email: string) => `from:${email}`))
+                filterParts.push(
+                  ...filter.from.map((email: string) => `from:${email}`),
+                )
               }
-              
+
               // Add to emails
               if (filter.to && Array.isArray(filter.to)) {
-                filterParts.push(...filter.to.map((email: string) => `to:${email}`))
+                filterParts.push(
+                  ...filter.to.map((email: string) => `to:${email}`),
+                )
               }
-              
+
               // Add cc emails
               if (filter.cc && Array.isArray(filter.cc)) {
-                filterParts.push(...filter.cc.map((email: string) => `cc:${email}`))
+                filterParts.push(
+                  ...filter.cc.map((email: string) => `cc:${email}`),
+                )
               }
-              
+
               // Add bcc emails
               if (filter.bcc && Array.isArray(filter.bcc)) {
-                filterParts.push(...filter.bcc.map((email: string) => `bcc:${email}`))
+                filterParts.push(
+                  ...filter.bcc.map((email: string) => `bcc:${email}`),
+                )
               }
-              
+
               // Add time range
               if (filter.timeRange) {
                 const { startDate, endDate } = filter.timeRange
                 const start = new Date(startDate * 1000)
                 const end = new Date(endDate * 1000)
                 const formatDate = (date: Date) => {
-                  const day = String(date.getDate()).padStart(2, '0')
-                  const month = String(date.getMonth() + 1).padStart(2, '0')
+                  const day = String(date.getDate()).padStart(2, "0")
+                  const month = String(date.getMonth() + 1).padStart(2, "0")
                   const year = date.getFullYear()
                   return `${day}/${month}/${year}`
                 }
                 filterParts.push(`~${formatDate(start)} → ${formatDate(end)}`)
               }
-              
+
               if (filterParts.length > 0) {
-                gmailFilterStrings.push(filterParts.join(', '))
+                gmailFilterStrings.push(filterParts.join(", "))
               }
             }
-            
+
             if (gmailFilterStrings.length > 0) {
               loadedFilters.gmail = gmailFilterStrings
             }
           }
-          
+
           // Check for Slack filters - keep IDs and collect them for fetching names
-          if (appIntegrations.slack?.filters && Array.isArray(appIntegrations.slack.filters)) {
+          if (
+            appIntegrations.slack?.filters &&
+            Array.isArray(appIntegrations.slack.filters)
+          ) {
             const slackFilterStrings: string[] = []
-            
+
             for (const filter of appIntegrations.slack.filters) {
               const filterParts: string[] = []
-              
+
               // Add sender IDs and collect for fetching
               if (filter.senderId && Array.isArray(filter.senderId)) {
-                filterParts.push(...filter.senderId.map((id: string) => `@${id}`))
+                filterParts.push(
+                  ...filter.senderId.map((id: string) => `@${id}`),
+                )
                 slackIdsToFetch.push(...filter.senderId)
               }
-              
+
               // Add channel IDs and collect for fetching
               if (filter.channelId && Array.isArray(filter.channelId)) {
-                filterParts.push(...filter.channelId.map((id: string) => `#${id}`))
+                filterParts.push(
+                  ...filter.channelId.map((id: string) => `#${id}`),
+                )
                 slackIdsToFetch.push(...filter.channelId)
               }
-              
+
               // Add time range
               if (filter.timeRange) {
                 const { startDate, endDate } = filter.timeRange
                 const start = new Date(startDate * 1000)
                 const end = new Date(endDate * 1000)
                 const formatDate = (date: Date) => {
-                  const day = String(date.getDate()).padStart(2, '0')
-                  const month = String(date.getMonth() + 1).padStart(2, '0')
+                  const day = String(date.getDate()).padStart(2, "0")
+                  const month = String(date.getMonth() + 1).padStart(2, "0")
                   const year = date.getFullYear()
                   return `${day}/${month}/${year}`
                 }
                 filterParts.push(`~${formatDate(start)} → ${formatDate(end)}`)
               }
-              
+
               if (filterParts.length > 0) {
-                slackFilterStrings.push(filterParts.join(', '))
+                slackFilterStrings.push(filterParts.join(", "))
               }
             }
-            
+
             if (slackFilterStrings.length > 0) {
               loadedFilters.slack = slackFilterStrings
             }
           }
-          
+
           setAppFilters(loadedFilters)
-          
+
           // Fetch Slack names if we have IDs
           if (slackIdsToFetch.length > 0) {
             try {
               const response = await api.slack.documents.$get({
-                query: { docids: slackIdsToFetch.join(',') }
+                query: { docids: slackIdsToFetch.join(",") },
               })
-              
+
               if (response.ok) {
                 const data = await response.json()
                 if (data.success && data.documents) {
                   const mapping: Record<string, string> = {}
-                  data.documents.forEach((doc: { docId: string; name: string }) => {
-                    mapping[doc.docId] = doc.name
-                  })
+                  data.documents.forEach(
+                    (doc: { docId: string; name: string }) => {
+                      mapping[doc.docId] = doc.name
+                    },
+                  )
                   setSlackIdToNameMap(mapping)
                 }
               }
             } catch (error) {
-              console.error('Failed to fetch Slack document names:', error)
+              console.error("Failed to fetch Slack document names:", error)
             }
           }
         }
       }
-      
+
       loadFiltersWithNames()
     }
   }, [editingAgent, viewMode, users])
@@ -2033,43 +2081,45 @@ function AgentComponent() {
 
   const handleSaveAgent = async () => {
     // Helper function to parse timeline value into time range
-    const parseTimelineValue = (timelineValue: string): { startDate: number; endDate: number } | null => {
+    const parseTimelineValue = (
+      timelineValue: string,
+    ): { startDate: number; endDate: number } | null => {
       const now = Date.now()
       const dayInMs = 24 * 60 * 60 * 1000
-      
-      if (timelineValue === 'Last week') {
+
+      if (timelineValue === "Last week") {
         return {
           startDate: Math.floor((now - 7 * dayInMs) / 1000),
-          endDate: Math.floor(now / 1000)
+          endDate: Math.floor(now / 1000),
         }
-      } else if (timelineValue === 'Last month') {
+      } else if (timelineValue === "Last month") {
         return {
           startDate: Math.floor((now - 30 * dayInMs) / 1000),
-          endDate: Math.floor(now / 1000)
+          endDate: Math.floor(now / 1000),
         }
-      } else if (timelineValue === 'Last 7 days') {
+      } else if (timelineValue === "Last 7 days") {
         return {
           startDate: Math.floor((now - 7 * dayInMs) / 1000),
-          endDate: Math.floor(now / 1000)
+          endDate: Math.floor(now / 1000),
         }
-      } else if (timelineValue === 'Last 14 days') {
+      } else if (timelineValue === "Last 14 days") {
         return {
           startDate: Math.floor((now - 14 * dayInMs) / 1000),
-          endDate: Math.floor(now / 1000)
+          endDate: Math.floor(now / 1000),
         }
-      } else if (timelineValue.includes('→')) {
+      } else if (timelineValue.includes("→")) {
         // Custom date range format: "DD/MM/YYYY → DD/MM/YYYY"
-        const [startStr, endStr] = timelineValue.split('→').map(s => s.trim())
+        const [startStr, endStr] = timelineValue.split("→").map((s) => s.trim())
         const parseDate = (dateStr: string) => {
-          const [day, month, year] = dateStr.split('/').map(Number)
+          const [day, month, year] = dateStr.split("/").map(Number)
           return Math.floor(new Date(year, month - 1, day).getTime() / 1000)
         }
         return {
           startDate: parseDate(startStr),
-          endDate: parseDate(endStr)
+          endDate: parseDate(endStr),
         }
       }
-      
+
       return null
     }
 
@@ -2077,42 +2127,42 @@ function AgentComponent() {
     const parseFilters = (filterStrings: string[], appId: string) => {
       const filters: any[] = []
       let filterId = 1
-      
+
       for (const filterString of filterStrings) {
         if (!filterString || !filterString.trim()) continue
-        
-        const filterParts = filterString.split(', ').filter(p => p.trim())
+
+        const filterParts = filterString.split(", ").filter((p) => p.trim())
         const filter: any = { id: filterId++ }
-        
+
         // Parse Gmail people filters (from:, to:, cc:, bcc:)
         const fromEmails: string[] = []
         const toEmails: string[] = []
         const ccEmails: string[] = []
         const bccEmails: string[] = []
-        
+
         // Parse Slack filters (people and channels) - store docIds
         const senderIds: string[] = []
         const channelIds: string[] = []
-        
+
         // Single timeline filter (not an array anymore)
         let timeRange: { startDate: number; endDate: number } | null = null
-        
+
         for (const part of filterParts) {
-          if (part.startsWith('from:')) {
+          if (part.startsWith("from:")) {
             fromEmails.push(part.substring(5))
-          } else if (part.startsWith('to:')) {
+          } else if (part.startsWith("to:")) {
             toEmails.push(part.substring(3))
-          } else if (part.startsWith('cc:')) {
+          } else if (part.startsWith("cc:")) {
             ccEmails.push(part.substring(3))
-          } else if (part.startsWith('bcc:')) {
+          } else if (part.startsWith("bcc:")) {
             bccEmails.push(part.substring(4))
-          } else if (part.startsWith('@')) {
+          } else if (part.startsWith("@")) {
             const personId = part.substring(1)
             senderIds.push(personId)
-          } else if (part.startsWith('#')) {
+          } else if (part.startsWith("#")) {
             const channelId = part.substring(1)
             channelIds.push(channelId)
-          } else if (part.startsWith('~')) {
+          } else if (part.startsWith("~")) {
             // Only parse the FIRST timeline filter found
             if (!timeRange) {
               const timelineValue = part.substring(1)
@@ -2241,15 +2291,21 @@ function AgentComponent() {
             itemIds: [],
             selectedAll: true,
           }
-          
+
           // Add filters if they exist for this integration (Gmail or Slack)
-          if (appFilters[integrationId] && appFilters[integrationId].length > 0) {
-            const parsedFilters = parseFilters(appFilters[integrationId], integrationId)
+          if (
+            appFilters[integrationId] &&
+            appFilters[integrationId].length > 0
+          ) {
+            const parsedFilters = parseFilters(
+              appFilters[integrationId],
+              integrationId,
+            )
             if (parsedFilters) {
               integrationConfig.filters = parsedFilters
             }
           }
-          
+
           appIntegrationsObject[integrationId] = integrationConfig
         }
       }
@@ -2272,7 +2328,7 @@ function AgentComponent() {
     }
 
     const ownerEmails = selectedOwners.map((owner) => owner.email)
-    if(ownerEmails.length === 0){
+    if (ownerEmails.length === 0) {
       toast.error({
         title: "Error",
         description: "At least one owner must be selected.",
@@ -2292,7 +2348,7 @@ function AgentComponent() {
       userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
       // Include owner emails
       ownerEmails: ownerEmails,
-    } 
+    }
 
     try {
       let response
@@ -2673,10 +2729,7 @@ function AgentComponent() {
     }
   }, [isStreaming])
 
-  const handleSend = async ({
-    messageToSend,
-    metadata,
-  }: HandleSendOptions) => {
+  const handleSend = async ({ messageToSend, metadata }: HandleSendOptions) => {
     if (!messageToSend || isStreaming) return
 
     setUserHasScrolled(false)
@@ -2905,7 +2958,7 @@ function AgentComponent() {
       }))
     })
 
-    eventSourceRef.current.addEventListener(ChatSSEvents.Start, () => { })
+    eventSourceRef.current.addEventListener(ChatSSEvents.Start, () => {})
 
     eventSourceRef.current.addEventListener(
       ChatSSEvents.ResponseUpdate,
@@ -3193,32 +3246,36 @@ function AgentComponent() {
                     <div className="flex items-center gap-4 ">
                       {(() => {
                         // Calculate whether current tab has agents
-                        const agentLists: Record<string, SelectPublicAgent[]> = {
-                          "all": allAgentsList,
-                          "made-by-me": madeByMeAgentsList,
-                          "shared-to-me": sharedToMeAgentsList,
-                        }
-                        const currentTabHasAgents = (agentLists[activeTab]?.length ?? 0) > 0
+                        const agentLists: Record<string, SelectPublicAgent[]> =
+                          {
+                            all: allAgentsList,
+                            "made-by-me": madeByMeAgentsList,
+                            "shared-to-me": sharedToMeAgentsList,
+                          }
+                        const currentTabHasAgents =
+                          (agentLists[activeTab]?.length ?? 0) > 0
 
-                        return currentTabHasAgents && (
-                          <>
-                            <div className="relative">
-                              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-                              <input
-                                type="text"
-                                placeholder="Search agents.."
-                                value={listSearchQuery}
-                                onChange={handleListSearchChange}
-                                className="pl-10 pr-4 py-2 rounded-full border border-gray-200 dark:border-slate-600 w-[300px] focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-slate-500 bg-white dark:bg-slate-700 dark:text-gray-100"
-                              />
-                            </div>
-                            <Button
-                              onClick={handleCreateNewAgent}
-                              className="bg-slate-800 hover:bg-slate-700 text-white font-mono font-medium rounded-full px-6 py-2 flex items-center gap-2"
-                            >
-                              <Plus size={18} /> CREATE
-                            </Button>
-                          </>
+                        return (
+                          currentTabHasAgents && (
+                            <>
+                              <div className="relative">
+                                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+                                <input
+                                  type="text"
+                                  placeholder="Search agents.."
+                                  value={listSearchQuery}
+                                  onChange={handleListSearchChange}
+                                  className="pl-10 pr-4 py-2 rounded-full border border-gray-200 dark:border-slate-600 w-[300px] focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-slate-500 bg-white dark:bg-slate-700 dark:text-gray-100"
+                                />
+                              </div>
+                              <Button
+                                onClick={handleCreateNewAgent}
+                                className="bg-slate-800 hover:bg-slate-700 text-white font-mono font-medium rounded-full px-6 py-2 flex items-center gap-2"
+                              >
+                                <Plus size={18} /> CREATE
+                              </Button>
+                            </>
+                          )
                         )
                       })()}
                     </div>
@@ -3551,10 +3608,11 @@ function AgentComponent() {
                             className="h-8 w-8 p-0"
                           >
                             <Sparkles
-                              className={`h-4 w-4 ${isGeneratingPrompt
-                                ? "animate-pulse text-blue-600 dark:text-blue-400"
-                                : ""
-                                }`}
+                              className={`h-4 w-4 ${
+                                isGeneratingPrompt
+                                  ? "animate-pulse text-blue-600 dark:text-blue-400"
+                                  : ""
+                              }`}
                             />
                           </Button>
                         </TooltipTrigger>
@@ -3580,10 +3638,11 @@ function AgentComponent() {
                         setShouldHighlightPrompt(false)
                       }
                     }}
-                    className={`mt-1 bg-white dark:bg-slate-700 border rounded-lg w-full h-36 p-3 text-base dark:text-gray-100 transition-all duration-300 ${shouldHighlightPrompt
-                      ? "border-blue-400 ring-2 ring-blue-200 dark:border-blue-500 dark:ring-blue-900/50 shadow-lg"
-                      : "border-gray-300 dark:border-slate-600"
-                      }`}
+                    className={`mt-1 bg-white dark:bg-slate-700 border rounded-lg w-full h-36 p-3 text-base dark:text-gray-100 transition-all duration-300 ${
+                      shouldHighlightPrompt
+                        ? "border-blue-400 ring-2 ring-blue-200 dark:border-blue-500 dark:ring-blue-900/50 shadow-lg"
+                        : "border-gray-300 dark:border-slate-600"
+                    }`}
                     disabled={isGeneratingPrompt}
                   />
                 </div>
@@ -3643,19 +3702,34 @@ function AgentComponent() {
                     <div className="flex flex-col gap-2 mt-3">
                       {currentSelectedIntegrationObjects.map((integration) => {
                         // Check if this is a grouped parent (Collections or Google Drive with children)
-                        if (integration.type === "grouped-parent" && integration.children && integration.children.length > 0) {
+                        if (
+                          integration.type === "grouped-parent" &&
+                          integration.children &&
+                          integration.children.length > 0
+                        ) {
                           return (
-                            <div key={integration.id} className="flex flex-col gap-2">
+                            <div
+                              key={integration.id}
+                              className="flex flex-col gap-2"
+                            >
                               {/* Parent header - fixed width section */}
                               <div className="flex items-center gap-3 w-full">
                                 <div className="flex items-center gap-3 text-slate-700 dark:text-slate-200 text-base font-normal w-[200px] flex-shrink-0">
-                                  {integration.icon && <span className="flex items-center flex-shrink-0">{integration.icon}</span>}
-                                  <span className="truncate flex-1">{integration.name}</span>
+                                  {integration.icon && (
+                                    <span className="flex items-center flex-shrink-0">
+                                      {integration.icon}
+                                    </span>
+                                  )}
+                                  <span className="truncate flex-1">
+                                    {integration.name}
+                                  </span>
                                   <Trash2
                                     className="h-4 w-4 cursor-pointer text-gray-400 hover:text-red-500 dark:hover:text-red-400 flex-shrink-0"
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      handleRemoveSelectedIntegration(integration.id)
+                                      handleRemoveSelectedIntegration(
+                                        integration.id,
+                                      )
                                     }}
                                   />
                                 </div>
@@ -3663,14 +3737,25 @@ function AgentComponent() {
                               {/* Children items - aligned with parent, one per row */}
                               <div className="flex flex-col gap-2 ml-[216px]">
                                 {integration.children.map((child) => (
-                                  <div key={child.id} className="flex items-center gap-2">
-                                    {child.icon && <span className="flex items-center flex-shrink-0">{child.icon}</span>}
-                                    <span className="text-sm text-gray-700 dark:text-gray-200 truncate">{child.name}</span>
+                                  <div
+                                    key={child.id}
+                                    className="flex items-center gap-2"
+                                  >
+                                    {child.icon && (
+                                      <span className="flex items-center flex-shrink-0">
+                                        {child.icon}
+                                      </span>
+                                    )}
+                                    <span className="text-sm text-gray-700 dark:text-gray-200 truncate">
+                                      {child.name}
+                                    </span>
                                     <Trash2
                                       className="h-3 w-3 cursor-pointer text-gray-400 hover:text-red-500 dark:hover:text-red-400 flex-shrink-0"
                                       onClick={(e) => {
                                         e.stopPropagation()
-                                        handleRemoveSelectedIntegration(child.id)
+                                        handleRemoveSelectedIntegration(
+                                          child.id,
+                                        )
                                       }}
                                     />
                                   </div>
@@ -3679,50 +3764,66 @@ function AgentComponent() {
                             </div>
                           )
                         }
-                        
+
                         // Regular badge for non-grouped items
-                        const filters = appFilters[integration.id] || ['']
-                        const showFilterInput = integration.id === 'gmail' || integration.id === 'slack'
-                        
+                        const filters = appFilters[integration.id] || [""]
+                        const showFilterInput =
+                          integration.id === "gmail" ||
+                          integration.id === "slack"
+
                         return (
-                          <div key={integration.id} className="flex flex-col gap-2 w-full">
+                          <div
+                            key={integration.id}
+                            className="flex flex-col gap-2 w-full"
+                          >
                             {filters.map((filter, index) => (
                               <CustomBadge
                                 key={`${integration.id}-${index}`}
-                                text={index === 0 ? integration.name : ''}
-                                icon={index === 0 ? integration.icon : undefined}
+                                text={index === 0 ? integration.name : ""}
+                                icon={
+                                  index === 0 ? integration.icon : undefined
+                                }
                                 appId={integration.id}
                                 filterValue={filter}
                                 filterIndex={index}
                                 slackIdToNameMap={slackIdToNameMap}
                                 onUpdateSlackNameMapping={(id, name) => {
-                                  setSlackIdToNameMap(prev => ({
+                                  setSlackIdToNameMap((prev) => ({
                                     ...prev,
-                                    [id]: name
+                                    [id]: name,
                                   }))
                                 }}
                                 onFilterChange={(value) => {
-                                  setAppFilters(prev => {
-                                    const newFilters = [...(prev[integration.id] || [''])]
+                                  setAppFilters((prev) => {
+                                    const newFilters = [
+                                      ...(prev[integration.id] || [""]),
+                                    ]
                                     newFilters[index] = value
                                     return {
                                       ...prev,
-                                      [integration.id]: newFilters
+                                      [integration.id]: newFilters,
                                     }
                                   })
                                 }}
                                 onRemove={() => {
                                   if (index === 0 && filters.length === 1) {
                                     // Remove the entire integration
-                                    handleRemoveSelectedIntegration(integration.id)
+                                    handleRemoveSelectedIntegration(
+                                      integration.id,
+                                    )
                                   } else {
                                     // Remove just this filter
-                                    setAppFilters(prev => {
-                                      const newFilters = [...(prev[integration.id] || [''])]
+                                    setAppFilters((prev) => {
+                                      const newFilters = [
+                                        ...(prev[integration.id] || [""]),
+                                      ]
                                       newFilters.splice(index, 1)
                                       return {
                                         ...prev,
-                                        [integration.id]: newFilters.length > 0 ? newFilters : ['']
+                                        [integration.id]:
+                                          newFilters.length > 0
+                                            ? newFilters
+                                            : [""],
                                       }
                                     })
                                   }
@@ -3735,9 +3836,12 @@ function AgentComponent() {
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation()
-                                    setAppFilters(prev => ({
+                                    setAppFilters((prev) => ({
                                       ...prev,
-                                      [integration.id]: [...(prev[integration.id] || ['']), '']
+                                      [integration.id]: [
+                                        ...(prev[integration.id] || [""]),
+                                        "",
+                                      ],
                                     }))
                                   }}
                                   className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
@@ -3773,45 +3877,117 @@ function AgentComponent() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent
-                        className="w-[440px] p-0 bg-gray-100 dark:bg-gray-800 rounded-xl"
-                        align="start"
-                      >
-                        <div className="flex items-center justify-between px-4 py-2">
-                          <div className="flex items-center justify-between w-full">
-                            <div className="flex items-center overflow-hidden max-w-[75%]">
-                              {navigationPath.length > 0 && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => {
-                                    if (navigationPath.length === 1) {
-                                      // Go back to main menu from CL listing or Google Drive root
-                                      setNavigationPath([])
-                                      setCurrentItems([])
-                                      setDropdownSearchQuery("")
-                                    } else {
-                                      // Navigate back one level
-                                      const newPath = navigationPath.slice(
-                                        0,
-                                        -1,
-                                      )
-                                      setNavigationPath(newPath)
+                      className="w-[440px] p-0 bg-gray-100 dark:bg-gray-800 rounded-xl"
+                      align="start"
+                    >
+                      <div className="flex items-center justify-between px-4 py-2">
+                        <div className="flex items-center justify-between w-full">
+                          <div className="flex items-center overflow-hidden max-w-[75%]">
+                            {navigationPath.length > 0 && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  if (navigationPath.length === 1) {
+                                    // Go back to main menu from CL listing or Google Drive root
+                                    setNavigationPath([])
+                                    setCurrentItems([])
+                                    setDropdownSearchQuery("")
+                                  } else {
+                                    // Navigate back one level
+                                    const newPath = navigationPath.slice(0, -1)
+                                    setNavigationPath(newPath)
 
-                                      if (
-                                        newPath.length === 1 &&
-                                        newPath[0].type === "cl-root"
-                                      ) {
-                                        // Back to CL listing
-                                        setCurrentItems([])
+                                    if (
+                                      newPath.length === 1 &&
+                                      newPath[0].type === "cl-root"
+                                    ) {
+                                      // Back to CL listing
+                                      setCurrentItems([])
+                                    } else if (
+                                      newPath.length === 1 &&
+                                      newPath[0].type === "drive-root"
+                                    ) {
+                                      // Back to Google Drive root
+                                      setIsLoadingItems(true)
+                                      api.search.driveitem
+                                        .$post({
+                                          json: { parentId: "" },
+                                        })
+                                        .then((response: Response) => {
+                                          if (response.ok) {
+                                            response
+                                              .json()
+                                              .then((data: any) => {
+                                                // Extract the actual items from the Vespa response structure
+                                                const items =
+                                                  data?.root?.children || []
+                                                setCurrentItems(items)
+                                                setIsLoadingItems(false)
+                                              })
+                                          }
+                                        })
+                                        .catch(() => setIsLoadingItems(false))
+                                    } else if (newPath.length > 1) {
+                                      // Navigate to parent folder
+                                      const clId = newPath.find(
+                                        (item) => item.type === "cl",
+                                      )?.id
+
+                                      if (clId) {
+                                        // Collections navigation
+                                        const parentId =
+                                          newPath[newPath.length - 1]?.id ===
+                                          clId
+                                            ? null
+                                            : newPath[newPath.length - 1]?.id
+
+                                        setIsLoadingItems(true)
+                                        api.cl[":clId"].items
+                                          .$get({
+                                            param: { clId: clId },
+                                            query: parentId
+                                              ? {
+                                                  parentId,
+                                                  agentId:
+                                                    editingAgent?.externalId,
+                                                }
+                                              : {
+                                                  agentId:
+                                                    editingAgent?.externalId,
+                                                },
+                                          })
+                                          .then((response: Response) => {
+                                            if (response.ok) {
+                                              response
+                                                .json()
+                                                .then((data: any[]) => {
+                                                  setCurrentItems(data)
+                                                  setIsLoadingItems(false)
+                                                })
+                                            }
+                                          })
+                                          .catch(() => setIsLoadingItems(false))
                                       } else if (
-                                        newPath.length === 1 &&
-                                        newPath[0].type === "drive-root"
+                                        newPath.some(
+                                          (item) =>
+                                            item.type === "drive-root" ||
+                                            item.type === "drive-folder",
+                                        )
                                       ) {
-                                        // Back to Google Drive root
+                                        // Google Drive navigation
+                                        const parentFolderId =
+                                          newPath[newPath.length - 1]?.id ===
+                                          "drive-root"
+                                            ? ""
+                                            : newPath[newPath.length - 1]?.id
+
                                         setIsLoadingItems(true)
                                         api.search.driveitem
                                           .$post({
-                                            json: { parentId: "" },
+                                            json: {
+                                              parentId: parentFolderId,
+                                            },
                                           })
                                           .then((response: Response) => {
                                             if (response.ok) {
@@ -3821,277 +3997,205 @@ function AgentComponent() {
                                                   // Extract the actual items from the Vespa response structure
                                                   const items =
                                                     data?.root?.children || []
+
                                                   setCurrentItems(items)
                                                   setIsLoadingItems(false)
                                                 })
                                             }
                                           })
                                           .catch(() => setIsLoadingItems(false))
-                                      } else if (newPath.length > 1) {
-                                        // Navigate to parent folder
-                                        const clId = newPath.find(
-                                          (item) => item.type === "cl",
-                                        )?.id
-
-                                        if (clId) {
-                                          // Collections navigation
-                                          const parentId =
-                                            newPath[newPath.length - 1]?.id ===
-                                              clId
-                                              ? null
-                                              : newPath[newPath.length - 1]?.id
-
-                                          setIsLoadingItems(true)
-                                          api.cl[":clId"].items
-                                            .$get({
-                                              param: { clId: clId },
-                                              query: parentId
-                                                ? { parentId, agentId: editingAgent?.externalId }
-                                                : { agentId: editingAgent?.externalId },
-                                                
-                                            })
-                                            .then((response: Response) => {
-                                              if (response.ok) {
-                                                response
-                                                  .json()
-                                                  .then((data: any[]) => {
-                                                    setCurrentItems(data)
-                                                    setIsLoadingItems(false)
-                                                  })
-                                              }
-                                            })
-                                            .catch(() =>
-                                              setIsLoadingItems(false),
-                                            )
-                                        } else if (
-                                          newPath.some(
-                                            (item) =>
-                                              item.type === "drive-root" ||
-                                              item.type === "drive-folder",
-                                          )
-                                        ) {
-                                          // Google Drive navigation
-                                          const parentFolderId =
-                                            newPath[newPath.length - 1]?.id ===
-                                              "drive-root"
-                                              ? ""
-                                              : newPath[newPath.length - 1]?.id
-
-                                          setIsLoadingItems(true)
-                                          api.search.driveitem
-                                            .$post({
-                                              json: {
-                                                parentId: parentFolderId,
-                                              },
-                                            })
-                                            .then((response: Response) => {
-                                              if (response.ok) {
-                                                response
-                                                  .json()
-                                                  .then((data: any) => {
-                                                    // Extract the actual items from the Vespa response structure
-                                                    const items =
-                                                      data?.root?.children || []
-
-                                                    setCurrentItems(items)
-                                                    setIsLoadingItems(false)
-                                                  })
-                                              }
-                                            })
-                                            .catch(() =>
-                                              setIsLoadingItems(false),
-                                            )
-                                        }
                                       }
                                     }
+                                  }
+                                }}
+                                className="p-0 h-auto w-auto text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 mr-2 flex-shrink-0"
+                              >
+                                <ChevronLeft size={12} />
+                              </Button>
+                            )}
+                            {navigationPath.length > 0 ? (
+                              <div className="flex items-center text-xs text-gray-600 dark:text-gray-300 whitespace-nowrap overflow-hidden">
+                                <span
+                                  className="cursor-pointer hover:text-gray-800 dark:hover:text-gray-100 text-xs whitespace-nowrap flex-shrink-0"
+                                  onClick={() => {
+                                    setNavigationPath([])
+                                    setCurrentItems([])
+                                    setDropdownSearchQuery("")
                                   }}
-                                  className="p-0 h-auto w-auto text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 mr-2 flex-shrink-0"
                                 >
-                                  <ChevronLeft size={12} />
-                                </Button>
-                              )}
-                              {navigationPath.length > 0 ? (
-                                <div className="flex items-center text-xs text-gray-600 dark:text-gray-300 whitespace-nowrap overflow-hidden">
-                                  <span
-                                    className="cursor-pointer hover:text-gray-800 dark:hover:text-gray-100 text-xs whitespace-nowrap flex-shrink-0"
-                                    onClick={() => {
-                                      setNavigationPath([])
-                                      setCurrentItems([])
-                                      setDropdownSearchQuery("")
-                                    }}
-                                  >
-                                    ADD SOURCE
-                                  </span>
-                                  {(() => {
-                                    // Show up to 3 items in the breadcrumb
-                                    if (navigationPath.length > 0) {
-                                      // Get the last 3 items or all if less than 3
-                                      const itemsToShow =
-                                        navigationPath.length <= 3
-                                          ? navigationPath
-                                          : navigationPath.slice(
+                                  ADD SOURCE
+                                </span>
+                                {(() => {
+                                  // Show up to 3 items in the breadcrumb
+                                  if (navigationPath.length > 0) {
+                                    // Get the last 3 items or all if less than 3
+                                    const itemsToShow =
+                                      navigationPath.length <= 3
+                                        ? navigationPath
+                                        : navigationPath.slice(
                                             navigationPath.length - 3,
                                           )
 
-                                      return itemsToShow.map((item, index) => (
-                                        <React.Fragment
-                                          key={`${item.id}-${index}`}
-                                        >
-                                          <span className="mx-2 flex-shrink-0">
-                                            /
-                                          </span>
-                                          <span
-                                            className={`max-w-[60px] truncate ${index < itemsToShow.length - 1 ? "cursor-pointer hover:text-gray-800 dark:hover:text-gray-100" : "font-medium"}`}
-                                            title={item.name}
-                                            onClick={() => {
-                                              if (
-                                                index <
-                                                itemsToShow.length - 1
-                                              ) {
-                                                // Navigate to this item
-                                                const newPathIndex =
-                                                  navigationPath.findIndex(
-                                                    (p) => p.id === item.id,
+                                    return itemsToShow.map((item, index) => (
+                                      <React.Fragment
+                                        key={`${item.id}-${index}`}
+                                      >
+                                        <span className="mx-2 flex-shrink-0">
+                                          /
+                                        </span>
+                                        <span
+                                          className={`max-w-[60px] truncate ${index < itemsToShow.length - 1 ? "cursor-pointer hover:text-gray-800 dark:hover:text-gray-100" : "font-medium"}`}
+                                          title={item.name}
+                                          onClick={() => {
+                                            if (
+                                              index <
+                                              itemsToShow.length - 1
+                                            ) {
+                                              // Navigate to this item
+                                              const newPathIndex =
+                                                navigationPath.findIndex(
+                                                  (p) => p.id === item.id,
+                                                )
+
+                                              if (newPathIndex >= 0) {
+                                                const newPath =
+                                                  navigationPath.slice(
+                                                    0,
+                                                    newPathIndex + 1,
                                                   )
+                                                setNavigationPath(newPath)
 
-                                                if (newPathIndex >= 0) {
-                                                  const newPath =
-                                                    navigationPath.slice(
-                                                      0,
-                                                      newPathIndex + 1,
-                                                    )
-                                                  setNavigationPath(newPath)
-
-                                                  if (
-                                                    newPath.length === 1 &&
-                                                    newPath[0].type ===
-                                                    "cl-root"
-                                                  ) {
-                                                    setCurrentItems([])
-                                                  } else if (
-                                                    newPath.length > 1 &&
-                                                    newPath[0].type ===
-                                                    "cl-root"
-                                                  ) {
-                                                    const clId = newPath.find(
-                                                      (item) =>
-                                                        item.type === "cl",
-                                                    )?.id
-                                                    const parentId =
-                                                      newPath[
-                                                        newPath.length - 1
-                                                      ]?.id === clId
-                                                        ? null
-                                                        : newPath[
+                                                if (
+                                                  newPath.length === 1 &&
+                                                  newPath[0].type === "cl-root"
+                                                ) {
+                                                  setCurrentItems([])
+                                                } else if (
+                                                  newPath.length > 1 &&
+                                                  newPath[0].type === "cl-root"
+                                                ) {
+                                                  const clId = newPath.find(
+                                                    (item) =>
+                                                      item.type === "cl",
+                                                  )?.id
+                                                  const parentId =
+                                                    newPath[newPath.length - 1]
+                                                      ?.id === clId
+                                                      ? null
+                                                      : newPath[
                                                           newPath.length - 1
                                                         ]?.id
 
-                                                    if (clId) {
-                                                      setIsLoadingItems(true)
-                                                      api.cl[":clId"].items
-                                                        .$get({
-                                                          param: { clId: clId },
-                                                          query: parentId
-                                                ? { parentId, agentId: editingAgent?.externalId }
-                                                : { agentId: editingAgent?.externalId },
-                                                
-                                                        })
-                                                        .then(
-                                                          (
-                                                            response: Response,
-                                                          ) => {
-                                                            if (response.ok) {
-                                                              response
-                                                                .json()
-                                                                .then(
-                                                                  (
-                                                                    data: any[],
-                                                                  ) => {
-                                                                    setCurrentItems(
-                                                                      data,
-                                                                    )
-                                                                    setIsLoadingItems(
-                                                                      false,
-                                                                    )
-                                                                  },
-                                                                )
+                                                  if (clId) {
+                                                    setIsLoadingItems(true)
+                                                    api.cl[":clId"].items
+                                                      .$get({
+                                                        param: { clId: clId },
+                                                        query: parentId
+                                                          ? {
+                                                              parentId,
+                                                              agentId:
+                                                                editingAgent?.externalId,
                                                             }
-                                                          },
-                                                        )
-                                                        .catch(() =>
-                                                          setIsLoadingItems(
-                                                            false,
-                                                          ),
-                                                        )
-                                                    }
-                                                  } else if (
-                                                    newPath.length === 1 &&
-                                                    newPath[0].type ===
+                                                          : {
+                                                              agentId:
+                                                                editingAgent?.externalId,
+                                                            },
+                                                      })
+                                                      .then(
+                                                        (
+                                                          response: Response,
+                                                        ) => {
+                                                          if (response.ok) {
+                                                            response
+                                                              .json()
+                                                              .then(
+                                                                (
+                                                                  data: any[],
+                                                                ) => {
+                                                                  setCurrentItems(
+                                                                    data,
+                                                                  )
+                                                                  setIsLoadingItems(
+                                                                    false,
+                                                                  )
+                                                                },
+                                                              )
+                                                          }
+                                                        },
+                                                      )
+                                                      .catch(() =>
+                                                        setIsLoadingItems(
+                                                          false,
+                                                        ),
+                                                      )
+                                                  }
+                                                } else if (
+                                                  newPath.length === 1 &&
+                                                  newPath[0].type ===
                                                     "drive-root"
-                                                  ) {
-                                                    navigateToGoogleDrive()
-                                                  } else if (
-                                                    newPath.length > 1 &&
-                                                    newPath[0].type ===
+                                                ) {
+                                                  navigateToGoogleDrive()
+                                                } else if (
+                                                  newPath.length > 1 &&
+                                                  newPath[0].type ===
                                                     "drive-root"
+                                                ) {
+                                                  if (
+                                                    newPath[newPath.length - 1]
+                                                      .type === "drive-folder"
                                                   ) {
-                                                    if (
+                                                    const FolderId =
                                                       newPath[
                                                         newPath.length - 1
-                                                      ].type === "drive-folder"
-                                                    ) {
-                                                      const FolderId =
-                                                        newPath[
-                                                          newPath.length - 1
-                                                        ].id
-                                                      const FolderName =
-                                                        newPath[
-                                                          newPath.length - 1
-                                                        ].name
-                                                      navigateToDriveFolder(
-                                                        FolderId,
-                                                        FolderName,
-                                                      )
-                                                    }
+                                                      ].id
+                                                    const FolderName =
+                                                      newPath[
+                                                        newPath.length - 1
+                                                      ].name
+                                                    navigateToDriveFolder(
+                                                      FolderId,
+                                                      FolderName,
+                                                    )
                                                   }
                                                 }
                                               }
-                                            }}
-                                          >
-                                            {item.name}
-                                          </span>
-                                        </React.Fragment>
-                                      ))
-                                    }
-                                    return null
-                                  })()}
-                                </div>
-                              ) : (
-                                <span className="p-0 text-xs text-gray-600 dark:text-gray-300">
-                                  ADD SOURCE
-                                </span>
-                              )}
-                            </div>
+                                            }
+                                          }}
+                                        >
+                                          {item.name}
+                                        </span>
+                                      </React.Fragment>
+                                    ))
+                                  }
+                                  return null
+                                })()}
+                              </div>
+                            ) : (
+                              <span className="p-0 text-xs text-gray-600 dark:text-gray-300">
+                                ADD SOURCE
+                              </span>
+                            )}
                           </div>
-                          {currentSelectedIntegrationObjects.length > 0 && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={handleClearAllIntegrations}
-                              className="p-1 h-auto text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-                            >
-                              <RotateCcw size={14} className="mr-1" /> Clear all
-                            </Button>
-                          )}
                         </div>
-                        <div className="bg-white dark:bg-gray-900 max-h-72 min-h-72 overflow-y-auto rounded-lg mx-1 mb-1">
-                          {navigationPath.length === 0
-                            ? // Main menu
+                        {currentSelectedIntegrationObjects.length > 0 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleClearAllIntegrations}
+                            className="p-1 h-auto text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                          >
+                            <RotateCcw size={14} className="mr-1" /> Clear all
+                          </Button>
+                        )}
+                      </div>
+                      <div className="bg-white dark:bg-gray-900 max-h-72 min-h-72 overflow-y-auto rounded-lg mx-1 mb-1">
+                        {navigationPath.length === 0
+                          ? // Main menu
                             (() => {
                               const collections =
-                                allAvailableIntegrations.filter(
-                                  (integration) =>
-                                    integration.id.startsWith("cl_"),
+                                allAvailableIntegrations.filter((integration) =>
+                                  integration.id.startsWith("cl_"),
                                 )
                               const otherIntegrations =
                                 allAvailableIntegrations.filter(
@@ -4099,92 +4203,92 @@ function AgentComponent() {
                                     !integration.id.startsWith("cl_"),
                                 )
 
-                                return (
-                                  <>
-                                    {collections.length > 0 && (
+                              return (
+                                <>
+                                  {collections.length > 0 && (
+                                    <DropdownMenuItem
+                                      onSelect={(e) => {
+                                        e.preventDefault()
+                                        setNavigationPath([
+                                          {
+                                            id: "cl-root",
+                                            name: "Collections",
+                                            type: "cl-root",
+                                          },
+                                        ])
+                                        setDropdownSearchQuery("")
+                                      }}
+                                      className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
+                                    >
+                                      <div className="flex items-center">
+                                        <div className="w-4 h-4 mr-3"> </div>
+                                        <span className="mr-2 flex items-center">
+                                          <BookOpen className="w-4 h-4 mr-2 text-blue-600" />
+                                        </span>
+                                        <span className="text-gray-700 dark:text-gray-200">
+                                          Collections
+                                        </span>
+                                      </div>
+                                      <ChevronRight className="h-4 w-4 text-gray-400" />
+                                    </DropdownMenuItem>
+                                  )}
+
+                                  {otherIntegrations.map((integration) => {
+                                    const isGoogleDrive =
+                                      integration.app === Apps.GoogleDrive &&
+                                      integration.entity === "file"
+                                    const showChevron = isGoogleDrive
+
+                                    return (
                                       <DropdownMenuItem
+                                        key={integration.id}
                                         onSelect={(e) => {
                                           e.preventDefault()
-                                          setNavigationPath([
-                                            {
-                                              id: "cl-root",
-                                              name: "Collections",
-                                              type: "cl-root",
-                                            },
-                                          ])
-                                          setDropdownSearchQuery("")
+                                          toggleIntegrationSelection(
+                                            integration.id,
+                                          )
                                         }}
                                         className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
                                       >
                                         <div className="flex items-center">
-                                          <div className="w-4 h-4 mr-3"> </div>
+                                          <input
+                                            type="checkbox"
+                                            checked={
+                                              selectedIntegrations[
+                                                integration.id
+                                              ] || false
+                                            }
+                                            onChange={() => {}}
+                                            className="w-4 h-4 mr-3"
+                                          />
                                           <span className="mr-2 flex items-center">
-                                            <BookOpen className="w-4 h-4 mr-2 text-blue-600" />
+                                            {integration.icon}
                                           </span>
                                           <span className="text-gray-700 dark:text-gray-200">
-                                            Collections
+                                            {integration.name}
                                           </span>
                                         </div>
-                                        <ChevronRight className="h-4 w-4 text-gray-400" />
+                                        {showChevron && (
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              e.preventDefault()
+                                              navigateToGoogleDrive()
+                                            }}
+                                            className="p-0 h-auto w-auto hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                                          >
+                                            <ChevronRight className="h-4 w-4 text-gray-400" />
+                                          </Button>
+                                        )}
                                       </DropdownMenuItem>
-                                    )}
-
-                                    {otherIntegrations.map((integration) => {
-                                      const isGoogleDrive =
-                                        integration.app === Apps.GoogleDrive &&
-                                        integration.entity === "file"
-                                      const showChevron = isGoogleDrive
-
-                                      return (
-                                        <DropdownMenuItem
-                                          key={integration.id}
-                                          onSelect={(e) => {
-                                            e.preventDefault()
-                                            toggleIntegrationSelection(
-                                              integration.id,
-                                            )
-                                          }}
-                                          className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
-                                        >
-                                          <div className="flex items-center">
-                                            <input
-                                              type="checkbox"
-                                              checked={
-                                                selectedIntegrations[
-                                                  integration.id
-                                                ] || false
-                                              }
-                                              onChange={() => {}}
-                                              className="w-4 h-4 mr-3"
-                                            />
-                                            <span className="mr-2 flex items-center">
-                                              {integration.icon}
-                                            </span>
-                                            <span className="text-gray-700 dark:text-gray-200">
-                                              {integration.name}
-                                            </span>
-                                          </div>
-                                          {showChevron && (
-                                            <Button
-                                              variant="ghost"
-                                              size="sm"
-                                              onClick={(e) => {
-                                                e.stopPropagation()
-                                                e.preventDefault()
-                                                navigateToGoogleDrive()
-                                              }}
-                                              className="p-0 h-auto w-auto hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-                                            >
-                                              <ChevronRight className="h-4 w-4 text-gray-400" />
-                                            </Button>
-                                          )}
-                                        </DropdownMenuItem>
-                                      )
-                                    })}
-                                  </>
-                                )
-                              })()
-                            : // Unified Collections section - handles both CL listing and file/folder navigation
+                                    )
+                                  })}
+                                </>
+                              )
+                            })()
+                          : // Unified Collections section - handles both CL listing and file/folder navigation
                             (() => {
                               // const knowledgeBases = allAvailableIntegrations.filter(integration =>
                               //   integration.id.startsWith('cl_')
@@ -4211,131 +4315,125 @@ function AgentComponent() {
                                   {(isShowingKbList ||
                                     isShowingKbContents ||
                                     isShowingDriveContents) && (
-                                      <div className="border-b border-gray-200 dark:border-gray-700">
-                                        <div className="relative">
-                                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                          <input
-                                            type="text"
-                                            placeholder={
-                                              isShowingDriveContents
-                                                ? "Search Google Drive..."
-                                                : "Search collections..."
-                                            }
-                                            value={dropdownSearchQuery}
-                                            onChange={(e) =>
-                                              setDropdownSearchQuery(
-                                                e.target.value,
-                                              )
-                                            }
-                                            className="w-full pl-10 pr-10 py-2 text-sm bg-white dark:bg-gray-800 border-0 focus:outline-none text-gray-700 dark:text-gray-200 placeholder-gray-400"
-                                            onClick={(e) => e.stopPropagation()}
-                                          />
-                                          {dropdownSearchQuery && (
-                                            <button
-                                              onClick={(e) => {
-                                                e.stopPropagation()
-                                                setDropdownSearchQuery("")
-                                              }}
-                                              className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-                                            >
-                                              <LucideX className="h-4 w-4" />
-                                            </button>
-                                          )}
-                                        </div>
+                                    <div className="border-b border-gray-200 dark:border-gray-700">
+                                      <div className="relative">
+                                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                        <input
+                                          type="text"
+                                          placeholder={
+                                            isShowingDriveContents
+                                              ? "Search Google Drive..."
+                                              : "Search collections..."
+                                          }
+                                          value={dropdownSearchQuery}
+                                          onChange={(e) =>
+                                            setDropdownSearchQuery(
+                                              e.target.value,
+                                            )
+                                          }
+                                          className="w-full pl-10 pr-10 py-2 text-sm bg-white dark:bg-gray-800 border-0 focus:outline-none text-gray-700 dark:text-gray-200 placeholder-gray-400"
+                                          onClick={(e) => e.stopPropagation()}
+                                        />
+                                        {dropdownSearchQuery && (
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              setDropdownSearchQuery("")
+                                            }}
+                                            className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                                          >
+                                            <LucideX className="h-4 w-4" />
+                                          </button>
+                                        )}
                                       </div>
-                                    )}
+                                    </div>
+                                  )}
 
-                                    {/* Content area - unified global search */}
-                                    {(() => {
-                                      // If there's a search query, always show global search results
-                                      if (dropdownSearchQuery.trim()) {
-                                        const isInGoogleDriveContext =
-                                          navigationPath.some(
-                                            (item) =>
-                                              item.type === "drive-root" ||
-                                              item.type === "drive-folder",
-                                          )
-                                        return (
-                                          <div className="max-h-60 overflow-y-auto">
-                                            {isSearching ? (
-                                              <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
-                                                Searching...
-                                              </div>
-                                            ) : searchResults.length > 0 ? (
-                                              isInGoogleDriveContext ? (
-                                                <GoogleDriveNavigation
-                                                  navigationPath={
-                                                    navigationPath
-                                                  }
-                                                  setNavigationPath={
-                                                    setNavigationPath
-                                                  }
-                                                  currentItems={currentItems}
-                                                  setCurrentItems={
-                                                    setCurrentItems
-                                                  }
-                                                  isLoadingItems={
-                                                    isLoadingItems
-                                                  }
-                                                  setIsLoadingItems={
-                                                    setIsLoadingItems
-                                                  }
-                                                  dropdownSearchQuery={
-                                                    dropdownSearchQuery
-                                                  }
-                                                  setDropdownSearchQuery={
-                                                    setDropdownSearchQuery
-                                                  }
-                                                  searchResults={searchResults}
-                                                  isSearching={isSearching}
-                                                  selectedItemsInGoogleDrive={
-                                                    selectedItemsInGoogleDrive
-                                                  }
-                                                  setSelectedItemsInGoogleDrive={
-                                                    setSelectedItemsInGoogleDrive
-                                                  }
-                                                  selectedItemDetailsInGoogleDrive={
-                                                    selectedItemDetailsInGoogleDrive
-                                                  }
-                                                  setSelectedItemDetailsInGoogleDrive={
-                                                    setSelectedItemDetailsInGoogleDrive
-                                                  }
-                                                  selectedIntegrations={
-                                                    selectedIntegrations
-                                                  }
-                                                  setSelectedIntegrations={
-                                                    setSelectedIntegrations
-                                                  }
-                                                />
-                                              ) : (
-                                                searchResults.map(
-                                                  (result: any) => {
-                                                    // Check if we're in Google Drive context for proper handling
+                                  {/* Content area - unified global search */}
+                                  {(() => {
+                                    // If there's a search query, always show global search results
+                                    if (dropdownSearchQuery.trim()) {
+                                      const isInGoogleDriveContext =
+                                        navigationPath.some(
+                                          (item) =>
+                                            item.type === "drive-root" ||
+                                            item.type === "drive-folder",
+                                        )
+                                      return (
+                                        <div className="max-h-60 overflow-y-auto">
+                                          {isSearching ? (
+                                            <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
+                                              Searching...
+                                            </div>
+                                          ) : searchResults.length > 0 ? (
+                                            isInGoogleDriveContext ? (
+                                              <GoogleDriveNavigation
+                                                navigationPath={navigationPath}
+                                                setNavigationPath={
+                                                  setNavigationPath
+                                                }
+                                                currentItems={currentItems}
+                                                setCurrentItems={
+                                                  setCurrentItems
+                                                }
+                                                isLoadingItems={isLoadingItems}
+                                                setIsLoadingItems={
+                                                  setIsLoadingItems
+                                                }
+                                                dropdownSearchQuery={
+                                                  dropdownSearchQuery
+                                                }
+                                                setDropdownSearchQuery={
+                                                  setDropdownSearchQuery
+                                                }
+                                                searchResults={searchResults}
+                                                isSearching={isSearching}
+                                                selectedItemsInGoogleDrive={
+                                                  selectedItemsInGoogleDrive
+                                                }
+                                                setSelectedItemsInGoogleDrive={
+                                                  setSelectedItemsInGoogleDrive
+                                                }
+                                                selectedItemDetailsInGoogleDrive={
+                                                  selectedItemDetailsInGoogleDrive
+                                                }
+                                                setSelectedItemDetailsInGoogleDrive={
+                                                  setSelectedItemDetailsInGoogleDrive
+                                                }
+                                                selectedIntegrations={
+                                                  selectedIntegrations
+                                                }
+                                                setSelectedIntegrations={
+                                                  setSelectedIntegrations
+                                                }
+                                              />
+                                            ) : (
+                                              searchResults.map(
+                                                (result: any) => {
+                                                  // Check if we're in Google Drive context for proper handling
 
-                                                    // Handle regular search results (knowledge-base, etc.)
-                                                    // Check if the item is directly selected vs inherited from parent
-                                                    const isDirectlySelected =
-                                                      result.type ===
-                                                      "collection"
+                                                  // Handle regular search results (knowledge-base, etc.)
+                                                  // Check if the item is directly selected vs inherited from parent
+                                                  const isDirectlySelected =
+                                                    result.type === "collection"
                                                       ? selectedIntegrations[
-                                                      `cl_${result.id}`
-                                                      ]
+                                                          `cl_${result.id}`
+                                                        ]
                                                       : selectedItemsInCollection[
-                                                        result.collectionId
-                                                      ]?.has(result.id)
+                                                          result.collectionId
+                                                        ]?.has(result.id)
 
                                                   const isSelected =
-                                                    result.type ===
-                                                      "collection"
+                                                    result.type === "collection"
                                                       ? selectedIntegrations[
-                                                      `cl_${result.id}`
-                                                      ]
+                                                          `cl_${result.id}`
+                                                        ]
                                                       : isItemSelectedWithInheritance(
-                                                        result,
-                                                        selectedItemsInCollection,
-                                                        selectedIntegrations,
-                                                        selectedItemDetailsInCollection,
-                                                      )
+                                                          result,
+                                                          selectedItemsInCollection,
+                                                          selectedIntegrations,
+                                                          selectedItemDetailsInCollection,
+                                                        )
 
                                                   const isInherited =
                                                     isSelected &&
@@ -4357,7 +4455,7 @@ function AgentComponent() {
                                                         )
                                                       } else if (
                                                         result.type ===
-                                                        "folder" ||
+                                                          "folder" ||
                                                         result.type === "file"
                                                       ) {
                                                         // For folders and files, first make sure the collection is selected
@@ -4366,7 +4464,7 @@ function AgentComponent() {
                                                         // Ensure collection is selected
                                                         if (
                                                           !selectedIntegrations[
-                                                          collectionIntegrationId
+                                                            collectionIntegrationId
                                                           ]
                                                         ) {
                                                           toggleIntegrationSelection(
@@ -4377,8 +4475,7 @@ function AgentComponent() {
                                                         // Then handle the specific item selection
                                                         const clId =
                                                           result.collectionId
-                                                        const itemId =
-                                                          result.id
+                                                        const itemId = result.id
 
                                                         setSelectedItemsInCollection(
                                                           (prev) => {
@@ -4414,18 +4511,14 @@ function AgentComponent() {
 
                                                         setSelectedItemDetailsInCollection(
                                                           (prev) => {
-                                                            const newDetails =
-                                                            {
+                                                            const newDetails = {
                                                               ...prev,
                                                             }
                                                             if (
-                                                              !newDetails[
-                                                              clId
-                                                              ]
+                                                              !newDetails[clId]
                                                             ) {
-                                                              newDetails[
-                                                                clId
-                                                              ] = {}
+                                                              newDetails[clId] =
+                                                                {}
                                                             }
                                                             newDetails[clId][
                                                               itemId
@@ -4443,79 +4536,75 @@ function AgentComponent() {
                                                       }
 
                                                       // Close search and clear query
-                                                      setDropdownSearchQuery(
-                                                        "",
-                                                      )
+                                                      setDropdownSearchQuery("")
                                                       setSearchResults([])
                                                     }
 
-                                                    return (
-                                                      <div
-                                                        key={result.id}
-                                                        onClick={
-                                                          isInherited
-                                                            ? undefined
-                                                            : handleResultSelect
+                                                  return (
+                                                    <div
+                                                      key={result.id}
+                                                      onClick={
+                                                        isInherited
+                                                          ? undefined
+                                                          : handleResultSelect
+                                                      }
+                                                      className={`flex items-center px-4 py-2 text-sm ${isInherited ? "cursor-default opacity-75" : "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"}`}
+                                                    >
+                                                      <input
+                                                        type="checkbox"
+                                                        checked={
+                                                          isSelected || false
                                                         }
-                                                        className={`flex items-center px-4 py-2 text-sm ${isInherited ? "cursor-default opacity-75" : "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"}`}
-                                                      >
-                                                        <input
-                                                          type="checkbox"
-                                                          checked={
-                                                            isSelected || false
-                                                          }
-                                                          disabled={isInherited}
-                                                          onChange={() => {}}
-                                                          className={`w-4 h-4 mr-3 ${isInherited ? "opacity-60" : ""}`}
-                                                        />
-                                                        <div className="flex-1 min-w-0">
-                                                          <div className="flex items-center">
-                                                            <span className="text-gray-700 dark:text-gray-200 truncate">
-                                                              {result.name}
+                                                        disabled={isInherited}
+                                                        onChange={() => {}}
+                                                        className={`w-4 h-4 mr-3 ${isInherited ? "opacity-60" : ""}`}
+                                                      />
+                                                      <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center">
+                                                          <span className="text-gray-700 dark:text-gray-200 truncate">
+                                                            {result.name}
+                                                          </span>
+                                                          <span className="text-xs text-gray-500 dark:text-gray-400 ml-2 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded">
+                                                            {result.type}
+                                                          </span>
+                                                          {isInherited && (
+                                                            <span className="text-xs text-blue-600 dark:text-blue-400 ml-2 px-2 py-1 bg-blue-50 dark:bg-blue-900/30 rounded">
+                                                              Selected
                                                             </span>
-                                                            <span className="text-xs text-gray-500 dark:text-gray-400 ml-2 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded">
-                                                              {result.type}
-                                                            </span>
-                                                            {isInherited && (
-                                                              <span className="text-xs text-blue-600 dark:text-blue-400 ml-2 px-2 py-1 bg-blue-50 dark:bg-blue-900/30 rounded">
-                                                                Selected
-                                                              </span>
-                                                            )}
-                                                          </div>
-                                                          {result.collectionName &&
-                                                            result.type !==
-                                                              "collection" && (
-                                                              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
-                                                                in{" "}
-                                                                {
-                                                                  result.collectionName
-                                                                }
-                                                                {result.path &&
-                                                                  ` / ${result.path}`}
-                                                              </div>
-                                                            )}
-                                                          {result.description && (
-                                                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
-                                                              {
-                                                                result.description
-                                                              }
-                                                            </div>
                                                           )}
                                                         </div>
+                                                        {result.collectionName &&
+                                                          result.type !==
+                                                            "collection" && (
+                                                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
+                                                              in{" "}
+                                                              {
+                                                                result.collectionName
+                                                              }
+                                                              {result.path &&
+                                                                ` / ${result.path}`}
+                                                            </div>
+                                                          )}
+                                                        {result.description && (
+                                                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
+                                                            {result.description}
+                                                          </div>
+                                                        )}
                                                       </div>
-                                                    )
-                                                  },
-                                                )
+                                                    </div>
+                                                  )
+                                                },
                                               )
-                                            ) : (
-                                              <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
-                                                No results found for "
-                                                {dropdownSearchQuery}"
-                                              </div>
-                                            )}
-                                          </div>
-                                        )
-                                      }
+                                            )
+                                          ) : (
+                                            <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
+                                              No results found for "
+                                              {dropdownSearchQuery}"
+                                            </div>
+                                          )}
+                                        </div>
+                                      )
+                                    }
 
                                     // If no search query, show navigation-based content
                                     if (navigationPath.length === 0) {
@@ -4530,10 +4619,9 @@ function AgentComponent() {
                                           (integration) =>
                                             !integration.id.startsWith("cl_"),
                                         )
-                                      const hasSelectedKB =
-                                        knowledgeBases.some(
-                                          (cl) => selectedIntegrations[cl.id],
-                                        )
+                                      const hasSelectedKB = knowledgeBases.some(
+                                        (cl) => selectedIntegrations[cl.id],
+                                      )
 
                                       return (
                                         <>
@@ -4542,10 +4630,9 @@ function AgentComponent() {
                                             (integration) => {
                                               const isGoogleDrive =
                                                 integration.app ===
-                                                Apps.GoogleDrive &&
+                                                  Apps.GoogleDrive &&
                                                 integration.entity === "file"
-                                              const showChevron =
-                                                isGoogleDrive
+                                              const showChevron = isGoogleDrive
 
                                               return (
                                                 <DropdownMenuItem
@@ -4563,10 +4650,10 @@ function AgentComponent() {
                                                       type="checkbox"
                                                       checked={
                                                         selectedIntegrations[
-                                                        integration.id
+                                                          integration.id
                                                         ] || false
                                                       }
-                                                      onChange={() => { }}
+                                                      onChange={() => {}}
                                                       className="w-4 h-4 mr-3"
                                                     />
                                                     <span className="mr-2 flex items-center">
@@ -4604,7 +4691,7 @@ function AgentComponent() {
                                                 <input
                                                   type="checkbox"
                                                   checked={hasSelectedKB}
-                                                  onChange={() => { }}
+                                                  onChange={() => {}}
                                                   className="w-4 h-4 mr-3"
                                                 />
                                                 <BookOpen className="w-4 h-4 mr-2 text-blue-600" />
@@ -4635,52 +4722,39 @@ function AgentComponent() {
                                             "",
                                           )
 
-                                            return (
-                                              <DropdownMenuItem
-                                                key={integration.id}
-                                                onSelect={(e) => {
-                                                  e.preventDefault()
-                                                  // Don't navigate when clicking the checkbox area
-                                                }}
-                                                className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
-                                              >
-                                                <div className="flex items-center flex-1">
-                                                  <input
-                                                    type="checkbox"
-                                                    checked={
-                                                      !!selectedIntegrations[
-                                                        integration.id
-                                                      ]
-                                                    }
-                                                    onChange={(e) => {
-                                                      e.stopPropagation()
-                                                      toggleIntegrationSelection(
-                                                        integration.id,
-                                                      )
-                                                    }}
-                                                    className="w-4 h-4 mr-3"
-                                                    onClick={(e) =>
-                                                      e.stopPropagation()
-                                                    }
-                                                  />
-                                                  <span className="mr-2 flex items-center">
-                                                    {integration.icon}
-                                                  </span>
-                                                  <span
-                                                    className="text-gray-700 dark:text-gray-200 cursor-pointer"
-                                                    onClick={(e) => {
-                                                      e.stopPropagation()
-                                                      navigateToCl(
-                                                        clId,
-                                                        integration.name,
-                                                      )
-                                                    }}
-                                                  >
-                                                    {integration.name}
-                                                  </span>
-                                                </div>
-                                                <ChevronRight
-                                                  className="h-4 w-4 text-gray-400 cursor-pointer"
+                                          return (
+                                            <DropdownMenuItem
+                                              key={integration.id}
+                                              onSelect={(e) => {
+                                                e.preventDefault()
+                                                // Don't navigate when clicking the checkbox area
+                                              }}
+                                              className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
+                                            >
+                                              <div className="flex items-center flex-1">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={
+                                                    !!selectedIntegrations[
+                                                      integration.id
+                                                    ]
+                                                  }
+                                                  onChange={(e) => {
+                                                    e.stopPropagation()
+                                                    toggleIntegrationSelection(
+                                                      integration.id,
+                                                    )
+                                                  }}
+                                                  className="w-4 h-4 mr-3"
+                                                  onClick={(e) =>
+                                                    e.stopPropagation()
+                                                  }
+                                                />
+                                                <span className="mr-2 flex items-center">
+                                                  {integration.icon}
+                                                </span>
+                                                <span
+                                                  className="text-gray-700 dark:text-gray-200 cursor-pointer"
                                                   onClick={(e) => {
                                                     e.stopPropagation()
                                                     navigateToCl(
@@ -4688,119 +4762,124 @@ function AgentComponent() {
                                                       integration.name,
                                                     )
                                                   }}
-                                                />
-                                              </DropdownMenuItem>
-                                            )
-                                          },
-                                        )
-                                      } else if (
-                                        navigationPath.some(
-                                          (item) =>
-                                            item.type === "drive-root" ||
-                                            item.type === "drive-folder",
-                                        )
-                                      ) {
-                                        // Show Google Drive contents (files/folders)
-                                        return (
-                                          <GoogleDriveNavigation
-                                            navigationPath={navigationPath}
-                                            setNavigationPath={
-                                              setNavigationPath
-                                            }
-                                            currentItems={currentItems}
-                                            setCurrentItems={setCurrentItems}
-                                            isLoadingItems={isLoadingItems}
-                                            setIsLoadingItems={
-                                              setIsLoadingItems
-                                            }
-                                            dropdownSearchQuery={
-                                              dropdownSearchQuery
-                                            }
-                                            setDropdownSearchQuery={
-                                              setDropdownSearchQuery
-                                            }
-                                            searchResults={searchResults}
-                                            isSearching={isSearching}
-                                            selectedItemsInGoogleDrive={
-                                              selectedItemsInGoogleDrive
-                                            }
-                                            setSelectedItemsInGoogleDrive={
-                                              setSelectedItemsInGoogleDrive
-                                            }
-                                            selectedItemDetailsInGoogleDrive={
-                                              selectedItemDetailsInGoogleDrive
-                                            }
-                                            setSelectedItemDetailsInGoogleDrive={
-                                              setSelectedItemDetailsInGoogleDrive
-                                            }
-                                            setSelectedIntegrations={
-                                              setSelectedIntegrations
-                                            }
-                                            selectedIntegrations={
-                                              selectedIntegrations
-                                            }
-                                          />
-                                        )
-                                      } else {
-                                        // Show Collection contents (files/folders)
-                                        return (
-                                          <CollectionNavigation
-                                            navigationPath={navigationPath}
-                                            setNavigationPath={
-                                              setNavigationPath
-                                            }
-                                            currentItems={currentItems}
-                                            setCurrentItems={setCurrentItems}
-                                            isLoadingItems={isLoadingItems}
-                                            setIsLoadingItems={
-                                              setIsLoadingItems
-                                            }
-                                            dropdownSearchQuery={
-                                              dropdownSearchQuery
-                                            }
-                                            setDropdownSearchQuery={
-                                              setDropdownSearchQuery
-                                            }
-                                            searchResults={searchResults}
-                                            isSearching={isSearching}
-                                            selectedIntegrations={
-                                              selectedIntegrations
-                                            }
-                                            setSelectedIntegrations={
-                                              setSelectedIntegrations
-                                            }
-                                            selectedItemsInCollection={
-                                              selectedItemsInCollection
-                                            }
-                                            setSelectedItemsInCollection={
-                                              setSelectedItemsInCollection
-                                            }
-                                            selectedItemDetailsInCollection={
-                                              selectedItemDetailsInCollection
-                                            }
-                                            setSelectedItemDetailsInCollection={
-                                              setSelectedItemDetailsInCollection
-                                            }
-                                            allAvailableIntegrations={
-                                              allAvailableIntegrations
-                                            }
-                                            toggleIntegrationSelection={
-                                              toggleIntegrationSelection
-                                            }
-                                            navigateToCl={navigateToCl}
-                                            agentId={editingAgent?.externalId}
-                                          />
-                                        )
-                                      }
+                                                >
+                                                  {integration.name}
+                                                </span>
+                                              </div>
+                                              <ChevronRight
+                                                className="h-4 w-4 text-gray-400 cursor-pointer"
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  navigateToCl(
+                                                    clId,
+                                                    integration.name,
+                                                  )
+                                                }}
+                                              />
+                                            </DropdownMenuItem>
+                                          )
+                                        },
+                                      )
+                                    } else if (
+                                      navigationPath.some(
+                                        (item) =>
+                                          item.type === "drive-root" ||
+                                          item.type === "drive-folder",
+                                      )
+                                    ) {
+                                      // Show Google Drive contents (files/folders)
+                                      return (
+                                        <GoogleDriveNavigation
+                                          navigationPath={navigationPath}
+                                          setNavigationPath={setNavigationPath}
+                                          currentItems={currentItems}
+                                          setCurrentItems={setCurrentItems}
+                                          isLoadingItems={isLoadingItems}
+                                          setIsLoadingItems={setIsLoadingItems}
+                                          dropdownSearchQuery={
+                                            dropdownSearchQuery
+                                          }
+                                          setDropdownSearchQuery={
+                                            setDropdownSearchQuery
+                                          }
+                                          searchResults={searchResults}
+                                          isSearching={isSearching}
+                                          selectedItemsInGoogleDrive={
+                                            selectedItemsInGoogleDrive
+                                          }
+                                          setSelectedItemsInGoogleDrive={
+                                            setSelectedItemsInGoogleDrive
+                                          }
+                                          selectedItemDetailsInGoogleDrive={
+                                            selectedItemDetailsInGoogleDrive
+                                          }
+                                          setSelectedItemDetailsInGoogleDrive={
+                                            setSelectedItemDetailsInGoogleDrive
+                                          }
+                                          setSelectedIntegrations={
+                                            setSelectedIntegrations
+                                          }
+                                          selectedIntegrations={
+                                            selectedIntegrations
+                                          }
+                                        />
+                                      )
+                                    } else {
+                                      // Show Collection contents (files/folders)
+                                      return (
+                                        <CollectionNavigation
+                                          navigationPath={navigationPath}
+                                          setNavigationPath={setNavigationPath}
+                                          currentItems={currentItems}
+                                          setCurrentItems={setCurrentItems}
+                                          isLoadingItems={isLoadingItems}
+                                          setIsLoadingItems={setIsLoadingItems}
+                                          dropdownSearchQuery={
+                                            dropdownSearchQuery
+                                          }
+                                          setDropdownSearchQuery={
+                                            setDropdownSearchQuery
+                                          }
+                                          searchResults={searchResults}
+                                          isSearching={isSearching}
+                                          selectedIntegrations={
+                                            selectedIntegrations
+                                          }
+                                          setSelectedIntegrations={
+                                            setSelectedIntegrations
+                                          }
+                                          selectedItemsInCollection={
+                                            selectedItemsInCollection
+                                          }
+                                          setSelectedItemsInCollection={
+                                            setSelectedItemsInCollection
+                                          }
+                                          selectedItemDetailsInCollection={
+                                            selectedItemDetailsInCollection
+                                          }
+                                          setSelectedItemDetailsInCollection={
+                                            setSelectedItemDetailsInCollection
+                                          }
+                                          allAvailableIntegrations={
+                                            allAvailableIntegrations
+                                          }
+                                          toggleIntegrationSelection={
+                                            toggleIntegrationSelection
+                                          }
+                                          navigateToCl={navigateToCl}
+                                          agentId={editingAgent?.externalId}
+                                        />
+                                      )
+                                    }
 
                                     return null
                                   })()}
                                 </>
                               )
                             })()}
-                        </div>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                      </div>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
 
                 {!isPublic && (
@@ -4808,14 +4887,16 @@ function AgentComponent() {
                     label="Agent Users"
                     placeholder="Search users by name or email..."
                     users={users}
-                    selectedEmails={selectedUsers.map(user => user.email)}
+                    selectedEmails={selectedUsers.map((user) => user.email)}
                     onEmailsChange={(emails) => {
-                      const newSelectedUsers = emails.map(email => 
-                        users.find(user => user.email === email)
-                      ).filter(Boolean) as User[]
+                      const newSelectedUsers = emails
+                        .map((email) =>
+                          users.find((user) => user.email === email),
+                        )
+                        .filter(Boolean) as User[]
                       setSelectedUsers(newSelectedUsers)
                     }}
-                    selectedByOther={selectedOwners.map(user => user.email)}
+                    selectedByOther={selectedOwners.map((user) => user.email)}
                   />
                 )}
 
@@ -4824,14 +4905,16 @@ function AgentComponent() {
                   label="Agent Owners"
                   placeholder="Search users by name or email..."
                   users={users}
-                  selectedEmails={selectedOwners.map(user => user.email)}
+                  selectedEmails={selectedOwners.map((user) => user.email)}
                   onEmailsChange={(emails) => {
-                    const newSelectedOwners = emails.map(email => 
-                      users.find(user => user.email === email)
-                    ).filter(Boolean) as User[]
+                    const newSelectedOwners = emails
+                      .map((email) =>
+                        users.find((user) => user.email === email),
+                      )
+                      .filter(Boolean) as User[]
                     setSelectedOwners(newSelectedOwners)
                   }}
-                  selectedByOther={selectedUsers.map(user => user.email)}
+                  selectedByOther={selectedUsers.map((user) => user.email)}
                 />
                 <div className="flex justify-end w-full mt-8 mb-4">
                   <Button
@@ -4862,8 +4945,8 @@ function AgentComponent() {
                     >
                       {selectedChatAgentExternalId
                         ? allAgentsList.find(
-                          (a) => a.externalId === selectedChatAgentExternalId,
-                        )?.name || "Select Agent to Test"
+                            (a) => a.externalId === selectedChatAgentExternalId,
+                          )?.name || "Select Agent to Test"
                         : "Test Current Form Config"}
                       <ChevronDown className="ml-2 h-3 w-3" />
                     </Button>
@@ -4920,8 +5003,8 @@ function AgentComponent() {
                   attachments={message.attachments || []}
                   dots={
                     isStreaming &&
-                      index === messages.length - 1 &&
-                      message.messageRole === "assistant"
+                    index === messages.length - 1 &&
+                    message.messageRole === "assistant"
                       ? dots
                       : ""
                   }
@@ -5103,10 +5186,11 @@ function TabButton({
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 px-4 py-2 text-sm font-mono font-medium rounded-full transition-colors ${active
-        ? "bg-gray-200 text-gray-800 dark:bg-slate-700 dark:text-gray-100"
-        : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800/60"
-        }`}
+      className={`flex items-center gap-2 px-4 py-2 text-sm font-mono font-medium rounded-full transition-colors ${
+        active
+          ? "bg-gray-200 text-gray-800 dark:bg-slate-700 dark:text-gray-100"
+          : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800/60"
+      }`}
     >
       {icon === "asterisk" && <span className="text-lg font-semibold">*</span>}
       {icon === "users" && <Users size={16} />}
@@ -5121,7 +5205,7 @@ const textToCitationIndexPattern = textToCitationIndex
 const renderMarkdownLink = ({
   node,
   ...linkProps
-}: { node?: any;[key: string]: any }) => (
+}: { node?: any; [key: string]: any }) => (
   <a
     {...linkProps}
     target="_blank"
@@ -5183,8 +5267,8 @@ const AgentChatMessage = ({
         }
         const url = citationUrls[localCitationMap[citationindex]]
         return typeof localCitationMap[citationindex] === "number" && url
-        ? `[${localCitationMap[citationindex] + 1}](${url})`
-        : ""
+          ? `[${localCitationMap[citationindex] + 1}](${url})`
+          : ""
       })
     }
   }

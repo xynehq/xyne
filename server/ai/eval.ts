@@ -644,10 +644,15 @@ const endToEndFactual = async () => {
         )
         const ctx = userContext(userAndWorkspace)
         const userTimezone = userAndWorkspace?.user?.timeZone || "Asia/Kolkata"
-        const dateForAI = getDateForAI({ userTimeZone: userTimezone})
-        const userMetadata: UserMetadataType = {userTimezone, dateForAI}
+        const dateForAI = getDateForAI({ userTimeZone: userTimezone })
+        const userMetadata: UserMetadataType = { userTimezone, dateForAI }
 
-        const answer = await endToEndFlow(input, ctx, userMetadata,messages || [])
+        const answer = await endToEndFlow(
+          input,
+          ctx,
+          userMetadata,
+          messages || [],
+        )
 
         // For demo purposes, assuming cost of 0.001 per response
         return {

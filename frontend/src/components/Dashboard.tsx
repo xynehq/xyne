@@ -11,8 +11,8 @@ import {
   Search,
   Trophy,
   MessagesSquare,
-  ChevronUp, 
-  ChevronDown 
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react"
 import {
   Card,
@@ -51,7 +51,7 @@ import {
   AreaChart,
 } from "recharts"
 import type { AdminChat } from "@/components/AdminChatsTable"
-import { useMemo } from 'react';
+import { useMemo } from "react"
 
 interface Chat {
   externalId: string
@@ -1344,7 +1344,6 @@ const UsersAnalyticsTable = ({
   )
 }
 
-
 const QueryAnalyticsTable = ({
   queries,
   title = "Query Analytics",
@@ -1362,12 +1361,16 @@ const QueryAnalyticsTable = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>("")
   const [expandedChats, setExpandedChats] = useState<Set<string>>(new Set())
-  const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set())
+  const [expandedMessages, setExpandedMessages] = useState<Set<string>>(
+    new Set(),
+  )
   const [sortBy, setSortBy] = useState<string>("time")
 
   // Pagination states
   const [currentChatPage, setCurrentChatPage] = useState(1)
-  const [chatMessagePages, setChatMessagePages] = useState<Map<string, number>>(new Map())
+  const [chatMessagePages, setChatMessagePages] = useState<Map<string, number>>(
+    new Map(),
+  )
   const chatsPerPage = 5
   const messagesPerPage = 5
 
@@ -1380,67 +1383,73 @@ const QueryAnalyticsTable = ({
 
   const filteredChats = useMemo(() => {
     if (!searchQuery) {
-      return queries.map(chat => ({
+      return queries.map((chat) => ({
         ...chat,
-        originalMessageCount: chat.messageCount
-      }));
+        originalMessageCount: chat.messageCount,
+      }))
     }
 
-    const searchLower = searchQuery.toLowerCase();
+    const searchLower = searchQuery.toLowerCase()
 
     return queries
       .map((chat) => {
-        const originalMessageCount = chat.messageCount;
+        const originalMessageCount = chat.messageCount
 
         // Chat-level match
         const chatMatches =
           chat.chatTitle.toLowerCase().includes(searchLower) ||
           chat.userEmail.toLowerCase().includes(searchLower) ||
-          chat.userName.toLowerCase().includes(searchLower);
+          chat.userName.toLowerCase().includes(searchLower)
 
         // If chat matches, return all messages
         if (chatMatches) {
           return {
             ...chat,
-            originalMessageCount
-          };
+            originalMessageCount,
+          }
         }
 
         // Filter messages
         const filteredMessages = chat.messages.filter(
           (msg) =>
             msg.queryText.toLowerCase().includes(searchLower) ||
-            msg.responseText.toLowerCase().includes(searchLower)
-        );
+            msg.responseText.toLowerCase().includes(searchLower),
+        )
 
         if (filteredMessages.length > 0) {
           return {
             ...chat,
             messages: filteredMessages,
             messageCount: filteredMessages.length,
-            originalMessageCount
-          };
+            originalMessageCount,
+          }
         }
 
-        return null;
+        return null
       })
       .filter(
         (chat): chat is QueryAnalysisData & { originalMessageCount: number } =>
-          chat !== null
-      );
-  }, [queries, searchQuery]);
+          chat !== null,
+      )
+  }, [queries, searchQuery])
 
   // Sort chats based on selected criteria
   const sortedChats = [...filteredChats].sort((a, b) => {
     switch (sortBy) {
       case "time":
         // Sort by latest message timestamp (newest first)
-        const aLatestTime = a.messages.length > 0
-          ? Math.max(...a.messages.map(m => new Date(m.createdAt).getTime()))
-          : new Date(a.chatCreatedAt).getTime()
-        const bLatestTime = b.messages.length > 0
-          ? Math.max(...b.messages.map(m => new Date(m.createdAt).getTime()))
-          : new Date(b.chatCreatedAt).getTime()
+        const aLatestTime =
+          a.messages.length > 0
+            ? Math.max(
+                ...a.messages.map((m) => new Date(m.createdAt).getTime()),
+              )
+            : new Date(a.chatCreatedAt).getTime()
+        const bLatestTime =
+          b.messages.length > 0
+            ? Math.max(
+                ...b.messages.map((m) => new Date(m.createdAt).getTime()),
+              )
+            : new Date(b.chatCreatedAt).getTime()
         return bLatestTime - aLatestTime
       case "likes":
         return (b.totalLikes || 0) - (a.totalLikes || 0)
@@ -1456,7 +1465,10 @@ const QueryAnalyticsTable = ({
   // Chat-level pagination
   const totalChatPages = Math.ceil(sortedChats.length / chatsPerPage)
   const startChatIndex = (currentChatPage - 1) * chatsPerPage
-  const paginatedChats = sortedChats.slice(startChatIndex, startChatIndex + chatsPerPage)
+  const paginatedChats = sortedChats.slice(
+    startChatIndex,
+    startChatIndex + chatsPerPage,
+  )
 
   const toggleChat = (chatId: string) => {
     const newExpanded = new Set(expandedChats)
@@ -1575,8 +1587,12 @@ const QueryAnalyticsTable = ({
                     getMessagePage(chat.chatId),
                     totalMessagePages,
                   )
-                  const startMessageIndex = (currentMessagePage - 1) * messagesPerPage
-                  const paginatedMessages = chat.messages.slice(startMessageIndex, startMessageIndex + messagesPerPage)
+                  const startMessageIndex =
+                    (currentMessagePage - 1) * messagesPerPage
+                  const paginatedMessages = chat.messages.slice(
+                    startMessageIndex,
+                    startMessageIndex + messagesPerPage,
+                  )
 
                   return (
                     <div
@@ -1595,27 +1611,34 @@ const QueryAnalyticsTable = ({
                                 {chat.chatTitle}
                               </h3>
                               <Badge variant="secondary" className="text-xs">
-                                {searchQuery && chat.messageCount !== chat.originalMessageCount
-                                  ? `${chat.messageCount} of ${chat.originalMessageCount} ${chat.originalMessageCount === 1 ? 'query' : 'queries'}`
-                                  : `${chat.messageCount} ${chat.messageCount === 1 ? 'query' : 'queries'}`}
+                                {searchQuery &&
+                                chat.messageCount !== chat.originalMessageCount
+                                  ? `${chat.messageCount} of ${chat.originalMessageCount} ${chat.originalMessageCount === 1 ? "query" : "queries"}`
+                                  : `${chat.messageCount} ${chat.messageCount === 1 ? "query" : "queries"}`}
                               </Badge>
                             </div>
                             <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                              <span>{chat.userName} ({chat.userEmail})</span>
-                              <span>Chat ID :  {chat.chatId}</span>
                               <span>
-                                {new Date(chat.chatCreatedAt).toLocaleString("en-US", {
-                                  month: "short",
-                                  day: "numeric",
-                                  year: "numeric",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
+                                {chat.userName} ({chat.userEmail})
+                              </span>
+                              <span>Chat ID : {chat.chatId}</span>
+                              <span>
+                                {new Date(chat.chatCreatedAt).toLocaleString(
+                                  "en-US",
+                                  {
+                                    month: "short",
+                                    day: "numeric",
+                                    year: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  },
+                                )}
                               </span>
                               <span className="font-medium text-blue-600">
                                 Total Cost: {formatCostInINR(chat.totalCost)}
                               </span>
-                              {(chat.totalLikes > 0 || chat.totalDislikes > 0) && (
+                              {(chat.totalLikes > 0 ||
+                                chat.totalDislikes > 0) && (
                                 <div className="flex items-center gap-2 text-xs">
                                   <div className="flex items-center gap-1 text-green-600">
                                     <ThumbsUp className="h-3 w-3" />
@@ -1643,12 +1666,16 @@ const QueryAnalyticsTable = ({
                       {isChatExpanded && (
                         <div className="border-t border-input">
                           {paginatedMessages.map((message, idx) => {
-                            const isMessageExpanded = expandedMessages.has(message.messageId)
+                            const isMessageExpanded = expandedMessages.has(
+                              message.messageId,
+                            )
                             return (
                               <div
                                 key={message.messageId}
                                 className={`p-4 hover:bg-muted/20 transition-colors cursor-pointer ${
-                                  idx !== paginatedMessages.length - 1 ? 'border-b border-input/50' : ''
+                                  idx !== paginatedMessages.length - 1
+                                    ? "border-b border-input/50"
+                                    : ""
                                 }`}
                                 onClick={() => toggleMessage(message.messageId)}
                               >
@@ -1661,7 +1688,10 @@ const QueryAnalyticsTable = ({
                                       <p className="text-sm font-medium flex-1">
                                         {isMessageExpanded
                                           ? message.queryText
-                                          : truncateText(message.queryText, 150)}
+                                          : truncateText(
+                                              message.queryText,
+                                              150,
+                                            )}
                                       </p>
                                     </div>
                                     {isMessageExpanded && (
@@ -1678,7 +1708,9 @@ const QueryAnalyticsTable = ({
                                     )}
                                     <div className="flex items-center gap-4 text-xs text-muted-foreground pl-6">
                                       <span>
-                                        {new Date(message.createdAt).toLocaleString("en-US", {
+                                        {new Date(
+                                          message.createdAt,
+                                        ).toLocaleString("en-US", {
                                           month: "short",
                                           day: "numeric",
                                           hour: "2-digit",
@@ -1688,43 +1720,57 @@ const QueryAnalyticsTable = ({
                                       <span className="font-medium text-blue-600">
                                         {formatCostInINR(message.cost)}
                                       </span>
-                                      {message.feedback && message.feedback.type && (
-                                        <span className={`flex items-center gap-1 font-medium ${
-                                          message.feedback.type === 'like' ? 'text-green-600' : 'text-red-600'
-                                        }`}>
-                                          {message.feedback.type === 'like' ? (
-                                            <>
-                                              <ThumbsUp className="h-3 w-3 " />
-                                              <span>Liked</span>
-                                            </>
-                                          ) : (
-                                            <>
-                                              <ThumbsDown className="h-3 w-3 " />
-                                              <span>Disliked</span>
-                                            </>
-                                          )}
-                                        </span>
-                                      )}
+                                      {message.feedback &&
+                                        message.feedback.type && (
+                                          <span
+                                            className={`flex items-center gap-1 font-medium ${
+                                              message.feedback.type === "like"
+                                                ? "text-green-600"
+                                                : "text-red-600"
+                                            }`}
+                                          >
+                                            {message.feedback.type ===
+                                            "like" ? (
+                                              <>
+                                                <ThumbsUp className="h-3 w-3 " />
+                                                <span>Liked</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <ThumbsDown className="h-3 w-3 " />
+                                                <span>Disliked</span>
+                                              </>
+                                            )}
+                                          </span>
+                                        )}
                                     </div>
-                                    {message.feedback && message.feedback.feedback && message.feedback.feedback.length > 0 && message.feedback.type !== 'like' && isMessageExpanded && (
-                                      <div className="pl-6 mt-3">
-                                        <div className="bg-amber-50 dark:bg-amber-950/20 rounded-lg p-3 border border-amber-200 dark:border-amber-800">
-                                          <div className="flex items-start gap-2">
-                                            <MessageSquare className="h-4 w-4 text-amber-600 dark:text-amber-500 mt-0.5 flex-shrink-0" />
-                                            <div className="flex-1">
-                                              <div className="font-semibold text-amber-900 dark:text-amber-100 text-xs mb-1">
-                                                User Feedback
-                                              </div>
-                                              <div className="text-sm text-amber-800 dark:text-amber-200">
-                                                {message.feedback.feedback.map((item, index) => (
-                                                <div key={index}>{item}</div>
-                                                ))}
+                                    {message.feedback &&
+                                      message.feedback.feedback &&
+                                      message.feedback.feedback.length > 0 &&
+                                      message.feedback.type !== "like" &&
+                                      isMessageExpanded && (
+                                        <div className="pl-6 mt-3">
+                                          <div className="bg-amber-50 dark:bg-amber-950/20 rounded-lg p-3 border border-amber-200 dark:border-amber-800">
+                                            <div className="flex items-start gap-2">
+                                              <MessageSquare className="h-4 w-4 text-amber-600 dark:text-amber-500 mt-0.5 flex-shrink-0" />
+                                              <div className="flex-1">
+                                                <div className="font-semibold text-amber-900 dark:text-amber-100 text-xs mb-1">
+                                                  User Feedback
+                                                </div>
+                                                <div className="text-sm text-amber-800 dark:text-amber-200">
+                                                  {message.feedback.feedback.map(
+                                                    (item, index) => (
+                                                      <div key={index}>
+                                                        {item}
+                                                      </div>
+                                                    ),
+                                                  )}
+                                                </div>
                                               </div>
                                             </div>
                                           </div>
                                         </div>
-                                      </div>
-                                    )}
+                                      )}
                                   </div>
                                   <button
                                     className="ml-4 text-muted-foreground hover:text-foreground transition-colors"
@@ -1749,13 +1795,21 @@ const QueryAnalyticsTable = ({
                             <div className="p-3 bg-muted/20 border-t border-input/50">
                               <div className="flex items-center justify-between text-xs">
                                 <span className="text-muted-foreground">
-                                  Showing {startMessageIndex + 1}-{Math.min(startMessageIndex + messagesPerPage, chat.messages.length)} of {chat.messages.length} queries
+                                  Showing {startMessageIndex + 1}-
+                                  {Math.min(
+                                    startMessageIndex + messagesPerPage,
+                                    chat.messages.length,
+                                  )}{" "}
+                                  of {chat.messages.length} queries
                                 </span>
                                 <div className="flex items-center gap-2">
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      setMessagePage(chat.chatId, Math.max(1, currentMessagePage - 1))
+                                      setMessagePage(
+                                        chat.chatId,
+                                        Math.max(1, currentMessagePage - 1),
+                                      )
                                     }}
                                     disabled={currentMessagePage === 1}
                                     className="px-2 py-1 rounded border border-input bg-background hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1763,14 +1817,23 @@ const QueryAnalyticsTable = ({
                                     Previous
                                   </button>
                                   <span className="text-muted-foreground">
-                                    Page {currentMessagePage} of {totalMessagePages}
+                                    Page {currentMessagePage} of{" "}
+                                    {totalMessagePages}
                                   </span>
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      setMessagePage(chat.chatId, Math.min(totalMessagePages, currentMessagePage + 1))
+                                      setMessagePage(
+                                        chat.chatId,
+                                        Math.min(
+                                          totalMessagePages,
+                                          currentMessagePage + 1,
+                                        ),
+                                      )
                                     }}
-                                    disabled={currentMessagePage === totalMessagePages}
+                                    disabled={
+                                      currentMessagePage === totalMessagePages
+                                    }
                                     className="px-2 py-1 rounded border border-input bg-background hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
                                   >
                                     Next
@@ -1791,17 +1854,24 @@ const QueryAnalyticsTable = ({
                 </div>
               )}
             </div>
-      
+
             {/* Chat-level Pagination */}
             {totalChatPages > 1 && (
               <div className="flex items-center justify-between pt-4 border-t">
                 <span className="text-xs text-muted-foreground">
-                  Showing {startChatIndex + 1}-{Math.min(startChatIndex + chatsPerPage, filteredChats.length)} of {filteredChats.length} chats
+                  Showing {startChatIndex + 1}-
+                  {Math.min(
+                    startChatIndex + chatsPerPage,
+                    filteredChats.length,
+                  )}{" "}
+                  of {filteredChats.length} chats
                   {searchQuery && ` (filtered from ${queries.length})`}
                 </span>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setCurrentChatPage(Math.max(1, currentChatPage - 1))}
+                    onClick={() =>
+                      setCurrentChatPage(Math.max(1, currentChatPage - 1))
+                    }
                     disabled={currentChatPage === 1}
                     className="px-3 py-1.5 text-sm rounded border border-input bg-background hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
@@ -1811,7 +1881,11 @@ const QueryAnalyticsTable = ({
                     Page {currentChatPage} of {totalChatPages}
                   </span>
                   <button
-                    onClick={() => setCurrentChatPage(Math.min(totalChatPages, currentChatPage + 1))}
+                    onClick={() =>
+                      setCurrentChatPage(
+                        Math.min(totalChatPages, currentChatPage + 1),
+                      )
+                    }
                     disabled={currentChatPage === totalChatPages}
                     className="px-3 py-1.5 text-sm rounded border border-input bg-background hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
@@ -2462,7 +2536,9 @@ const AgentAnalysisPage = ({
   const [agentAnalysis, setAgentAnalysis] = useState<AgentAnalysisData | null>(
     null,
   )
-  const [queryAnalysisData, setQueryAnalysisData] = useState<QueryAnalysisData[]>([])
+  const [queryAnalysisData, setQueryAnalysisData] = useState<
+    QueryAnalysisData[]
+  >([])
 
   // Initialize date range to last 1 month
   const getDefaultDateRange = () => {
@@ -2472,8 +2548,12 @@ const AgentAnalysisPage = ({
     return { from, to }
   }
 
-  const [queryDateFrom, setQueryDateFrom] = useState<Date | undefined>(getDefaultDateRange().from)
-  const [queryDateTo, setQueryDateTo] = useState<Date | undefined>(getDefaultDateRange().to)
+  const [queryDateFrom, setQueryDateFrom] = useState<Date | undefined>(
+    getDefaultDateRange().from,
+  )
+  const [queryDateTo, setQueryDateTo] = useState<Date | undefined>(
+    getDefaultDateRange().to,
+  )
   const [loading, setLoading] = useState(true)
   const [userSearchQuery, setUserSearchQuery] = useState<string>("")
   const [sortBy, setSortBy] = useState<
@@ -2542,7 +2622,7 @@ const AgentAnalysisPage = ({
         }
 
         const response = await api.admin.agents[agent.agentId].queries.$get({
-          query
+          query,
         })
 
         if (!response.ok) {

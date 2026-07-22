@@ -1,7 +1,5 @@
 import { db } from "@/db/client"
-import {
-  getCollectionsByOwner,
-} from "@/db/knowledgeBase"
+import { getCollectionsByOwner } from "@/db/knowledgeBase"
 import { getUserByEmail } from "@/db/user"
 import { collectionItems, collections } from "@/db/schema"
 import { and, eq, inArray, isNull } from "drizzle-orm"
@@ -39,13 +37,8 @@ export type KnowledgeBaseSelection = {
 export async function buildKnowledgeBaseCollectionSelections(
   params: BuildKnowledgeBaseSelectionsParams,
 ): Promise<KnowledgeBaseSelection[]> {
-  const {
-    scope,
-    email,
-    selectedItems,
-    pathExtractedInfo,
-    publicAgents,
-  } = params
+  const { scope, email, selectedItems, pathExtractedInfo, publicAgents } =
+    params
 
   switch (scope) {
     case KnowledgeBaseScope.AgentScoped: {
@@ -231,9 +224,7 @@ function extractKnowledgeIdsFromPublicAgents(
   for (const publicAgent of publicAgents) {
     if (!publicAgent?.appIntegrations) continue
     if (isAppSelectionMap(publicAgent.appIntegrations)) {
-      const { selectedItems } = parseAppSelections(
-        publicAgent.appIntegrations,
-      )
+      const { selectedItems } = parseAppSelections(publicAgent.appIntegrations)
       // Public agents should honor their explicit Knowledge Base selections even when a path override exists.
       const kbIds = resolveKnowledgeItemIds(undefined, selectedItems)
       kbIds.forEach((id) => ids.add(id))

@@ -1340,7 +1340,8 @@ export const useChatStream = (
       eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
         const { messageId: newMessageId, timeTakenMs } = JSON.parse(event.data)
         streamState.messageId = newMessageId
-        if (typeof timeTakenMs === "number") streamState.timeTakenMs = timeTakenMs
+        if (typeof timeTakenMs === "number")
+          streamState.timeTakenMs = timeTakenMs
       })
 
       eventSource.addEventListener(ChatSSEvents.End, async () => {

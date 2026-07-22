@@ -56,12 +56,12 @@ const truncateEmail = (email: string, maxLength: number = 20): string => {
 }
 
 // Reusable upload status indicator component
-const UploadStatusIndicator = ({ 
-  uploadStatus, 
-  statusMessage 
-}: { 
+const UploadStatusIndicator = ({
+  uploadStatus,
+  statusMessage,
+}: {
   uploadStatus: string
-  statusMessage?: string 
+  statusMessage?: string
 }) => {
   return (
     <div className="flex-shrink-0">
@@ -70,10 +70,17 @@ const UploadStatusIndicator = ({
           <TooltipTrigger asChild>
             <div>
               {uploadStatus === "completed" && (
-                <Check size={14} className="text-green-600 dark:text-green-400" />
+                <Check
+                  size={14}
+                  className="text-green-600 dark:text-green-400"
+                />
               )}
-              {(uploadStatus === "processing" || uploadStatus === "pending") && (
-                <Loader2 size={14} className="text-black dark:text-white animate-spin" />
+              {(uploadStatus === "processing" ||
+                uploadStatus === "pending") && (
+                <Loader2
+                  size={14}
+                  className="text-black dark:text-white animate-spin"
+                />
               )}
               {uploadStatus === "failed" && (
                 <AlertOctagon size={14} className="text-red-500" />

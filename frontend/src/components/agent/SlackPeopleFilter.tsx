@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react'
-import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
-import { useSlackData } from '@/hooks/useSlackData'
-import { SlackEntity } from 'shared/types'
+import React, { useState, useEffect } from "react"
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
+import { useSlackData } from "@/hooks/useSlackData"
+import { SlackEntity } from "shared/types"
 
 interface SlackPeopleFilterProps {
   filterValue?: string
@@ -28,15 +28,17 @@ export const SlackPeopleFilter: React.FC<SlackPeopleFilterProps> = ({
 
   // Load initial users on mount
   useEffect(() => {
-    fetchItems('', 0, false)
+    fetchItems("", 0, false)
   }, [fetchItems])
 
   // Parse existing filter values to set selected people
   useEffect(() => {
     if (!filterValue) return
 
-    const filters = filterValue.split(', ').filter(f => f.trim())
-    const peopleIds = filters.filter(f => f.startsWith('@')).map(f => f.substring(1))
+    const filters = filterValue.split(", ").filter((f) => f.trim())
+    const peopleIds = filters
+      .filter((f) => f.startsWith("@"))
+      .map((f) => f.substring(1))
 
     setSelectedPeople(new Set(peopleIds))
   }, [filterValue])
@@ -53,16 +55,19 @@ export const SlackPeopleFilter: React.FC<SlackPeopleFilterProps> = ({
     setSelectedPeople(updatedPeople)
 
     // Build filter string from selected people using docIds (same as channels)
-    const selectedPeopleIds = Array.from(updatedPeople).map(id => `@${id}`)
+    const selectedPeopleIds = Array.from(updatedPeople).map((id) => `@${id}`)
 
     // Preserve existing filters from current filterValue that aren't people filters
-    const currentFilters = filterValue?.split(', ').filter(f => f.trim()) || []
-    const existingNonPeopleFilters = currentFilters.filter(f => !f.startsWith('@'))
+    const currentFilters =
+      filterValue?.split(", ").filter((f) => f.trim()) || []
+    const existingNonPeopleFilters = currentFilters.filter(
+      (f) => !f.startsWith("@"),
+    )
 
     // Combine new people filters with existing non-people filters
     const combinedFilters = [...selectedPeopleIds, ...existingNonPeopleFilters]
 
-    onFilterChange(combinedFilters.join(', '))
+    onFilterChange(combinedFilters.join(", "))
   }
 
   return (
@@ -111,7 +116,9 @@ export const SlackPeopleFilter: React.FC<SlackPeopleFilterProps> = ({
                   checked={selectedPeople.has(person.id)}
                   onChange={() => {}}
                 />
-                <span className="text-gray-700 dark:text-gray-200">{person.name}</span>
+                <span className="text-gray-700 dark:text-gray-200">
+                  {person.name}
+                </span>
               </DropdownMenuItem>
             ))}
             {isLoading && (

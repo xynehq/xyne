@@ -58,12 +58,12 @@ export const createCitationLink =
         chunkIndex = Math.max(chunkIndex - 1, 0)
       }
 
-     /* 
-      * showTooltip is true meaning normal chat.tsx which needs citations of multiple docs ex: 1.1, 1.2, 2.1 etc. 
-      * If false, it means citation link is being rendered in a context where only one doc is being cited (ex: document chat) and 
-      * we can just show incremental numbers like 1, 2, 3 for chunks without the citation index prefix.
-      */
-      if(showTooltip) {
+      /*
+       * showTooltip is true meaning normal chat.tsx which needs citations of multiple docs ex: 1.1, 1.2, 2.1 etc.
+       * If false, it means citation link is being rendered in a context where only one doc is being cited (ex: document chat) and
+       * we can just show incremental numbers like 1, 2, 3 for chunks without the citation index prefix.
+       */
+      if (showTooltip) {
         if (!globalChunkIndexMap.has(`${citationIndex}_${-1}`)) {
           globalChunkIndexMap.set(`${citationIndex}_${-1}`, 0)
         }
@@ -73,14 +73,18 @@ export const createCitationLink =
           globalCount = globalCount + 1
           globalChunkIndexMap.set(`${citationIndex}_${-1}`, globalCount)
         }
-        const displayedIndex = globalChunkIndexMap.get(`${citationIndex}_${chunkIndex}`)!
+        const displayedIndex = globalChunkIndexMap.get(
+          `${citationIndex}_${chunkIndex}`,
+        )!
         children = `${citationIndex + 1}.${displayedIndex}`
       } else {
         if (!globalChunkIndexMap.has(`${citationIndex}_${chunkIndex}`)) {
           globalCount = globalCount + 1
           globalChunkIndexMap.set(`${citationIndex}_${chunkIndex}`, globalCount)
         }
-        children = globalChunkIndexMap.get(`${citationIndex}_${chunkIndex}`)!.toString()
+        children = globalChunkIndexMap
+          .get(`${citationIndex}_${chunkIndex}`)!
+          .toString()
       }
     }
 
@@ -182,7 +186,12 @@ export const createCitationLink =
                   e.preventDefault()
                   e.stopPropagation()
                   if (onCitationClick) {
-                    onCitationClick(citation, citation.title.startsWith('Database:')? undefined: chunkIndex)
+                    onCitationClick(
+                      citation,
+                      citation.title.startsWith("Database:")
+                        ? undefined
+                        : chunkIndex,
+                    )
                   }
                   setIsTooltipOpen(false)
                 }}
@@ -206,7 +215,12 @@ export const createCitationLink =
                     e.preventDefault()
                     e.stopPropagation()
                     if (onCitationClick) {
-                      onCitationClick(citation, citation.title.startsWith('Database:')? undefined: chunkIndex)
+                      onCitationClick(
+                        citation,
+                        citation.title.startsWith("Database:")
+                          ? undefined
+                          : chunkIndex,
+                      )
                     }
                     setIsTooltipOpen(false)
                   }}
@@ -246,7 +260,8 @@ export const createCitationLink =
                       {citation.title.split("/").pop() || "Untitled Document"}
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-tight truncate">
-                      {citation.title.replace(/[^/]*$/, "") || (isAttachmentLink ? "attachment" : "No file name")}
+                      {citation.title.replace(/[^/]*$/, "") ||
+                        (isAttachmentLink ? "attachment" : "No file name")}
                     </div>
                   </div>
                 </div>

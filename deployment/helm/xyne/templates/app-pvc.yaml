@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "xyne.fullname" . }}-app-storage
+  labels:
+    {{- include "xyne.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.app.storage.storageClass }}
+  storageClassName: {{ .Values.app.storage.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.app.storage.size }}

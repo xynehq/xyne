@@ -439,7 +439,7 @@ export const SearchResult = ({
   } else if (result.type === "kb_items") {
     const title = (result as { fileName?: string }).fileName
     const chunkText = (summary: string | { chunk?: string }) =>
-      typeof summary === "string" ? summary : summary?.chunk ?? ""
+      typeof summary === "string" ? summary : (summary?.chunk ?? "")
     const kbTitleContent = (
       <>
         {getIcon(result.app, result.entity, { w: 24, h: 24, mr: 20 })}

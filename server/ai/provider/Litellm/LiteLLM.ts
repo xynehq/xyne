@@ -35,7 +35,9 @@ function extractReasoningText(rawReasoning: any): string {
   }
   if (Array.isArray(rawReasoning)) {
     return rawReasoning
-      .map((part: any) => (typeof part === "string" ? part : (part?.text ?? "")))
+      .map((part: any) =>
+        typeof part === "string" ? part : (part?.text ?? ""),
+      )
       .join("")
   }
   if (rawReasoning && typeof rawReasoning === "object") {
@@ -47,7 +49,9 @@ function extractReasoningText(rawReasoning: any): string {
 const buildLiteLLMImageParts = async (
   imagePaths: string[],
 ): Promise<OpenAI.Chat.Completions.ChatCompletionContentPartImage[]> => {
-  const baseDir = path.resolve(process.env.IMAGE_DIR || "downloads/xyne_images_db")
+  const baseDir = path.resolve(
+    process.env.IMAGE_DIR || "downloads/xyne_images_db",
+  )
 
   const imagePromises = imagePaths.map(async (imgPath) => {
     const match = imgPath.match(regex)
@@ -110,9 +114,7 @@ const buildLiteLLMImageParts = async (
 
   const results = await Promise.all(imagePromises)
   return results.filter(
-    (
-      part,
-    ): part is OpenAI.Chat.Completions.ChatCompletionContentPartImage =>
+    (part): part is OpenAI.Chat.Completions.ChatCompletionContentPartImage =>
       part !== null,
   )
 }
@@ -136,15 +138,20 @@ const transformLiteLLMMessages = async (
     const role = message.role === "assistant" ? "assistant" : "user"
     const text = getMessageText(message)
 
-    if (role === "user" && index === lastUserMessageIndex && imageParts.length > 0) {
-      const labeledParts: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
-        {
-          type: "text",
-          text:
-            "You may receive image(s) as part of the conversation. If images are attached, treat them as essential context for the user's question. When referring to images in your response, please use the labels provided [docIndex_imageNumber] (e.g., [0_12], [7_2], etc.).\n\n" +
-            text,
-        },
-      ]
+    if (
+      role === "user" &&
+      index === lastUserMessageIndex &&
+      imageParts.length > 0
+    ) {
+      const labeledParts: OpenAI.Chat.Completions.ChatCompletionContentPart[] =
+        [
+          {
+            type: "text",
+            text:
+              "You may receive image(s) as part of the conversation. If images are attached, treat them as essential context for the user's question. When referring to images in your response, please use the labels provided [docIndex_imageNumber] (e.g., [0_12], [7_2], etc.).\n\n" +
+              text,
+          },
+        ]
 
       imageParts.forEach((part, i) => {
         const imageFileName = imageFileNames?.[i] || ""
@@ -183,7 +190,7 @@ export class LiteLLM {
     this.client = new OpenAI({
       apiKey: clientConfig.apiKey,
       baseURL: clientConfig.baseURL,
-      dangerouslyAllowBrowser: true
+      dangerouslyAllowBrowser: true,
     })
   }
 
@@ -197,16 +204,18 @@ export class LiteLLMProvider extends BaseProvider {
     super(client, AIProviders.LiteLLM)
   }
 
-
   async converse(
     messages: Message[],
     params: ModelParams,
   ): Promise<ConverseResponse> {
     const modelParams = this.getModelParams(params)
-    Logger.info({
-      modelId: modelParams.modelId,
-      thinking: params.reasoning ?? false,
-    }, "LiteLLM Converse called with model:")
+    Logger.info(
+      {
+        modelId: modelParams.modelId,
+        thinking: params.reasoning ?? false,
+      },
+      "LiteLLM Converse called with model:",
+    )
     const client = (this.client as LiteLLM).getClient()
 
     try {
@@ -214,26 +223,30 @@ export class LiteLLMProvider extends BaseProvider {
       const transformedMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
         await transformLiteLLMMessages(messages, params.imageFileNames)
 
-      const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-        {
-          role: "system",
-          content: modelParams.systemPrompt || ""
-        },
-        ...transformedMessages,
-      ]
+      const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
+        [
+          {
+            role: "system",
+            content: modelParams.systemPrompt || "",
+          },
+          ...transformedMessages,
+        ]
 
-      const tools = params.tools && params.tools.length
-        ? params.tools.map((t) => ({
-            type: "function" as const,
-            function: {
-              name: t.name,
-              description: t.description,
-              parameters: t.parameters || { type: "object", properties: {} },
-            },
-          }))
-        : undefined
+      const tools =
+        params.tools && params.tools.length
+          ? params.tools.map((t) => ({
+              type: "function" as const,
+              function: {
+                name: t.name,
+                description: t.description,
+                parameters: t.parameters || { type: "object", properties: {} },
+              },
+            }))
+          : undefined
 
-      const requestParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming & { extra_body?: Record<string, unknown> } = {
+      const requestParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming & {
+        extra_body?: Record<string, unknown>
+      } = {
         model: modelParams.modelId,
         messages: openaiMessages,
         max_tokens: modelParams.maxTokens,
@@ -247,7 +260,7 @@ export class LiteLLMProvider extends BaseProvider {
           },
         },
       }
-      
+
       const response = await client.chat.completions.create(requestParams)
 
       // Extract the first choice
@@ -288,13 +301,13 @@ export class LiteLLMProvider extends BaseProvider {
                 type: "function" as const,
                 function: {
                   name: tc.type === "function" ? tc.function.name : "",
-                  arguments: tc.type === "function" ? tc.function.arguments : "",
+                  arguments:
+                    tc.type === "function" ? tc.function.arguments : "",
                 },
               })),
             }
           : {}),
       }
-
     } catch (error) {
       Logger.error("LiteLLM Converse Error:", {
         error: error instanceof Error ? error.message : String(error),
@@ -311,10 +324,13 @@ export class LiteLLMProvider extends BaseProvider {
     params: ModelParams,
   ): AsyncIterableIterator<ConverseResponse> {
     const modelParams = this.getModelParams(params)
-    Logger.info({
-      modelId: modelParams.modelId,
-      thinking: params.reasoning ?? false,
-    }, "LiteLLM ConverseStream called with model:")
+    Logger.info(
+      {
+        modelId: modelParams.modelId,
+        thinking: params.reasoning ?? false,
+      },
+      "LiteLLM ConverseStream called with model:",
+    )
     const client = (this.client as LiteLLM).getClient()
 
     try {
@@ -322,26 +338,30 @@ export class LiteLLMProvider extends BaseProvider {
       const transformedMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
         await transformLiteLLMMessages(messages, params.imageFileNames)
 
-      const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-        {
-          role: "system",
-          content: modelParams.systemPrompt || ""
-        },
-        ...transformedMessages,
-      ]
+      const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
+        [
+          {
+            role: "system",
+            content: modelParams.systemPrompt || "",
+          },
+          ...transformedMessages,
+        ]
 
-      const tools = params.tools && params.tools.length
-        ? params.tools.map((t) => ({
-            type: "function" as const,
-            function: {
-              name: t.name,
-              description: t.description,
-              parameters: t.parameters || { type: "object", properties: {} },
-            },
-          }))
-        : undefined
+      const tools =
+        params.tools && params.tools.length
+          ? params.tools.map((t) => ({
+              type: "function" as const,
+              function: {
+                name: t.name,
+                description: t.description,
+                parameters: t.parameters || { type: "object", properties: {} },
+              },
+            }))
+          : undefined
 
-      const requestParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming & { extra_body?: Record<string, unknown> } = {
+      const requestParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming & {
+        extra_body?: Record<string, unknown>
+      } = {
         model: modelParams.modelId,
         messages: openaiMessages,
         max_tokens: modelParams.maxTokens,
@@ -385,7 +405,7 @@ export class LiteLLMProvider extends BaseProvider {
             },
             costConfig,
           )
-          
+
           // Continue to process the chunk even if it has usage
         }
 
@@ -447,8 +467,7 @@ export class LiteLLMProvider extends BaseProvider {
               toolCalls[index].function.name = toolCall.function.name
             }
             if (toolCall.function?.arguments) {
-              toolCalls[index].function.arguments +=
-                toolCall.function.arguments
+              toolCalls[index].function.arguments += toolCall.function.arguments
             }
           }
         }
@@ -473,15 +492,24 @@ export class LiteLLMProvider extends BaseProvider {
 
       // Check if stream object has usage info after iteration (fallback)
       // Also check for LiteLLM's response_cost in _hidden_params
-      const streamUsage = (stream as any).usage || (stream as any).response?.usage
-      const responseCost = (stream as any)._hidden_params?.response_cost || (stream as any).response_cost
+      const streamUsage =
+        (stream as any).usage || (stream as any).response?.usage
+      const responseCost =
+        (stream as any)._hidden_params?.response_cost ||
+        (stream as any).response_cost
 
       // If LiteLLM provides response_cost directly, use it
-      if (responseCost && typeof responseCost === 'number' && accumulatedCost === 0) {
+      if (
+        responseCost &&
+        typeof responseCost === "number" &&
+        accumulatedCost === 0
+      ) {
         accumulatedCost = responseCost
       } else if (streamUsage && accumulatedCost === 0) {
-        const inputTokens = streamUsage.prompt_tokens || streamUsage.input_tokens || 0
-        const outputTokens = streamUsage.completion_tokens || streamUsage.output_tokens || 0
+        const inputTokens =
+          streamUsage.prompt_tokens || streamUsage.input_tokens || 0
+        const outputTokens =
+          streamUsage.completion_tokens || streamUsage.output_tokens || 0
 
         accumulatedCost = calculateCost(
           {
@@ -500,7 +528,8 @@ export class LiteLLMProvider extends BaseProvider {
         }
       } else {
         Logger.warn({
-          message: "LiteLLM Stream: No cost calculated - usage info not found in stream or stream object",
+          message:
+            "LiteLLM Stream: No cost calculated - usage info not found in stream or stream object",
           modelId: modelParams.modelId,
           accumulatedCost,
           streamObjectKeys: streamUsage ? Object.keys(streamUsage) : "N/A",

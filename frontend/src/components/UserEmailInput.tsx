@@ -65,7 +65,9 @@ export const UserEmailInput: React.FC<UserEmailInputProps> = ({
   useEffect(() => {
     if (selectedSearchIndex >= 0 && searchResultsRef.current) {
       const container = searchResultsRef.current
-      const selectedElement = container.children[selectedSearchIndex] as HTMLElement
+      const selectedElement = container.children[
+        selectedSearchIndex
+      ] as HTMLElement
 
       if (selectedElement) {
         const containerRect = container.getBoundingClientRect()
@@ -108,7 +110,7 @@ export const UserEmailInput: React.FC<UserEmailInputProps> = ({
   }
 
   const handleSelectUser = (user: User) => {
-    if(selectedByOther && selectedByOther.includes(user.email)) {
+    if (selectedByOther && selectedByOther.includes(user.email)) {
       toast({
         title: "User already assigned",
         description: `${user.email} is already assigned to another role. Users cannot be both owners and regular users.`,
@@ -124,12 +126,14 @@ export const UserEmailInput: React.FC<UserEmailInputProps> = ({
   }
 
   const handleRemoveEmail = (email: string) => {
-    onEmailsChange(selectedEmails.filter((selectedEmail) => selectedEmail !== email))
+    onEmailsChange(
+      selectedEmails.filter((selectedEmail) => selectedEmail !== email),
+    )
   }
 
   // Get user object from email for display
   const getUserFromEmail = (email: string) => {
-    return users.find(user => user.email === email)
+    return users.find((user) => user.email === email)
   }
 
   return (
@@ -181,7 +185,9 @@ export const UserEmailInput: React.FC<UserEmailInputProps> = ({
                           {user.name}
                         </span>
                         <span className="text-gray-50 flex-shrink-0">-</span>
-                        <span className="text-gray-500 truncate">{user.email}</span>
+                        <span className="text-gray-500 truncate">
+                          {user.email}
+                        </span>
                       </div>
                       <UserPlus className="h-4 w-4 text-gray-400 flex-shrink-0" />
                     </div>

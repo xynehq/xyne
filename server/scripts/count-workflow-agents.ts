@@ -1,4 +1,3 @@
-
 import { db } from "@/db/client"
 import { agents } from "@/db/schema"
 import { and, eq, isNull, desc, count, sql } from "drizzle-orm"
@@ -18,8 +17,8 @@ export const countWorkflowAgents = async () => {
         eq(agents.allowWebSearch, false),
         eq(agents.isRagOn, false),
         eq(agents.docIds, sql`'[]'::jsonb`),
-        isNull(agents.deletedAt)
-      )
+        isNull(agents.deletedAt),
+      ),
     )
 
   console.log(`📊 Found ${result[0].count} workflow agents`)
@@ -47,15 +46,16 @@ export const previewAgentsToUpdate = async () => {
         eq(agents.allowWebSearch, false),
         eq(agents.isRagOn, false),
         eq(agents.docIds, sql`'[]'::jsonb`),
-        isNull(agents.deletedAt)
-      )
+        isNull(agents.deletedAt),
+      ),
     )
     .orderBy(desc(agents.createdAt))
 
-
   console.log(`🎯 Found ${agentsToUpdate.length} agents to update:`) // ADD THIS LINE
   agentsToUpdate.forEach((agent, index) => {
-    console.log(`${index + 1}. ${agent.name} (${agent.externalId}) - Current: ${agent.creation_source} - Created: ${agent.createdAt}`)
+    console.log(
+      `${index + 1}. ${agent.name} (${agent.externalId}) - Current: ${agent.creation_source} - Created: ${agent.createdAt}`,
+    )
   })
 
   return agentsToUpdate
@@ -73,8 +73,6 @@ export const WorkflowAgentsMainPreview = async () => {
 
     // Step 2: Preview
     await previewAgentsToUpdate()
-
-
   } catch (error) {
     console.error("❌ Error during running script:", error)
     throw error

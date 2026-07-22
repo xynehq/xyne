@@ -121,8 +121,6 @@ export function transformZohoTicketToVespa(
   comments: ZohoThread[],
   ticketAttachments: ZohoAttachment[],
 ): VespaZohoTicketBase {
-
-
   // Extract all emails from threads and comments
   const allEmails = extractEmails(threads, comments)
 

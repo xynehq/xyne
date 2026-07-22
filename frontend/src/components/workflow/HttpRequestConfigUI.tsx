@@ -3,8 +3,21 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, X, Trash2, Plus, AlertCircle, CheckCircle } from "lucide-react"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  ArrowLeft,
+  X,
+  Trash2,
+  Plus,
+  AlertCircle,
+  CheckCircle,
+} from "lucide-react"
 import { workflowToolsAPI } from "./api/ApiHandlers"
 
 interface HttpRequestConfigUIProps {
@@ -68,16 +81,20 @@ const HttpRequestConfigUI: React.FC<HttpRequestConfigUIProps> = ({
   const [newHeaderValue, setNewHeaderValue] = useState("")
   const [newParamKey, setNewParamKey] = useState("")
   const [newParamValue, setNewParamValue] = useState("")
-  const [urlValidationError, setUrlValidationError] = useState<string | null>(null)
+  const [urlValidationError, setUrlValidationError] = useState<string | null>(
+    null,
+  )
   const [isUrlValid, setIsUrlValid] = useState<boolean>(false)
   const [isSaving, setIsSaving] = useState(false)
 
   // URL validation
-  const validateUrl = (url: string): { isValid: boolean; error: string | null } => {
+  const validateUrl = (
+    url: string,
+  ): { isValid: boolean; error: string | null } => {
     if (!url.trim()) {
       return { isValid: false, error: "URL is required" }
     }
-    
+
     try {
       new URL(url)
       return { isValid: true, error: null }
@@ -90,22 +107,32 @@ const HttpRequestConfigUI: React.FC<HttpRequestConfigUIProps> = ({
   useEffect(() => {
     if (toolData) {
       // Handle different data structures: value, val, or config
-      const existingConfig = toolData.value || toolData.val || toolData.config || {}
-      
+      const existingConfig =
+        toolData.value || toolData.val || toolData.config || {}
+
       // Also check if there's additional config in toolData.config for auth settings
       const additionalConfig = toolData.config || {}
-      
-      setHttpConfig(prevConfig => ({
+
+      setHttpConfig((prevConfig) => ({
         ...prevConfig,
         ...existingConfig,
         // Merge any additional auth config
-        ...(additionalConfig.authConfig && { authConfig: { ...prevConfig.authConfig, ...additionalConfig.authConfig } }),
-        ...(additionalConfig.authentication && { authentication: additionalConfig.authentication }),
+        ...(additionalConfig.authConfig && {
+          authConfig: {
+            ...prevConfig.authConfig,
+            ...additionalConfig.authConfig,
+          },
+        }),
+        ...(additionalConfig.authentication && {
+          authentication: additionalConfig.authentication,
+        }),
         ...(additionalConfig.timeout && { timeout: additionalConfig.timeout }),
-        ...(additionalConfig.followRedirects !== undefined && { followRedirects: additionalConfig.followRedirects }),
+        ...(additionalConfig.followRedirects !== undefined && {
+          followRedirects: additionalConfig.followRedirects,
+        }),
       }))
     } else if (stepData?.config) {
-      setHttpConfig(prevConfig => ({
+      setHttpConfig((prevConfig) => ({
         ...prevConfig,
         ...stepData.config,
       }))
@@ -120,7 +147,7 @@ const HttpRequestConfigUI: React.FC<HttpRequestConfigUIProps> = ({
   }, [httpConfig.url])
 
   const handleConfigChange = (field: keyof HttpRequestConfig, value: any) => {
-    setHttpConfig(prev => ({
+    setHttpConfig((prev) => ({
       ...prev,
       [field]: value,
     }))
@@ -128,7 +155,7 @@ const HttpRequestConfigUI: React.FC<HttpRequestConfigUIProps> = ({
 
   const handleAddHeader = () => {
     if (newHeaderKey.trim() && newHeaderValue.trim()) {
-      setHttpConfig(prev => ({
+      setHttpConfig((prev) => ({
         ...prev,
         headers: {
           ...prev.headers,
@@ -141,7 +168,7 @@ const HttpRequestConfigUI: React.FC<HttpRequestConfigUIProps> = ({
   }
 
   const handleRemoveHeader = (key: string) => {
-    setHttpConfig(prev => {
+    setHttpConfig((prev) => {
       const newHeaders = { ...prev.headers }
       delete newHeaders[key]
       return {
@@ -153,7 +180,7 @@ const HttpRequestConfigUI: React.FC<HttpRequestConfigUIProps> = ({
 
   const handleAddQueryParam = () => {
     if (newParamKey.trim() && newParamValue.trim()) {
-      setHttpConfig(prev => ({
+      setHttpConfig((prev) => ({
         ...prev,
         queryParams: {
           ...prev.queryParams,
@@ -166,7 +193,7 @@ const HttpRequestConfigUI: React.FC<HttpRequestConfigUIProps> = ({
   }
 
   const handleRemoveQueryParam = (key: string) => {
-    setHttpConfig(prev => {
+    setHttpConfig((prev) => {
       const newParams = { ...prev.queryParams }
       delete newParams[key]
       return {
@@ -250,7 +277,10 @@ const HttpRequestConfigUI: React.FC<HttpRequestConfigUIProps> = ({
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
         {/* Title */}
         <div className="space-y-2">
-          <Label htmlFor="title" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          <Label
+            htmlFor="title"
+            className="text-sm font-medium text-gray-700 dark:text-gray-300"
+          >
             Title (Optional)
           </Label>
           <Input
@@ -264,7 +294,10 @@ const HttpRequestConfigUI: React.FC<HttpRequestConfigUIProps> = ({
 
         {/* URL */}
         <div className="space-y-2">
-          <Label htmlFor="url" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          <Label
+            htmlFor="url"
+            className="text-sm font-medium text-gray-700 dark:text-gray-300"
+          >
             URL *
           </Label>
           <div className="relative">
@@ -283,16 +316,24 @@ const HttpRequestConfigUI: React.FC<HttpRequestConfigUIProps> = ({
             )}
           </div>
           {urlValidationError && (
-            <p className="text-sm text-red-600 dark:text-red-400">{urlValidationError}</p>
+            <p className="text-sm text-red-600 dark:text-red-400">
+              {urlValidationError}
+            </p>
           )}
         </div>
 
         {/* Method */}
         <div className="space-y-2">
-          <Label htmlFor="method" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          <Label
+            htmlFor="method"
+            className="text-sm font-medium text-gray-700 dark:text-gray-300"
+          >
             Method
           </Label>
-          <Select value={httpConfig.method} onValueChange={(value) => handleConfigChange("method", value)}>
+          <Select
+            value={httpConfig.method}
+            onValueChange={(value) => handleConfigChange("method", value)}
+          >
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
@@ -358,20 +399,22 @@ const HttpRequestConfigUI: React.FC<HttpRequestConfigUIProps> = ({
             Query Parameters
           </Label>
           <div className="space-y-2">
-            {Object.entries(httpConfig.queryParams || {}).map(([key, value]) => (
-              <div key={key} className="flex items-center gap-2">
-                <Input value={key} readOnly className="flex-1" />
-                <Input value={value} readOnly className="flex-1" />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleRemoveQueryParam(key)}
-                  className="p-2"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </Button>
-              </div>
-            ))}
+            {Object.entries(httpConfig.queryParams || {}).map(
+              ([key, value]) => (
+                <div key={key} className="flex items-center gap-2">
+                  <Input value={key} readOnly className="flex-1" />
+                  <Input value={value} readOnly className="flex-1" />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleRemoveQueryParam(key)}
+                    className="p-2"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </Button>
+                </div>
+              ),
+            )}
             <div className="flex items-center gap-2">
               <Input
                 placeholder="Parameter name"
@@ -402,10 +445,16 @@ const HttpRequestConfigUI: React.FC<HttpRequestConfigUIProps> = ({
         {["POST", "PUT", "PATCH"].includes(httpConfig.method) && (
           <>
             <div className="space-y-2">
-              <Label htmlFor="bodyType" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              <Label
+                htmlFor="bodyType"
+                className="text-sm font-medium text-gray-700 dark:text-gray-300"
+              >
                 Body Type
               </Label>
-              <Select value={httpConfig.bodyType} onValueChange={(value) => handleConfigChange("bodyType", value)}>
+              <Select
+                value={httpConfig.bodyType}
+                onValueChange={(value) => handleConfigChange("bodyType", value)}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -418,7 +467,10 @@ const HttpRequestConfigUI: React.FC<HttpRequestConfigUIProps> = ({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="body" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              <Label
+                htmlFor="body"
+                className="text-sm font-medium text-gray-700 dark:text-gray-300"
+              >
                 Request Body
               </Label>
               <Textarea
@@ -429,8 +481,8 @@ const HttpRequestConfigUI: React.FC<HttpRequestConfigUIProps> = ({
                   httpConfig.bodyType === "json"
                     ? '{"key": "value"}'
                     : httpConfig.bodyType === "form"
-                    ? "key1=value1&key2=value2"
-                    : "Raw request body"
+                      ? "key1=value1&key2=value2"
+                      : "Raw request body"
                 }
                 rows={6}
                 className="w-full font-mono text-sm"
@@ -441,10 +493,18 @@ const HttpRequestConfigUI: React.FC<HttpRequestConfigUIProps> = ({
 
         {/* Authentication */}
         <div className="space-y-2">
-          <Label htmlFor="auth" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          <Label
+            htmlFor="auth"
+            className="text-sm font-medium text-gray-700 dark:text-gray-300"
+          >
             Authentication
           </Label>
-          <Select value={httpConfig.authentication} onValueChange={(value) => handleConfigChange("authentication", value)}>
+          <Select
+            value={httpConfig.authentication}
+            onValueChange={(value) =>
+              handleConfigChange("authentication", value)
+            }
+          >
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
@@ -462,13 +522,23 @@ const HttpRequestConfigUI: React.FC<HttpRequestConfigUIProps> = ({
               <Input
                 placeholder="Username"
                 value={httpConfig.authConfig?.username || ""}
-                onChange={(e) => handleConfigChange("authConfig", { ...httpConfig.authConfig, username: e.target.value })}
+                onChange={(e) =>
+                  handleConfigChange("authConfig", {
+                    ...httpConfig.authConfig,
+                    username: e.target.value,
+                  })
+                }
               />
               <Input
                 type="password"
                 placeholder="Password"
                 value={httpConfig.authConfig?.password || ""}
-                onChange={(e) => handleConfigChange("authConfig", { ...httpConfig.authConfig, password: e.target.value })}
+                onChange={(e) =>
+                  handleConfigChange("authConfig", {
+                    ...httpConfig.authConfig,
+                    password: e.target.value,
+                  })
+                }
               />
             </div>
           )}
@@ -478,7 +548,12 @@ const HttpRequestConfigUI: React.FC<HttpRequestConfigUIProps> = ({
               <Input
                 placeholder="Bearer Token"
                 value={httpConfig.authConfig?.token || ""}
-                onChange={(e) => handleConfigChange("authConfig", { ...httpConfig.authConfig, token: e.target.value })}
+                onChange={(e) =>
+                  handleConfigChange("authConfig", {
+                    ...httpConfig.authConfig,
+                    token: e.target.value,
+                  })
+                }
               />
             </div>
           )}
@@ -488,12 +563,22 @@ const HttpRequestConfigUI: React.FC<HttpRequestConfigUIProps> = ({
               <Input
                 placeholder="API Key Header (e.g., X-API-Key)"
                 value={httpConfig.authConfig?.apiKeyHeader || ""}
-                onChange={(e) => handleConfigChange("authConfig", { ...httpConfig.authConfig, apiKeyHeader: e.target.value })}
+                onChange={(e) =>
+                  handleConfigChange("authConfig", {
+                    ...httpConfig.authConfig,
+                    apiKeyHeader: e.target.value,
+                  })
+                }
               />
               <Input
                 placeholder="API Key Value"
                 value={httpConfig.authConfig?.apiKey || ""}
-                onChange={(e) => handleConfigChange("authConfig", { ...httpConfig.authConfig, apiKey: e.target.value })}
+                onChange={(e) =>
+                  handleConfigChange("authConfig", {
+                    ...httpConfig.authConfig,
+                    apiKey: e.target.value,
+                  })
+                }
               />
             </div>
           )}
@@ -501,14 +586,19 @@ const HttpRequestConfigUI: React.FC<HttpRequestConfigUIProps> = ({
 
         {/* Advanced Options */}
         <div className="space-y-2">
-          <Label htmlFor="timeout" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          <Label
+            htmlFor="timeout"
+            className="text-sm font-medium text-gray-700 dark:text-gray-300"
+          >
             Timeout (ms)
           </Label>
           <Input
             id="timeout"
             type="number"
             value={httpConfig.timeout}
-            onChange={(e) => handleConfigChange("timeout", parseInt(e.target.value) || 30000)}
+            onChange={(e) =>
+              handleConfigChange("timeout", parseInt(e.target.value) || 30000)
+            }
             min={1000}
             max={300000}
             className="w-full"

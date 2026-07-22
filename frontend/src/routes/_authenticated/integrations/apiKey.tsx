@@ -146,7 +146,8 @@ const AVAILABLE_SCOPES: ApiKeyScope[] = [
   {
     id: ApiKeyScopes.ENHANCED_MESSAGE_FEEDBACK,
     name: "Enhanced Message Feedback",
-    description: "Allows submitting enhanced feedback with custom comments and options",
+    description:
+      "Allows submitting enhanced feedback with custom comments and options",
   },
 ]
 

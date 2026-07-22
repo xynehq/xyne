@@ -12,7 +12,12 @@ import { NoUserFound, OAuthCallbackError, NoConnectorsFound } from "@/errors"
 import { boss, SaaSQueue } from "@/queue"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { Apps, ConnectorStatus, ConnectorType, AuthType } from "@/shared/types"
-import { type OAuthCredentials, type ZohoOAuthCredentials, type SaaSOAuthJob, Subsystem } from "@/types"
+import {
+  type OAuthCredentials,
+  type ZohoOAuthCredentials,
+  type SaaSOAuthJob,
+  Subsystem,
+} from "@/types"
 import { Google, MicrosoftEntraId } from "arctic"
 import type { Context } from "hono"
 import { getCookie } from "hono/cookie"
@@ -209,7 +214,6 @@ export const OAuthCallback = async (c: Context) => {
       tokens = oauthTokens as OAuthCredentials
       tokens.data.accessTokenExpiresAt = oauthTokens.accessTokenExpiresAt()
     } else if (app === Apps.ZohoDesk) {
-
       const response = await fetch("https://accounts.zoho.com/oauth/v2/token", {
         method: "POST",
         headers: {

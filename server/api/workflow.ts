@@ -1,10 +1,20 @@
 import { Hono, type Context } from "hono"
 import { zValidator } from "@hono/zod-validator"
 import { z } from "zod"
-import { WorkflowStatus, StepType, ToolType, ToolExecutionStatus } from "@/types/workflowTypes"
-import { publicWorkflowTemplateSchema, workflowTemplate, type SelectAgent, type UpdateWorkflowTemplateRequest, type UserMetadata } from "../db/schema"
+import {
+  WorkflowStatus,
+  StepType,
+  ToolType,
+  ToolExecutionStatus,
+} from "@/types/workflowTypes"
+import {
+  publicWorkflowTemplateSchema,
+  workflowTemplate,
+  type SelectAgent,
+  type UpdateWorkflowTemplateRequest,
+  type UserMetadata,
+} from "../db/schema"
 import { type ExecuteAgentResponse } from "./agent/workflowAgentUtils"
-
 
 // Schema for workflow executions query parameters
 const listWorkflowExecutionsQuerySchema = z.object({
@@ -15,10 +25,16 @@ const listWorkflowExecutionsQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(100).optional().default(10),
   page: z.coerce.number().min(1).optional().default(1),
 })
-import { executeAgentForWorkflowWithRag, hasUnauthorizedAgent } from "./agent/workflowAgentUtils"
+import {
+  executeAgentForWorkflowWithRag,
+  hasUnauthorizedAgent,
+} from "./agent/workflowAgentUtils"
 import { db } from "@/db/client"
 import { sharedVespaService as vespa } from "../search/vespaService"
-import { FileProcessorService, type SheetProcessingResult } from "@/services/fileProcessor"
+import {
+  FileProcessorService,
+  type SheetProcessingResult,
+} from "@/services/fileProcessor"
 import { Apps, KbItemsSchema, fileSchema } from "@xyne/vespa-ts/types"
 import { attachmentFileTypeMap } from "@/shared/types"
 import { getFileType } from "@/shared/fileUtils"
@@ -41,7 +57,12 @@ import {
   formSubmissionSchema,
 } from "@/db/schema"
 import { users } from "@/db/schema"
-import { getUserByEmail, getUserById, getUserFromJWT, getUserMetaData } from "@/db/user"
+import {
+  getUserByEmail,
+  getUserById,
+  getUserFromJWT,
+  getUserMetaData,
+} from "@/db/user"
 import { createAgentForWorkflow } from "./agent/workflowAgentUtils"
 import { type CreateAgentPayload } from "./agent"
 import {
@@ -58,26 +79,29 @@ import {
   ne,
 } from "drizzle-orm"
 
-import { UserWorkflowRole,type AttachmentMetadata } from "@/shared/types"
+import { UserWorkflowRole, type AttachmentMetadata } from "@/shared/types"
 import { webhookRegistry } from "@/services/webhookRegistry"
 import webhookIntegrationService from "@/services/webhookIntegrationService"
-import { hasWebhookTools, triggerWebhookReload } from "@/services/webhookReloadService"
+import {
+  hasWebhookTools,
+  triggerWebhookReload,
+} from "@/services/webhookReloadService"
 
 // Utility function to sort steps based on their dependencies (prevStepIds/nextStepIds)
 function topologicalSortSteps(steps: any[]): any[] {
   // Create a map for quick lookup
-  const stepMap = new Map(steps.map(step => [step.id, step]))
+  const stepMap = new Map(steps.map((step) => [step.id, step]))
   const sorted: any[] = []
   const visiting = new Set<string>()
   const visited = new Set<string>()
-  
+
   function visit(stepId: string) {
     if (visited.has(stepId)) return
     if (visiting.has(stepId)) {
       // Circular dependency detected, skip for now
       return
     }
-    
+
     visiting.add(stepId)
     const step = stepMap.get(stepId)
     if (step) {
@@ -89,48 +113,48 @@ function topologicalSortSteps(steps: any[]): any[] {
           }
         }
       }
-      
+
       visiting.delete(stepId)
       visited.add(stepId)
       sorted.push(step)
     }
   }
-  
+
   // Find root steps (steps with no prevStepIds or empty prevStepIds)
-  const rootSteps = steps.filter(step => 
-    !step.prevStepIds || step.prevStepIds.length === 0
+  const rootSteps = steps.filter(
+    (step) => !step.prevStepIds || step.prevStepIds.length === 0,
   )
-  
+
   // Start with root steps
   for (const rootStep of rootSteps) {
     visit(rootStep.id)
   }
-  
+
   // Visit any remaining unvisited steps (in case of isolated components)
   for (const step of steps) {
     if (!visited.has(step.id)) {
       visit(step.id)
     }
   }
-  
+
   return sorted
 }
 
 // Utility function to sort step executions based on their template dependencies
 function topologicalSortStepExecutions(stepExecutions: any[]): any[] {
   // Create a map for quick lookup
-  const execMap = new Map(stepExecutions.map(exec => [exec.id, exec]))
+  const execMap = new Map(stepExecutions.map((exec) => [exec.id, exec]))
   const sorted: any[] = []
   const visiting = new Set<string>()
   const visited = new Set<string>()
-  
+
   function visit(execId: string) {
     if (visited.has(execId)) return
     if (visiting.has(execId)) {
       // Circular dependency detected, skip for now
       return
     }
-    
+
     visiting.add(execId)
     const exec = execMap.get(execId)
     if (exec) {
@@ -138,36 +162,38 @@ function topologicalSortStepExecutions(stepExecutions: any[]): any[] {
       if (exec.prevStepIds && Array.isArray(exec.prevStepIds)) {
         for (const prevTemplateId of exec.prevStepIds) {
           // Find the execution that corresponds to this template ID
-          const prevExec = stepExecutions.find(e => e.workflowStepTemplateId === prevTemplateId)
+          const prevExec = stepExecutions.find(
+            (e) => e.workflowStepTemplateId === prevTemplateId,
+          )
           if (prevExec && execMap.has(prevExec.id)) {
             visit(prevExec.id)
           }
         }
       }
-      
+
       visiting.delete(execId)
       visited.add(execId)
       sorted.push(exec)
     }
   }
-  
+
   // Find root executions (executions with no prevStepIds or empty prevStepIds)
-  const rootExecutions = stepExecutions.filter(exec => 
-    !exec.prevStepIds || exec.prevStepIds.length === 0
+  const rootExecutions = stepExecutions.filter(
+    (exec) => !exec.prevStepIds || exec.prevStepIds.length === 0,
   )
-  
+
   // Start with root executions
   for (const rootExec of rootExecutions) {
     visit(rootExec.id)
   }
-  
+
   // Visit any remaining unvisited executions (in case of isolated components)
   for (const exec of stepExecutions) {
     if (!visited.has(exec.id)) {
       visit(exec.id)
     }
   }
-  
+
   return sorted
 }
 
@@ -201,14 +227,13 @@ import {
 } from "@/api/workflowFileHandler"
 import { mkdir } from "node:fs/promises"
 
-
-import { 
-  createWorkflowTemplate, 
-  getAccessibleWorkflowTemplatesWithRole, 
-  getWorkflowExecutionById, 
-  getWorkflowExecutionByIdWithChecks, 
-  getWorkflowStepTemplateById, 
-  getWorkflowStepTemplatesByTemplateId, 
+import {
+  createWorkflowTemplate,
+  getAccessibleWorkflowTemplatesWithRole,
+  getWorkflowExecutionById,
+  getWorkflowExecutionByIdWithChecks,
+  getWorkflowStepTemplateById,
+  getWorkflowStepTemplatesByTemplateId,
   createWorkflowExecution,
   createWorkflowStepExecutionsFromSteps,
   getWorkflowTemplateByIdWithPermissionCheck,
@@ -236,10 +261,10 @@ const Logger = getLogger(Subsystem.WorkflowApi)
 // New Workflow API Routes
 export const workflowRouter = new Hono()
 
-
-
 // Utility function to extract attachment IDs from form data
-const extractAttachmentIds = (formData: Record<string, any>): {
+const extractAttachmentIds = (
+  formData: Record<string, any>,
+): {
   imageAttachmentIds: string[]
   documentAttachmentIds: string[]
 } => {
@@ -249,9 +274,9 @@ const extractAttachmentIds = (formData: Record<string, any>): {
   Object.entries(formData).forEach(([key, file]) => {
     Logger.info(`🔍 Examining form field ${key}:`, {
       type: typeof file,
-      isObject: typeof file === 'object' && file !== null,
-      keys: file && typeof file === 'object' ? Object.keys(file) : [],
-      value: JSON.stringify(file, null, 2)
+      isObject: typeof file === "object" && file !== null,
+      keys: file && typeof file === "object" ? Object.keys(file) : [],
+      value: JSON.stringify(file, null, 2),
     })
 
     // Check for different possible attachment structures
@@ -259,31 +284,44 @@ const extractAttachmentIds = (formData: Record<string, any>): {
     let isDocument = true
 
     // Structure 1: Direct attachmentId property
-    if (file && typeof file === 'object' && file !== null && 'attachmentId' in file && file.attachmentId) {
+    if (
+      file &&
+      typeof file === "object" &&
+      file !== null &&
+      "attachmentId" in file &&
+      file.attachmentId
+    ) {
       attachmentId = file.attachmentId
       Logger.info(`📎 Found attachmentId in direct property: ${attachmentId}`)
-      
-      if ('attachmentMetadata' in file && file.attachmentMetadata) {
+
+      if ("attachmentMetadata" in file && file.attachmentMetadata) {
         const metadata = file.attachmentMetadata as AttachmentMetadata
         isDocument = !metadata.isImage
-        Logger.info(`📋 Metadata found - isImage: ${metadata.isImage}, isDocument: ${isDocument}`)
+        Logger.info(
+          `📋 Metadata found - isImage: ${metadata.isImage}, isDocument: ${isDocument}`,
+        )
       }
     }
     // Structure 2: Check if the file itself is an attachment ID string
-    else if (typeof file === 'string' && file.startsWith('att_')) {
+    else if (typeof file === "string" && file.startsWith("att_")) {
       attachmentId = file
       Logger.info(`📎 Found attachment ID as string value: ${attachmentId}`)
     }
     // Structure 3: Check for nested structures
-    else if (file && typeof file === 'object' && file !== null) {
+    else if (file && typeof file === "object" && file !== null) {
       // Look for nested attachment properties
       const nestedKeys = Object.keys(file)
       for (const nestedKey of nestedKeys) {
-        if (nestedKey.includes('attachment') || nestedKey.includes('file')) {
+        if (nestedKey.includes("attachment") || nestedKey.includes("file")) {
           const nestedValue = file[nestedKey]
-          if (typeof nestedValue === 'string' && nestedValue.startsWith('att_')) {
+          if (
+            typeof nestedValue === "string" &&
+            nestedValue.startsWith("att_")
+          ) {
             attachmentId = nestedValue
-            Logger.info(`📎 Found attachment ID in nested property ${nestedKey}: ${attachmentId}`)
+            Logger.info(
+              `📎 Found attachment ID in nested property ${nestedKey}: ${attachmentId}`,
+            )
             break
           }
         }
@@ -306,14 +344,10 @@ const extractAttachmentIds = (formData: Record<string, any>): {
   return { imageAttachmentIds: imageIds, documentAttachmentIds: documentIds }
 }
 
-
 // List all workflow templates with root step details
 export const ListWorkflowTemplatesApi = async (c: Context) => {
   try {
-    const user = await getUserFromJWT(
-      db,
-      c.get(JwtPayloadKey)
-    )
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const templates = await getAccessibleWorkflowTemplatesWithRole(
       db,
       user.workspaceId,
@@ -326,14 +360,11 @@ export const ListWorkflowTemplatesApi = async (c: Context) => {
         const role = template.role
         let SharedUserMetadata: UserMetadata | null = null
         if (role === UserWorkflowRole.Shared) {
-          SharedUserMetadata = await getUserMetaData(
-            db,
-            template.userId
-          )
+          SharedUserMetadata = await getUserMetaData(db, template.userId)
         }
         const stepsRaw = await getWorkflowStepTemplatesByTemplateId(
           db,
-          template.id
+          template.id,
         )
         const steps = topologicalSortSteps(stepsRaw)
 
@@ -344,13 +375,13 @@ export const ListWorkflowTemplatesApi = async (c: Context) => {
             (s) => s.id === template.rootWorkflowStepTemplateId,
           )
           if (rootStepResult) {
-            const rootStepToolIds = rootStepResult.toolIds as string[] ?? [] 
+            const rootStepToolIds = (rootStepResult.toolIds as string[]) ?? []
             let rootStepTool = null
 
             if (rootStepToolIds.length > 0) {
               const rootStepTools = await getWorkflowToolsByIds(
                 db,
-                rootStepToolIds
+                rootStepToolIds,
               )
               rootStepTool = rootStepTools.length > 0 ? rootStepTools[0] : null
             }
@@ -392,35 +423,25 @@ export const ListWorkflowTemplatesApi = async (c: Context) => {
 // Get specific workflow template
 export const GetWorkflowTemplateApi = async (c: Context) => {
   try {
-    const user = await getUserFromJWT(
-      db,
-      c.get(JwtPayloadKey)
-    )
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const templateId = c.req.param("templateId")
 
     const template = await getWorkflowTemplateByIdWithPermissionCheck(
       db,
       templateId,
       user.workspaceId,
-      user.id
+      user.id,
     )
 
     if (!template) {
       throw new HTTPException(404, { message: "Workflow template not found" })
     }
 
-    const stepsRaw = await getWorkflowStepTemplatesByTemplateId(
-      db,
-      template.id
-    )
+    const stepsRaw = await getWorkflowStepTemplatesByTemplateId(db, template.id)
     const steps = topologicalSortSteps(stepsRaw)
 
-
-    const toolIds = steps.flatMap((s) => s.toolIds as string[] || [])
-    const tools = await getWorkflowToolsByIds(
-      db,
-      toolIds
-    )
+    const toolIds = steps.flatMap((s) => (s.toolIds as string[]) || [])
+    const tools = await getWorkflowToolsByIds(db, toolIds)
 
     return c.json({
       success: true,
@@ -448,7 +469,9 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     const userId = user.id
     const workspaceExternalId = jwtPayload.workspaceId
 
-    Logger.debug(`Debug-ExecuteWorkflowWithInputApi: userId=${userId}, workspaceInternalId=${user.workspaceId}, workspaceExternalId=${workspaceExternalId}`)
+    Logger.debug(
+      `Debug-ExecuteWorkflowWithInputApi: userId=${userId}, workspaceInternalId=${user.workspaceId}, workspaceExternalId=${workspaceExternalId}`,
+    )
 
     const templateId = c.req.param("templateId")
     const contentType = c.req.header("content-type") || ""
@@ -491,7 +514,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       db,
       templateId,
       user.workspaceId,
-      user.id
+      user.id,
     )
     if (!template) {
       throw new HTTPException(404, { message: "Workflow template not found" })
@@ -506,9 +529,8 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     // Get root step template
     const rootStepTemplate = await getWorkflowStepTemplateById(
       db,
-      template.rootWorkflowStepTemplateId
+      template.rootWorkflowStepTemplateId,
     )
-
 
     if (!rootStepTemplate) {
       throw new HTTPException(404, { message: "Root step template not found" })
@@ -519,10 +541,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     // Get root step tool for validation
     let rootStepTool = null
     if (rootStep.toolIds && rootStep.toolIds.length > 0) {
-      const toolResult = await getWorkflowToolById(
-        db,
-        rootStep.toolIds[0]
-      )
+      const toolResult = await getWorkflowToolById(db, rootStep.toolIds[0])
 
       if (toolResult) {
         rootStepTool = toolResult
@@ -530,7 +549,10 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     }
 
     // Validate input based on root step type
-    if (rootStep.type === StepType.MANUAL && rootStepTool?.type === ToolType.FORM) {
+    if (
+      rootStep.type === StepType.MANUAL &&
+      rootStepTool?.type === ToolType.FORM
+    ) {
       // Validate form input
       const formDefinition = rootStepTool.value as any
       const formFields = formDefinition?.fields || []
@@ -560,7 +582,6 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
             message: `Root step input validation failed: ${validationResult.errors.join(", ")}`,
           })
         }
-
       } else {
         // JSON validation (no files)
         const validationResult = validateFormData(
@@ -584,37 +605,33 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
 
     // Create workflow execution
     //Workflow TODO : currently in metadata we are passing userEmail, workspaceId, userId, workspaceInternalId, but after db changes we can directly fetch userId and workspaceId from workflowExecution tablexw
-    const execution = await createWorkflowExecution(
-      db,
-      {
-        workflowTemplateId: template.id,
-        workspaceId: user.workspaceId,
-        userId: userId,
-        name:
-          requestData.name ||
-          `${template.name} - ${new Date().toLocaleDateString()}`,
-        description:
-          requestData.description || `Execution of ${template.name}`,
-        metadata: {
-          ...requestData.metadata,
-        },
-        status: WorkflowStatus.ACTIVE,
-      }
-    )
+    const execution = await createWorkflowExecution(db, {
+      workflowTemplateId: template.id,
+      workspaceId: user.workspaceId,
+      userId: userId,
+      name:
+        requestData.name ||
+        `${template.name} - ${new Date().toLocaleDateString()}`,
+      description: requestData.description || `Execution of ${template.name}`,
+      metadata: {
+        ...requestData.metadata,
+      },
+      status: WorkflowStatus.ACTIVE,
+    })
 
     // Get all step templates
-    const stepsRaw = await getWorkflowStepTemplatesByTemplateId(
-      db,
-      template.id
-    )
+    const stepsRaw = await getWorkflowStepTemplatesByTemplateId(db, template.id)
     const steps = topologicalSortSteps(stepsRaw)
 
-    const stepExecutions = await createWorkflowStepExecutionsFromSteps(db, execution.id, steps)
+    const stepExecutions = await createWorkflowStepExecutionsFromSteps(
+      db,
+      execution.id,
+      steps,
+    )
 
     // Find root step execution
     const rootStepExecution = stepExecutions.find(
-      (se) =>
-        se.workflowStepTemplateId === template.rootWorkflowStepTemplateId,
+      (se) => se.workflowStepTemplateId === template.rootWorkflowStepTemplateId,
     )
 
     if (!rootStepExecution) {
@@ -628,16 +645,16 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       .update(workflowExecution)
       .set({ rootWorkflowStepExeId: rootStepExecution.id })
       .where(eq(workflowExecution.id, execution.id))
-    
+
     // // Mark root step as ACTIVE when workflow starts
     // await db
     //   .update(workflowStepExecution)
-    //   .set({ 
+    //   .set({
     //     status: WorkflowStatus.ACTIVE,
     //     updatedAt: new Date()
     //   })
     //   .where(eq(workflowStepExecution.id, rootStepExecution.id))
-    
+
     // Logger.info(`🚀 Marked root step as ACTIVE: ${rootStepExecution.name} (${rootStepExecution.id})`)
 
     // Process file uploads and create tool execution
@@ -660,7 +677,8 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
 
             if (file instanceof File) {
               try {
-                const fileValidation = buildValidationSchema(formFields)[field.id]?.fileValidation
+                const fileValidation =
+                  buildValidationSchema(formFields)[field.id]?.fileValidation
                 let finalProcessedData: WorkflowFileData = {
                   originalFileName: file.name,
                   fileName: file.name,
@@ -668,7 +686,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
                   mimetype: file.type,
                   uploadedAt: new Date().toISOString(),
                   uploadedBy: "api",
-                  fileExtension: file.name.split('.').pop() || '',
+                  fileExtension: file.name.split(".").pop() || "",
                   workflowExecutionId: execution.id,
                   workflowStepId: rootStepExecution.id,
                 }
@@ -681,55 +699,63 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
                     rootStepExecution.id,
                     fileValidation,
                   )
-                  
+
                   // Update file data with workflow upload paths
                   finalProcessedData = {
                     ...finalProcessedData,
                     ...workflowFileUpload,
                     uploadedBy: "api", // Keep API marker but include workflow paths
                   }
-                  
+
                   // Also create FormData for handleAttachmentUpload (for Vespa storage)
                   const attachmentFormData = new FormData()
-                  attachmentFormData.append('attachment', file)
+                  attachmentFormData.append("attachment", file)
 
                   // Create mock context with JWT payload for handleAttachmentUpload
                   //Workflow-TODO: instead of creating mock context, we should create a helper function inside handleAttachmentUpload to accept params directly, or need to refactor handleAttachmentUpload to be more modular
                   const mockContext = {
                     req: {
-                      formData: async () => attachmentFormData
+                      formData: async () => attachmentFormData,
                     },
                     get: (key: string) => {
                       if (key === JwtPayloadKey) {
                         return {
                           sub: user.email,
-                          workspaceId: workspaceExternalId
+                          workspaceId: workspaceExternalId,
                         }
                       }
                       return undefined
                     },
                     json: (data: any, status?: number) => {
                       return data
-                    }
+                    },
                   } as Context
 
-                  // workflow-TODO: add multifile Support 
+                  // workflow-TODO: add multifile Support
                   // call handleAttachmentUpload which store files in vespa and images in downloads/xyne_images_db
-                  const attachmentResult = await handleAttachmentUpload(mockContext) as unknown as AttachmentUploadResponse
+                  const attachmentResult = (await handleAttachmentUpload(
+                    mockContext,
+                  )) as unknown as AttachmentUploadResponse
 
-
-                  if (attachmentResult && typeof attachmentResult === 'object' && 'attachments' in attachmentResult) {
-                    const attachments: AttachmentMetadata[] = attachmentResult.attachments
+                  if (
+                    attachmentResult &&
+                    typeof attachmentResult === "object" &&
+                    "attachments" in attachmentResult
+                  ) {
+                    const attachments: AttachmentMetadata[] =
+                      attachmentResult.attachments
                     if (Array.isArray(attachments) && attachments.length > 0) {
                       const attachmentId = attachments[0].fileId
                       finalProcessedData = {
                         ...finalProcessedData,
                         attachmentId: attachmentId,
-                        attachmentMetadata: attachments[0]
+                        attachmentMetadata: attachments[0],
                       }
                     }
                   } else {
-                    Logger.warn(`handleAttachmentUpload did not return expected attachments array for field ${field.id}`)
+                    Logger.warn(
+                      `handleAttachmentUpload did not return expected attachments array for field ${field.id}`,
+                    )
                   }
                 } catch (attachmentError) {
                   Logger.error(
@@ -739,7 +765,6 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
                 }
 
                 processedFormData[field.id] = finalProcessedData
-
               } catch (uploadError) {
                 Logger.error(
                   uploadError,
@@ -754,22 +779,19 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
         }
       }
 
-      toolExecutionRecord = await createToolExecution(
-        db,
-        {
-          workflowToolId: rootStepTool.id,
-          workflowExecutionId: execution.id,
-          status: ToolExecutionStatus.COMPLETED,
-          result: {
-            formData: processedFormData,
-            submittedAt: new Date().toISOString(),
-            submittedBy: "api",
-            autoCompleted: true,
-          },
-          startedAt: new Date(),
-          completedAt: new Date()
-        }
-      )
+      toolExecutionRecord = await createToolExecution(db, {
+        workflowToolId: rootStepTool.id,
+        workflowExecutionId: execution.id,
+        status: ToolExecutionStatus.COMPLETED,
+        result: {
+          formData: processedFormData,
+          submittedAt: new Date().toISOString(),
+          submittedBy: "api",
+          autoCompleted: true,
+        },
+        startedAt: new Date(),
+        completedAt: new Date(),
+      })
     }
 
     // Mark root step as completed
@@ -781,7 +803,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
         completedAt: new Date(),
         toolExecIds: toolExecutionRecord ? [toolExecutionRecord.id] : [],
         metadata: {
-          ...(rootStepExecution.metadata as Object || {}),
+          ...((rootStepExecution.metadata as Object) || {}),
           formSubmission: {
             formData: processedFormData,
             submittedAt: new Date().toISOString(),
@@ -793,8 +815,9 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       .where(eq(workflowStepExecution.id, rootStepExecution.id))
 
     // Get all toolIds from step templates to fetch exactly the tools referenced by this workflow
-    const allToolIds = steps.flatMap((step) => step.toolIds as string[] || [])
-    const allTools = allToolIds.length > 0 ? await getWorkflowToolsByIds(db, allToolIds) : []
+    const allToolIds = steps.flatMap((step) => (step.toolIds as string[]) || [])
+    const allTools =
+      allToolIds.length > 0 ? await getWorkflowToolsByIds(db, allToolIds) : []
     const rootStepName = rootStepExecution.name || "Root Step"
     const currentResults: Record<string, any> = {}
 
@@ -868,7 +891,7 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
       db,
       templateId,
       user.workspaceId,
-      user.id
+      user.id,
     )
 
     if (!template) {
@@ -876,36 +899,32 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
     }
 
     // Get step templates
-    const stepsRaw = await getWorkflowStepTemplatesByTemplateId(
-      db,
-      template.id
-    )
+    const stepsRaw = await getWorkflowStepTemplatesByTemplateId(db, template.id)
     const steps = topologicalSortSteps(stepsRaw)
 
     // Get all toolIds from step templates to fetch exactly the tools referenced by this workflow
-    const allToolIds = steps.flatMap((step) => step.toolIds as string[] || [])
-    const tools = allToolIds.length > 0 ? await getWorkflowToolsByIds(db, allToolIds) : []
-
-
+    const allToolIds = steps.flatMap((step) => (step.toolIds as string[]) || [])
+    const tools =
+      allToolIds.length > 0 ? await getWorkflowToolsByIds(db, allToolIds) : []
 
     // Create workflow execution
-    const execution = await createWorkflowExecution(
-      db,
-      {
-        workflowTemplateId: template.id,
-        workspaceId: user.workspaceId,
-        userId: user.id,
-        name:
-          requestData.name ||
-          `${template.name} - ${new Date().toLocaleDateString()}`,
-        description:
-          requestData.description || `Execution of ${template.name}`,
-        metadata: requestData.metadata || {},
-        status: WorkflowStatus.ACTIVE,
-      }
-    )
+    const execution = await createWorkflowExecution(db, {
+      workflowTemplateId: template.id,
+      workspaceId: user.workspaceId,
+      userId: user.id,
+      name:
+        requestData.name ||
+        `${template.name} - ${new Date().toLocaleDateString()}`,
+      description: requestData.description || `Execution of ${template.name}`,
+      metadata: requestData.metadata || {},
+      status: WorkflowStatus.ACTIVE,
+    })
 
-    const stepExecutions = await createWorkflowStepExecutionsFromSteps(db, execution.id, steps)
+    const stepExecutions = await createWorkflowStepExecutionsFromSteps(
+      db,
+      execution.id,
+      steps,
+    )
 
     // Find root step (no parent)
     const rootStepExecution = stepExecutions.find((se) => {
@@ -956,12 +975,13 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
 const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
   try {
     // Get current workflow execution
-    const currentExecution = await getWorkflowExecutionById(
-      db,
-      executionId
-    )
+    const currentExecution = await getWorkflowExecutionById(db, executionId)
 
-    if (!currentExecution || currentExecution.status === WorkflowStatus.COMPLETED || currentExecution.status === WorkflowStatus.FAILED) {
+    if (
+      !currentExecution ||
+      currentExecution.status === WorkflowStatus.COMPLETED ||
+      currentExecution.status === WorkflowStatus.FAILED
+    ) {
       return false // Already completed or failed, no update needed
     }
 
@@ -976,7 +996,7 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
     // 1. It has been started (status is not "draft")
     // 2. OR it's the root step
     // 3. OR it has completed tool executions
-    const executedSteps = allStepExecutions.filter(step => {
+    const executedSteps = allStepExecutions.filter((step) => {
       const isRootStep = currentExecution.rootWorkflowStepExeId === step.id
       const hasBeenStarted = step.status !== WorkflowStatus.DRAFT
       const hasToolExecutions = step.toolExecIds && step.toolExecIds.length > 0
@@ -985,24 +1005,31 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
     })
 
     Logger.info(
-      `Workflow ${executionId}: ${executedSteps.length} executed steps out of ${allStepExecutions.length} total steps`
+      `Workflow ${executionId}: ${executedSteps.length} executed steps out of ${allStepExecutions.length} total steps`,
     )
 
     // Check completion conditions
-    const completedSteps = executedSteps.filter(step => step.status === WorkflowStatus.COMPLETED)
-    const failedSteps = executedSteps.filter(step => step.status === WorkflowStatus.FAILED)
-    const activeSteps = executedSteps.filter(step => step.status === WorkflowStatus.ACTIVE)
-    const manualStepsAwaitingInput = executedSteps.filter(step =>
-      step.type === StepType.MANUAL && step.status === WorkflowStatus.DRAFT
+    const completedSteps = executedSteps.filter(
+      (step) => step.status === WorkflowStatus.COMPLETED,
+    )
+    const failedSteps = executedSteps.filter(
+      (step) => step.status === WorkflowStatus.FAILED,
+    )
+    const activeSteps = executedSteps.filter(
+      (step) => step.status === WorkflowStatus.ACTIVE,
+    )
+    const manualStepsAwaitingInput = executedSteps.filter(
+      (step) =>
+        step.type === StepType.MANUAL && step.status === WorkflowStatus.DRAFT,
     )
 
     Logger.info(
-      `Workflow ${executionId} status: ${completedSteps.length} completed, ${failedSteps.length} failed, ${activeSteps.length} active, ${manualStepsAwaitingInput.length} awaiting input`
+      `Workflow ${executionId} status: ${completedSteps.length} completed, ${failedSteps.length} failed, ${activeSteps.length} active, ${manualStepsAwaitingInput.length} awaiting input`,
     )
 
     // Update workflow metadata with execution progress
     const progressMetadata = {
-      ...(currentExecution.metadata as Object || {}),
+      ...((currentExecution.metadata as Object) || {}),
       executionProgress: {
         totalSteps: allStepExecutions.length,
         executedSteps: executedSteps.length,
@@ -1010,8 +1037,8 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
         failedSteps: failedSteps.length,
         activeSteps: activeSteps.length,
         manualStepsAwaitingInput: manualStepsAwaitingInput.length,
-        lastUpdated: new Date().toISOString()
-      }
+        lastUpdated: new Date().toISOString(),
+      },
     }
 
     // Determine if workflow should be marked as completed
@@ -1026,11 +1053,13 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
           status: "failed",
           completedAt: new Date(),
           completedBy: "system",
-          metadata: progressMetadata
+          metadata: progressMetadata,
         })
         .where(eq(workflowExecution.id, executionId))
 
-      Logger.info(`Workflow ${executionId} marked as failed due to ${failedSteps.length} failed steps`)
+      Logger.info(
+        `Workflow ${executionId} marked as failed due to ${failedSteps.length} failed steps`,
+      )
       return true
     }
 
@@ -1041,7 +1070,10 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
       // All executed steps are completed
       shouldComplete = true
       completionReason = "All executed steps completed"
-    } else if (activeSteps.length === 0 && manualStepsAwaitingInput.length === 0) {
+    } else if (
+      activeSteps.length === 0 &&
+      manualStepsAwaitingInput.length === 0
+    ) {
       // No active steps and no manual steps awaiting input
       // This means we've reached the end of the execution path
       shouldComplete = true
@@ -1056,13 +1088,13 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
       .update(workflowExecution)
       .set({
         metadata: progressMetadata,
-        updatedAt: new Date()
+        updatedAt: new Date(),
       })
       .where(eq(workflowExecution.id, executionId))
 
     if (shouldComplete) {
       Logger.info(
-        `Workflow ${executionId} completion criteria met: ${completionReason}`
+        `Workflow ${executionId} completion criteria met: ${completionReason}`,
       )
 
       await db
@@ -1071,7 +1103,7 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
           status: ToolExecutionStatus.COMPLETED,
           completedAt: new Date(),
           completedBy: "system",
-          metadata: progressMetadata
+          metadata: progressMetadata,
         })
         .where(eq(workflowExecution.id, executionId))
 
@@ -1081,7 +1113,10 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
 
     return false
   } catch (error) {
-    Logger.error(error, `Failed to check workflow completion for ${executionId}`)
+    Logger.error(
+      error,
+      `Failed to check workflow completion for ${executionId}`,
+    )
     return false
   }
 }
@@ -1107,7 +1142,7 @@ const executeAutomatedWorkflowSteps = async (
         (s) => s.workflowStepTemplateId === nextStepTemplateId,
       )
 
-      if (nextStep ) {
+      if (nextStep) {
         Logger.info(
           `Executing automated step: ${nextStep.name} (${nextStep.id})`,
         )
@@ -1121,7 +1156,9 @@ const executeAutomatedWorkflowSteps = async (
         } catch (stepError) {
           // Step execution failed, workflow should already be marked as failed
           // Stop processing remaining steps
-          Logger.error(`Step execution failed, stopping workflow execution: ${stepError}`)
+          Logger.error(
+            `Step execution failed, stopping workflow execution: ${stepError}`,
+          )
           throw stepError
         }
       }
@@ -1161,12 +1198,12 @@ const executeAutomatedWorkflowSteps = async (
 
     // Check if workflow is already marked as failed before updating
     try {
-      const currentExecution = await getWorkflowExecutionById(
-        db,
-        executionId
-      )
+      const currentExecution = await getWorkflowExecutionById(db, executionId)
 
-      if (currentExecution && currentExecution.status !== WorkflowStatus.FAILED) {
+      if (
+        currentExecution &&
+        currentExecution.status !== WorkflowStatus.FAILED
+      ) {
         // Only mark as failed if not already failed (to avoid overriding specific failure info)
         await db
           .update(workflowExecution)
@@ -1176,12 +1213,19 @@ const executeAutomatedWorkflowSteps = async (
             completedBy: "system",
           })
           .where(eq(workflowExecution.id, executionId))
-        Logger.info(`Workflow ${executionId} marked as failed due to background execution error`)
+        Logger.info(
+          `Workflow ${executionId} marked as failed due to background execution error`,
+        )
       } else {
-        Logger.info(`Workflow ${executionId} already marked as failed, skipping status update`)
+        Logger.info(
+          `Workflow ${executionId} already marked as failed, skipping status update`,
+        )
       }
     } catch (dbError) {
-      Logger.error(dbError, `Failed to check or update workflow ${executionId} status`)
+      Logger.error(
+        dbError,
+        `Failed to check or update workflow ${executionId} status`,
+      )
     }
 
     throw error
@@ -1194,32 +1238,42 @@ const executeAutomatedWorkflowSteps = async (
  */
 async function checkPrerequisiteStepsCompleted(
   stepExecution: any,
-  allStepExecutions: any[]
+  allStepExecutions: any[],
 ): Promise<boolean> {
   // If there are no previous step IDs, there are no prerequisites
-  if (!stepExecution.prevStepIds || !Array.isArray(stepExecution.prevStepIds) || stepExecution.prevStepIds.length === 0) {
+  if (
+    !stepExecution.prevStepIds ||
+    !Array.isArray(stepExecution.prevStepIds) ||
+    stepExecution.prevStepIds.length === 0
+  ) {
     return true
   }
 
   // Check each prerequisite step
   for (const prevStepTemplateId of stepExecution.prevStepIds) {
     const prereqStep = allStepExecutions.find(
-      (s) => s.workflowStepTemplateId === prevStepTemplateId
+      (s) => s.workflowStepTemplateId === prevStepTemplateId,
     )
 
     if (!prereqStep) {
-      Logger.warn(`⚠️ Prerequisite step template ${prevStepTemplateId} not found for step ${stepExecution.name}`)
+      Logger.warn(
+        `⚠️ Prerequisite step template ${prevStepTemplateId} not found for step ${stepExecution.name}`,
+      )
       return false
     }
 
     // Check if prerequisite step is completed
     if (prereqStep.status !== WorkflowStatus.COMPLETED) {
-      Logger.info(`⏸️ Prerequisite step '${prereqStep.name}' (status: ${prereqStep.status}) not completed for step '${stepExecution.name}'`)
+      Logger.info(
+        `⏸️ Prerequisite step '${prereqStep.name}' (status: ${prereqStep.status}) not completed for step '${stepExecution.name}'`,
+      )
       return false
     }
   }
 
-  Logger.info(`✅ All ${stepExecution.prevStepIds.length} prerequisite step(s) completed for step '${stepExecution.name}'`)
+  Logger.info(
+    `✅ All ${stepExecution.prevStepIds.length} prerequisite step(s) completed for step '${stepExecution.name}'`,
+  )
   return true
 }
 
@@ -1228,13 +1282,14 @@ const uploadQAResultsToVespa = async (
   excelBuffer: Buffer,
   originalFileName: string,
   userEmail: string,
-  executionId: string
+  executionId: string,
 ): Promise<AttachmentMetadata> => {
   try {
     const fileId = `attf_${crypto.randomUUID()}`
     const fileName = originalFileName
-    const mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    
+    const mimeType =
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
     Logger.info(`📤 Uploading Q&A results to Vespa: ${fileName} (${fileId})`)
 
     // Process the Excel file using FileProcessorService (same as form attachments)
@@ -1249,7 +1304,7 @@ const uploadQAResultsToVespa = async (
     )
 
     let vespaId = fileId
-    if (processingResults.length > 0 && 'sheetName' in processingResults[0]) {
+    if (processingResults.length > 0 && "sheetName" in processingResults[0]) {
       // Use the actual docId from the first sheet result instead of calculating it
       vespaId = (processingResults[0] as SheetProcessingResult).docId
     }
@@ -1260,17 +1315,21 @@ const uploadQAResultsToVespa = async (
       let fileNameForDoc = fileName
 
       // For sheet processing results, append sheet information
-      if ('sheetName' in processingResult) {
+      if ("sheetName" in processingResult) {
         const sheetResult = processingResult as SheetProcessingResult
-        fileNameForDoc = processingResults.length > 1 
-          ? `${fileName} / ${sheetResult.sheetName}`
-          : fileName
+        fileNameForDoc =
+          processingResults.length > 1
+            ? `${fileName} / ${sheetResult.sheetName}`
+            : fileName
         docId = sheetResult.docId
       }
 
-      Logger.info(`📊 Processing Q&A Excel sheet: ${fileNameForDoc} with ${processingResult.chunks.length} chunks`)
+      Logger.info(
+        `📊 Processing Q&A Excel sheet: ${fileNameForDoc} with ${processingResult.chunks.length} chunks`,
+      )
 
-      const { chunks, chunks_pos, image_chunks, image_chunks_pos } = processingResult
+      const { chunks, chunks_pos, image_chunks, image_chunks_pos } =
+        processingResult
 
       const vespaDoc = {
         title: fileName,
@@ -1281,7 +1340,10 @@ const uploadQAResultsToVespa = async (
         owner: userEmail,
         photoLink: "",
         ownerEmail: userEmail,
-        entity: attachmentFileTypeMap[getFileType({ type: mimeType, name: fileName })],
+        entity:
+          attachmentFileTypeMap[
+            getFileType({ type: mimeType, name: fileName })
+          ],
         chunks: chunks,
         chunks_pos: chunks_pos,
         image_chunks: image_chunks,
@@ -1299,11 +1361,12 @@ const uploadQAResultsToVespa = async (
           lastModified: Date.now(),
           workflowExecutionId: executionId,
           isQAResult: true,
-          base64Content: Buffer.from(excelBuffer).toString('base64'), // Store Base64 content in metadata for email attachments
-          ...(('sheetName' in processingResult) && {
+          base64Content: Buffer.from(excelBuffer).toString("base64"), // Store Base64 content in metadata for email attachments
+          ...("sheetName" in processingResult && {
             sheetName: (processingResult as SheetProcessingResult).sheetName,
             sheetIndex: (processingResult as SheetProcessingResult).sheetIndex,
-            totalSheets: (processingResult as SheetProcessingResult).totalSheets,
+            totalSheets: (processingResult as SheetProcessingResult)
+              .totalSheets,
           }),
         }),
         createdAt: Date.now(),
@@ -1325,9 +1388,10 @@ const uploadQAResultsToVespa = async (
       url: `/api/v1/attachments/${vespaId}`,
     }
 
-    Logger.info(`✅ Q&A results uploaded to Vespa: ${fileName} (ID: ${vespaId})`)
+    Logger.info(
+      `✅ Q&A results uploaded to Vespa: ${fileName} (ID: ${vespaId})`,
+    )
     return metadata
-
   } catch (error) {
     Logger.error(`❌ Failed to upload Q&A results to Vespa:`, error)
     throw error
@@ -1335,7 +1399,10 @@ const uploadQAResultsToVespa = async (
 }
 
 // Helper function to build previous step results for background workflow continuation
-const buildPreviousStepResults = async (executionId: string, currentStepId: string) => {
+const buildPreviousStepResults = async (
+  executionId: string,
+  currentStepId: string,
+) => {
   const previousResults: any = {}
 
   try {
@@ -1363,22 +1430,28 @@ const buildPreviousStepResults = async (executionId: string, currentStepId: stri
       .leftJoin(workflowTool, eq(toolExecution.workflowToolId, workflowTool.id))
       .where(eq(toolExecution.workflowExecutionId, executionId))
 
-    Logger.info(`📊 Building previous results - found ${stepExecutions.length} steps and ${toolExecutions.length} tool executions`)
+    Logger.info(
+      `📊 Building previous results - found ${stepExecutions.length} steps and ${toolExecutions.length} tool executions`,
+    )
 
     // Process each completed step execution
     for (const stepExecution of stepExecutions) {
       // Skip the current step and only include completed steps
-      if (stepExecution.id === currentStepId || stepExecution.status !== WorkflowStatus.COMPLETED) {
+      if (
+        stepExecution.id === currentStepId ||
+        stepExecution.status !== WorkflowStatus.COMPLETED
+      ) {
         continue
       }
 
       // Find the Q&A tool execution that has the file metadata
-      const qaToolExecution = toolExecutions.find(te => 
-        te.status === 'completed' && 
-        te.toolType === 'qna_agent' &&
-        te.result &&
-        typeof te.result === 'object' &&
-        (te.result as any).attachmentMetadata
+      const qaToolExecution = toolExecutions.find(
+        (te) =>
+          te.status === "completed" &&
+          te.toolType === "qna_agent" &&
+          te.result &&
+          typeof te.result === "object" &&
+          (te.result as any).attachmentMetadata,
       )
 
       if (qaToolExecution) {
@@ -1386,19 +1459,18 @@ const buildPreviousStepResults = async (executionId: string, currentStepId: stri
         previousResults[stepKey] = {
           stepId: stepExecution.id,
           stepName: stepExecution.name,
-          toolType: 'qna_agent',
+          toolType: "qna_agent",
           result: qaToolExecution.result,
           status: stepExecution.status,
-          completedAt: stepExecution.completedAt
+          completedAt: stepExecution.completedAt,
         }
         Logger.info(`📋 Added Q&A step result for: ${stepKey}`)
       }
 
       // Also check for form tool executions
-      const formToolExecution = toolExecutions.find(te => 
-        te.status === 'completed' && 
-        te.toolType === 'form' &&
-        te.result
+      const formToolExecution = toolExecutions.find(
+        (te) =>
+          te.status === "completed" && te.toolType === "form" && te.result,
       )
 
       if (formToolExecution) {
@@ -1407,19 +1479,20 @@ const buildPreviousStepResults = async (executionId: string, currentStepId: stri
           previousResults[stepKey] = {
             stepId: stepExecution.id,
             stepName: stepExecution.name,
-            toolType: 'form',
+            toolType: "form",
             result: formToolExecution.result,
             status: stepExecution.status,
-            completedAt: stepExecution.completedAt
+            completedAt: stepExecution.completedAt,
           }
           Logger.info(`📋 Added Form step result for: ${stepKey}`)
         }
       }
     }
 
-    Logger.info(`✅ Built ${Object.keys(previousResults).length} previous step results`)
+    Logger.info(
+      `✅ Built ${Object.keys(previousResults).length} previous step results`,
+    )
     return previousResults
-
   } catch (error) {
     Logger.error(`Failed to build previous step results:`, error)
     return {}
@@ -1437,7 +1510,7 @@ export const executeWorkflowChain = async (
       executionId,
       currentStepId,
       toolCount: tools.length,
-      previousResultsKeys: Object.keys(previousResults || {})
+      previousResultsKeys: Object.keys(previousResults || {}),
     })
 
     // Get current step execution
@@ -1459,54 +1532,63 @@ export const executeWorkflowChain = async (
 
     // Check if step is already completed (e.g., webhook step completed at creation)
     if (step.status === WorkflowStatus.COMPLETED) {
-      Logger.info(`⏭️ Step already completed, loading results: ${step.name} (${step.id})`)
-      
+      Logger.info(
+        `⏭️ Step already completed, loading results: ${step.name} (${step.id})`,
+      )
+
       // Get completed tool execution results for this step execution
       const allToolExecutions = await db
         .select()
         .from(toolExecution)
         .where(eq(toolExecution.workflowExecutionId, executionId))
-      
+
       // Filter to only tool executions for this step
-      const toolExecutions = allToolExecutions.filter(tool => 
-        step.toolExecIds && step.toolExecIds.includes(tool.id)
+      const toolExecutions = allToolExecutions.filter(
+        (tool) => step.toolExecIds && step.toolExecIds.includes(tool.id),
       )
-      
-      Logger.info(`🔍 Looking for tool executions for step ${step.id}, found: ${toolExecutions.length}`)
-      
+
+      Logger.info(
+        `🔍 Looking for tool executions for step ${step.id}, found: ${toolExecutions.length}`,
+      )
+
       if (toolExecutions.length > 0) {
         const completedResult = toolExecutions[0].result
         Logger.info(`📋 Completed result for ${step.name}:`, {
           hasResult: !!completedResult,
           resultKeys: Object.keys(completedResult || {}),
-          resultSample: completedResult ? JSON.stringify(completedResult).substring(0, 200) : 'null'
+          resultSample: completedResult
+            ? JSON.stringify(completedResult).substring(0, 200)
+            : "null",
         })
-        
+
         const stepResults = {
           stepId: step.id,
           result: completedResult,
           toolExecution: toolExecutions[0],
-          status: 'success',
-          toolType: 'webhook'
+          status: "success",
+          toolType: "webhook",
         }
-        
+
         const updatedResults = {
           ...(previousResults || {}),
           [step.name]: stepResults,
         }
-        
+
         Logger.info(`📊 Loaded completed step results for '${step.name}':`, {
-          stepType: 'webhook',
-          status: 'completed',
+          stepType: "webhook",
+          status: "completed",
           hasResult: !!completedResult,
           resultKeys: Object.keys(completedResult || {}),
-          totalSteps: Object.keys(updatedResults).length
+          totalSteps: Object.keys(updatedResults).length,
         })
-        
+
         // Continue to next steps since this one is done
         if (step.nextStepIds && Array.isArray(step.nextStepIds)) {
-          Logger.info(`🔗 Found ${step.nextStepIds.length} next step(s) from completed step:`, step.nextStepIds)
-          
+          Logger.info(
+            `🔗 Found ${step.nextStepIds.length} next step(s) from completed step:`,
+            step.nextStepIds,
+          )
+
           for (const nextStepId of step.nextStepIds) {
             const nextSteps = await db
               .select()
@@ -1518,22 +1600,28 @@ export const executeWorkflowChain = async (
             )
 
             if (nextStep) {
-              const isWebhookTriggered = execution?.metadata && 
-                (execution.metadata as any).triggerType === 'webhook'
-              
+              const isWebhookTriggered =
+                execution?.metadata &&
+                (execution.metadata as any).triggerType === "webhook"
+
               // Check if all prerequisite steps are completed before executing
-              const arePrerequisitesCompleted = await checkPrerequisiteStepsCompleted(nextStep, nextSteps)
-              
+              const arePrerequisitesCompleted =
+                await checkPrerequisiteStepsCompleted(nextStep, nextSteps)
+
               if (!arePrerequisitesCompleted) {
-                Logger.info(`⏸️ Skipping step: ${nextStep.name} - Prerequisites not completed`)
+                Logger.info(
+                  `⏸️ Skipping step: ${nextStep.name} - Prerequisites not completed`,
+                )
                 continue
               }
-              
+
               // Determine if we should execute based on step type and status
               if (nextStep.type === StepType.AUTOMATED) {
                 // Automated steps: execute immediately if not already completed
                 if (nextStep.status !== WorkflowStatus.COMPLETED) {
-                  Logger.info(`⏭️ Executing automated step from completed step: ${nextStep.name} (${nextStep.id})`)
+                  Logger.info(
+                    `⏭️ Executing automated step from completed step: ${nextStep.name} (${nextStep.id})`,
+                  )
                   await executeWorkflowChain(
                     executionId,
                     nextStep.id,
@@ -1541,12 +1629,16 @@ export const executeWorkflowChain = async (
                     updatedResults,
                   )
                 } else {
-                  Logger.info(`⏩ Automated step already completed: ${nextStep.name}`)
+                  Logger.info(
+                    `⏩ Automated step already completed: ${nextStep.name}`,
+                  )
                 }
               } else if (nextStep.type === StepType.MANUAL) {
                 // Manual steps: only continue if already completed by user
                 if (nextStep.status === WorkflowStatus.COMPLETED) {
-                  Logger.info(`⏭️ Manual step already completed, continuing: ${nextStep.name} (${nextStep.id})`)
+                  Logger.info(
+                    `⏭️ Manual step already completed, continuing: ${nextStep.name} (${nextStep.id})`,
+                  )
                   await executeWorkflowChain(
                     executionId,
                     nextStep.id,
@@ -1554,11 +1646,15 @@ export const executeWorkflowChain = async (
                     updatedResults,
                   )
                 } else {
-                  Logger.info(`⏸️ Waiting for manual step completion: ${nextStep.name} (status: ${nextStep.status})`)
+                  Logger.info(
+                    `⏸️ Waiting for manual step completion: ${nextStep.name} (status: ${nextStep.status})`,
+                  )
                 }
               } else if (isWebhookTriggered) {
                 // Webhook-triggered: execute regardless of type
-                Logger.info(`🪝 Webhook-triggered step: ${nextStep.name} (${nextStep.id})`)
+                Logger.info(
+                  `🪝 Webhook-triggered step: ${nextStep.name} (${nextStep.id})`,
+                )
                 await executeWorkflowChain(
                   executionId,
                   nextStep.id,
@@ -1567,21 +1663,29 @@ export const executeWorkflowChain = async (
                 )
               }
             } else {
-              Logger.warn(`⚠️ Next step not found for template ID: ${nextStepId}`)
+              Logger.warn(
+                `⚠️ Next step not found for template ID: ${nextStepId}`,
+              )
             }
           }
         } else {
-          Logger.info(`🏁 No next steps found for completed step '${step.name}'`)
+          Logger.info(
+            `🏁 No next steps found for completed step '${step.name}'`,
+          )
         }
-        
+
         return updatedResults
       } else {
-        Logger.warn(`⚠️ No tool executions found for completed step ${step.name} (${step.id})`)
-        
+        Logger.warn(
+          `⚠️ No tool executions found for completed step ${step.name} (${step.id})`,
+        )
+
         // For webhook steps, provide dummy data to keep workflow running
-        if (step.name.toLowerCase().includes('webhook')) {
-          Logger.info(`🔄 Creating dummy webhook data for ${step.name} to continue workflow`)
-          
+        if (step.name.toLowerCase().includes("webhook")) {
+          Logger.info(
+            `🔄 Creating dummy webhook data for ${step.name} to continue workflow`,
+          )
+
           const dummyWebhookData = {
             webhook: {
               method: "POST",
@@ -1589,9 +1693,12 @@ export const executeWorkflowChain = async (
               path: "/test1",
               headers: { "Content-Type": "application/json" },
               query: {},
-              body: { message: "Test webhook trigger", timestamp: new Date().toISOString() },
+              body: {
+                message: "Test webhook trigger",
+                timestamp: new Date().toISOString(),
+              },
               timestamp: new Date().toISOString(),
-              curl: `curl -X POST -H "Content-Type: application/json" -d '{"message":"Test webhook trigger"}' "http://localhost:3000/workflow/webhook/test1"`
+              curl: `curl -X POST -H "Content-Type: application/json" -d '{"message":"Test webhook trigger"}' "http://localhost:3000/workflow/webhook/test1"`,
             },
             aiOutput: `Webhook Request Analysis:
 
@@ -1624,57 +1731,70 @@ Please analyze this webhook request and provide insights.`,
               aiOutput: "Test webhook data for AI analysis",
               content: "Test webhook content",
               summary: "Webhook received: POST request to /test1",
-              data: { message: "Test webhook trigger" }
+              data: { message: "Test webhook trigger" },
             },
-            data: { message: "Test webhook trigger", timestamp: new Date().toISOString() },
-            status: 'success',
-            message: 'Test webhook triggered for workflow execution'
+            data: {
+              message: "Test webhook trigger",
+              timestamp: new Date().toISOString(),
+            },
+            status: "success",
+            message: "Test webhook triggered for workflow execution",
           }
-          
+
           const stepResults = {
             stepId: step.id,
             result: dummyWebhookData,
             toolExecution: null,
-            status: 'success',
-            toolType: 'webhook'
+            status: "success",
+            toolType: "webhook",
           }
-          
+
           const updatedResults = {
             ...(previousResults || {}),
             [step.name]: stepResults,
           }
-          
-          Logger.info(`📊 Created dummy webhook data for '${step.name}' to continue workflow`)
-          
+
+          Logger.info(
+            `📊 Created dummy webhook data for '${step.name}' to continue workflow`,
+          )
+
           // Continue to next steps with dummy data
           if (step.nextStepIds && Array.isArray(step.nextStepIds)) {
             for (const nextStepId of step.nextStepIds) {
               const nextSteps = await db
                 .select()
                 .from(workflowStepExecution)
-                .where(eq(workflowStepExecution.workflowExecutionId, executionId))
+                .where(
+                  eq(workflowStepExecution.workflowExecutionId, executionId),
+                )
 
               const nextStep = nextSteps.find(
                 (s) => s.workflowStepTemplateId === nextStepId,
               )
 
               if (nextStep) {
-                const isWebhookTriggered = execution?.metadata && 
-                  (execution.metadata as any).triggerType === 'webhook'
-                
+                const isWebhookTriggered =
+                  execution?.metadata &&
+                  (execution.metadata as any).triggerType === "webhook"
+
                 // Check if all prerequisite steps are completed before executing
-                const arePrerequisitesCompleted = await checkPrerequisiteStepsCompleted(nextStep, nextSteps)
-                
+                const arePrerequisitesCompleted =
+                  await checkPrerequisiteStepsCompleted(nextStep, nextSteps)
+
                 if (!arePrerequisitesCompleted) {
-                  Logger.info(`⏸️ Skipping step: ${nextStep.name} - Prerequisites not completed`)
+                  Logger.info(
+                    `⏸️ Skipping step: ${nextStep.name} - Prerequisites not completed`,
+                  )
                   continue
                 }
-                
+
                 // Determine if we should execute based on step type and status
                 if (nextStep.type === StepType.AUTOMATED) {
                   // Automated steps: execute immediately if not already completed
                   if (nextStep.status !== WorkflowStatus.COMPLETED) {
-                    Logger.info(`⏭️ Executing automated step with dummy data: ${nextStep.name} (${nextStep.id})`)
+                    Logger.info(
+                      `⏭️ Executing automated step with dummy data: ${nextStep.name} (${nextStep.id})`,
+                    )
                     await executeWorkflowChain(
                       executionId,
                       nextStep.id,
@@ -1682,12 +1802,16 @@ Please analyze this webhook request and provide insights.`,
                       updatedResults,
                     )
                   } else {
-                    Logger.info(`⏩ Automated step already completed: ${nextStep.name}`)
+                    Logger.info(
+                      `⏩ Automated step already completed: ${nextStep.name}`,
+                    )
                   }
                 } else if (nextStep.type === StepType.MANUAL) {
                   // Manual steps: only continue if already completed by user
                   if (nextStep.status === WorkflowStatus.COMPLETED) {
-                    Logger.info(`⏭️ Manual step already completed, continuing with dummy data: ${nextStep.name} (${nextStep.id})`)
+                    Logger.info(
+                      `⏭️ Manual step already completed, continuing with dummy data: ${nextStep.name} (${nextStep.id})`,
+                    )
                     await executeWorkflowChain(
                       executionId,
                       nextStep.id,
@@ -1695,11 +1819,15 @@ Please analyze this webhook request and provide insights.`,
                       updatedResults,
                     )
                   } else {
-                    Logger.info(`⏸️ Waiting for manual step completion: ${nextStep.name} (status: ${nextStep.status})`)
+                    Logger.info(
+                      `⏸️ Waiting for manual step completion: ${nextStep.name} (status: ${nextStep.status})`,
+                    )
                   }
                 } else if (isWebhookTriggered) {
                   // Webhook-triggered: execute regardless of type
-                  Logger.info(`🪝 Webhook-triggered step with dummy data: ${nextStep.name} (${nextStep.id})`)
+                  Logger.info(
+                    `🪝 Webhook-triggered step with dummy data: ${nextStep.name} (${nextStep.id})`,
+                  )
                   await executeWorkflowChain(
                     executionId,
                     nextStep.id,
@@ -1710,16 +1838,17 @@ Please analyze this webhook request and provide insights.`,
               }
             }
           }
-          
+
           return updatedResults
         }
-        
+
         // If no tool executions found, let it continue to normal execution path
       }
     }
-    
-    const isWebhookTriggered = execution?.metadata && 
-      (execution.metadata as any).triggerType === 'webhook'
+
+    const isWebhookTriggered =
+      execution?.metadata &&
+      (execution.metadata as any).triggerType === "webhook"
 
     // // If step is manual and not webhook-triggered, wait for user input
     // if (step.type === StepType.MANUAL && !isWebhookTriggered) {
@@ -1730,7 +1859,7 @@ Please analyze this webhook request and provide insights.`,
     // Get the tool for this step from the step template (not execution)
     const stepTemplate = await getWorkflowStepTemplateById(
       db,
-      step.workflowStepTemplateId
+      step.workflowStepTemplateId,
     )
     if (!stepTemplate) {
       return previousResults
@@ -1744,18 +1873,28 @@ Please analyze this webhook request and provide insights.`,
 
     const tool = tools.find((t) => t.id === toolId)
     if (!tool) {
-      Logger.warn(`🔍 Tool not found for ID: ${toolId}. Available tools: ${tools.map(t => `${t.id}:${t.type}`).join(', ')}`)
+      Logger.warn(
+        `🔍 Tool not found for ID: ${toolId}. Available tools: ${tools.map((t) => `${t.id}:${t.type}`).join(", ")}`,
+      )
       return previousResults
     }
 
-    Logger.info(`🔧 Executing tool: ${tool.type} (${tool.id}) for step: ${step.name}`)
+    Logger.info(
+      `🔧 Executing tool: ${tool.type} (${tool.id}) for step: ${step.name}`,
+    )
 
     // Execute the tool
-    const toolResult = await executeWorkflowTool(tool, previousResults, executionId)
+    const toolResult = await executeWorkflowTool(
+      tool,
+      previousResults,
+      executionId,
+    )
 
     // Check if tool execution failed
     if (toolResult.status !== "success") {
-      Logger.error(`Tool execution failed for step ${step.name}: ${JSON.stringify(toolResult.result)}`)
+      Logger.error(
+        `Tool execution failed for step ${step.name}: ${JSON.stringify(toolResult.result)}`,
+      )
 
       // Create failed tool execution record
       let toolExecutionRecord
@@ -1773,7 +1912,9 @@ Please analyze this webhook request and provide insights.`,
           .returning()
         toolExecutionRecord = execution
       } catch (dbError) {
-        Logger.warn(`Database insert failed for failed tool, creating minimal record: ${dbError}`)
+        Logger.warn(
+          `Database insert failed for failed tool, creating minimal record: ${dbError}`,
+        )
         const [execution] = await db
           .insert(toolExecution)
           .values({
@@ -1782,7 +1923,7 @@ Please analyze this webhook request and provide insights.`,
             status: "failed",
             result: {
               error: "Tool execution failed and result could not be stored",
-              original_error: "Database storage failed"
+              original_error: "Database storage failed",
             },
             startedAt: new Date(),
             completedAt: new Date(),
@@ -1812,32 +1953,39 @@ Please analyze this webhook request and provide insights.`,
         })
         .where(eq(workflowExecution.id, executionId))
 
-      Logger.error(`Workflow ${executionId} marked as failed due to step ${step.name} failure`)
+      Logger.error(
+        `Workflow ${executionId} marked as failed due to step ${step.name} failure`,
+      )
 
       // Return error result to stop further execution
-      throw new Error(`Step "${step.name}" failed: ${JSON.stringify(toolResult.result)}`)
+      throw new Error(
+        `Step "${step.name}" failed: ${JSON.stringify(toolResult.result)}`,
+      )
     }
 
     // Create tool execution record with error handling for unicode issues
     let toolExecutionRecord
-    
+
     // Check if tool result indicates awaiting user selection
-    const isAwaitingUserSelection = toolResult.result && 
-      typeof toolResult.result === 'object' && 
+    const isAwaitingUserSelection =
+      toolResult.result &&
+      typeof toolResult.result === "object" &&
       (toolResult.result as any).awaitingUserSelection === true
-    
+
     if (isAwaitingUserSelection) {
-      Logger.info(`⏸️ Tool execution awaiting user selection for step: ${step.name}`)
+      Logger.info(
+        `⏸️ Tool execution awaiting user selection for step: ${step.name}`,
+      )
     }
-    
-    const toolStatus = isAwaitingUserSelection 
-      ? ToolExecutionStatus.PENDING  // Keep as pending to await user input
+
+    const toolStatus = isAwaitingUserSelection
+      ? ToolExecutionStatus.PENDING // Keep as pending to await user input
       : ToolExecutionStatus.COMPLETED
-    
-    const completedAt = isAwaitingUserSelection 
-      ? null  // Don't set completion time if awaiting user input
+
+    const completedAt = isAwaitingUserSelection
+      ? null // Don't set completion time if awaiting user input
       : new Date()
-    
+
     try {
       const [execution] = await db
         .insert(toolExecution)
@@ -1904,14 +2052,14 @@ Please analyze this webhook request and provide insights.`,
     }
 
     // Update step status based on whether tool is awaiting user selection
-    const stepStatus = isAwaitingUserSelection 
-      ? WorkflowStatus.ACTIVE  // Keep step active if awaiting user input
+    const stepStatus = isAwaitingUserSelection
+      ? WorkflowStatus.ACTIVE // Keep step active if awaiting user input
       : WorkflowStatus.COMPLETED
-    
-    const stepCompletedAt = isAwaitingUserSelection 
-      ? null  // Don't set completion time if awaiting user input
+
+    const stepCompletedAt = isAwaitingUserSelection
+      ? null // Don't set completion time if awaiting user input
       : new Date()
-    
+
     await db
       .update(workflowStepExecution)
       .set({
@@ -1923,9 +2071,13 @@ Please analyze this webhook request and provide insights.`,
       .where(eq(workflowStepExecution.id, currentStepId))
 
     if (isAwaitingUserSelection) {
-      Logger.info(`⏸️ Step marked as ACTIVE (awaiting user selection): ${step.name} (${step.id}) - Tool: ${tool.type}`)
+      Logger.info(
+        `⏸️ Step marked as ACTIVE (awaiting user selection): ${step.name} (${step.id}) - Tool: ${tool.type}`,
+      )
     } else {
-      Logger.info(`✅ Step marked as COMPLETED: ${step.name} (${step.id}) - Tool: ${tool.type}`)
+      Logger.info(
+        `✅ Step marked as COMPLETED: ${step.name} (${step.id}) - Tool: ${tool.type}`,
+      )
     }
 
     // Store results for next step
@@ -1939,17 +2091,25 @@ Please analyze this webhook request and provide insights.`,
 
     // Special handling for form steps: if this is a form step and the tool execution contains form data,
     // make sure the form data (including file attachments) is easily accessible
-    if (tool.type === "form" && toolExecutionRecord && toolExecutionRecord.result) {
+    if (
+      tool.type === "form" &&
+      toolExecutionRecord &&
+      toolExecutionRecord.result
+    ) {
       const executionResult = toolExecutionRecord.result as any
       if (executionResult.formData) {
-        Logger.info(`📋 Form step detected - enhancing step results with form data for: ${step.name}`)
+        Logger.info(
+          `📋 Form step detected - enhancing step results with form data for: ${step.name}`,
+        )
         // Add form data directly to the step result for easier access by next steps
         stepResults.formSubmission = {
           formData: executionResult.formData,
           submittedAt: executionResult.submittedAt,
-          submittedBy: executionResult.submittedBy
+          submittedBy: executionResult.submittedBy,
         }
-        Logger.info(`📎 Form data keys available: ${Object.keys(executionResult.formData).join(', ')}`)
+        Logger.info(
+          `📎 Form data keys available: ${Object.keys(executionResult.formData).join(", ")}`,
+        )
       }
     }
 
@@ -1963,22 +2123,30 @@ Please analyze this webhook request and provide insights.`,
       status: toolResult.status,
       hasResult: !!toolResult.result,
       resultKeys: Object.keys(toolResult.result || {}),
-      totalSteps: Object.keys(updatedResults).length
+      totalSteps: Object.keys(updatedResults).length,
     })
 
     // Find and execute next steps using UUID arrays - ensuring sequential execution
-    if (step.nextStepIds && Array.isArray(step.nextStepIds) && step.nextStepIds.length > 0) {
-      Logger.info(`🔗 Found ${step.nextStepIds.length} next step(s) to execute:`, step.nextStepIds)
-      
+    if (
+      step.nextStepIds &&
+      Array.isArray(step.nextStepIds) &&
+      step.nextStepIds.length > 0
+    ) {
+      Logger.info(
+        `🔗 Found ${step.nextStepIds.length} next step(s) to execute:`,
+        step.nextStepIds,
+      )
+
       // Get execution metadata once for efficiency
       const [execution] = await db
         .select()
         .from(workflowExecution)
         .where(eq(workflowExecution.id, executionId))
         .limit(1)
-      
-      const isWebhookTriggered = execution?.metadata && 
-        (execution.metadata as any).triggerType === 'webhook'
+
+      const isWebhookTriggered =
+        execution?.metadata &&
+        (execution.metadata as any).triggerType === "webhook"
 
       // Get all step executions once for efficiency
       const allStepExecutions = await db
@@ -1989,21 +2157,26 @@ Please analyze this webhook request and provide insights.`,
       // Execute steps sequentially to maintain order
       for (let i = 0; i < step.nextStepIds.length; i++) {
         const nextStepId = step.nextStepIds[i]
-        
+
         const nextStep = allStepExecutions.find(
           (s) => s.workflowStepTemplateId === nextStepId,
         )
-        Logger.info(`➡️ Processing next step ${i + 1}/${step.nextStepIds.length}: Template ID ${nextStepId}`)
+        Logger.info(
+          `➡️ Processing next step ${i + 1}/${step.nextStepIds.length}: Template ID ${nextStepId}`,
+        )
 
         if (nextStep) {
           // Check if all prerequisite steps are completed before executing
-          const arePrerequisitesCompleted = await checkPrerequisiteStepsCompleted(nextStep, allStepExecutions)
-          
+          const arePrerequisitesCompleted =
+            await checkPrerequisiteStepsCompleted(nextStep, allStepExecutions)
+
           if (!arePrerequisitesCompleted) {
-            Logger.info(`⏸️ Skipping step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} - Prerequisites not completed`)
+            Logger.info(
+              `⏸️ Skipping step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} - Prerequisites not completed`,
+            )
             continue
           }
-          
+
           // Always mark next step as ACTIVE (regardless of manual/automated)
           if (nextStep.status === WorkflowStatus.DRAFT) {
             await db
@@ -2013,18 +2186,22 @@ Please analyze this webhook request and provide insights.`,
                 updatedAt: new Date(),
               })
               .where(eq(workflowStepExecution.id, nextStep.id))
-            
+
             // Update local object to reflect the change
             nextStep.status = WorkflowStatus.ACTIVE
-            
-            Logger.info(`🔄 Marked step as ACTIVE: ${nextStep.name} (${nextStep.id})`)
+
+            Logger.info(
+              `🔄 Marked step as ACTIVE: ${nextStep.name} (${nextStep.id})`,
+            )
           }
-          
+
           // Handle step execution based on type and completion status
           if (nextStep.status === WorkflowStatus.COMPLETED) {
             // Step already completed - continue workflow chain regardless of type
-            Logger.info(`⏩ Step ${i + 1}/${step.nextStepIds.length} already completed, continuing: ${nextStep.name}`)
-            
+            Logger.info(
+              `⏩ Step ${i + 1}/${step.nextStepIds.length} already completed, continuing: ${nextStep.name}`,
+            )
+
             try {
               await executeWorkflowChain(
                 executionId,
@@ -2032,15 +2209,26 @@ Please analyze this webhook request and provide insights.`,
                 tools,
                 updatedResults,
               )
-              Logger.info(`✅ Continued from completed step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name}`)
+              Logger.info(
+                `✅ Continued from completed step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name}`,
+              )
             } catch (stepError) {
-              Logger.error(`❌ Failed to continue from completed step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} - Error: ${stepError}`)
+              Logger.error(
+                `❌ Failed to continue from completed step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} - Error: ${stepError}`,
+              )
             }
-          } else if (nextStep.type === StepType.AUTOMATED || isWebhookTriggered) {
+          } else if (
+            nextStep.type === StepType.AUTOMATED ||
+            isWebhookTriggered
+          ) {
             // Automated steps or webhook-triggered: execute immediately
-            const stepTypeLabel = isWebhookTriggered ? 'webhook-triggered' : 'automated'
-            Logger.info(`⏭️ Executing ${stepTypeLabel} step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} (${nextStep.id})`)
-            
+            const stepTypeLabel = isWebhookTriggered
+              ? "webhook-triggered"
+              : "automated"
+            Logger.info(
+              `⏭️ Executing ${stepTypeLabel} step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} (${nextStep.id})`,
+            )
+
             try {
               await executeWorkflowChain(
                 executionId,
@@ -2048,23 +2236,33 @@ Please analyze this webhook request and provide insights.`,
                 tools,
                 updatedResults,
               )
-              Logger.info(`✅ Completed ${stepTypeLabel} step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name}`)
+              Logger.info(
+                `✅ Completed ${stepTypeLabel} step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name}`,
+              )
             } catch (stepError) {
-              Logger.error(`❌ Failed to execute ${stepTypeLabel} step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} - Error: ${stepError}`)
+              Logger.error(
+                `❌ Failed to execute ${stepTypeLabel} step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} - Error: ${stepError}`,
+              )
             }
           } else if (nextStep.type === StepType.MANUAL) {
             // Manual steps: mark as ACTIVE and return (wait for user action)
-            Logger.info(`⏸️ Manual step marked as ACTIVE ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} - waiting for user completion`)
-            
+            Logger.info(
+              `⏸️ Manual step marked as ACTIVE ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} - waiting for user completion`,
+            )
+
             // Return here to stop execution chain until manual step is completed
             return
           }
         } else {
-          Logger.warn(`⚠️ Next step ${i + 1}/${step.nextStepIds.length} not found for template ID: ${nextStepId}`)
+          Logger.warn(
+            `⚠️ Next step ${i + 1}/${step.nextStepIds.length} not found for template ID: ${nextStepId}`,
+          )
         }
       }
     } else {
-      Logger.info(`🏁 No more steps to execute after '${step.name}' (nextStepIds: ${step.nextStepIds})`)
+      Logger.info(
+        `🏁 No more steps to execute after '${step.name}' (nextStepIds: ${step.nextStepIds})`,
+      )
     }
 
     // Check if this was the last step and mark workflow as completed if so
@@ -2073,24 +2271,31 @@ Please analyze this webhook request and provide insights.`,
       .from(workflowStepExecution)
       .where(eq(workflowStepExecution.workflowExecutionId, executionId))
 
-    const completedSteps = allStepExecutions.filter(stepExec => stepExec.status === WorkflowStatus.COMPLETED)
+    const completedSteps = allStepExecutions.filter(
+      (stepExec) => stepExec.status === WorkflowStatus.COMPLETED,
+    )
     const allStepsCompleted = allStepExecutions.every(
       (stepExec) => stepExec.status === WorkflowStatus.COMPLETED,
     )
 
-    Logger.info(`📊 Workflow progress for ${executionId}: ${completedSteps.length}/${allStepExecutions.length} steps completed`, {
-      completed: completedSteps.map(s => s.name),
-      remaining: allStepExecutions.filter(s => s.status !== WorkflowStatus.COMPLETED).map(s => `${s.name}(${s.status})`)
-    })
+    Logger.info(
+      `📊 Workflow progress for ${executionId}: ${completedSteps.length}/${allStepExecutions.length} steps completed`,
+      {
+        completed: completedSteps.map((s) => s.name),
+        remaining: allStepExecutions
+          .filter((s) => s.status !== WorkflowStatus.COMPLETED)
+          .map((s) => `${s.name}(${s.status})`),
+      },
+    )
 
     if (allStepsCompleted) {
       // Check if workflow execution is not already completed
-      const currentExecution = await getWorkflowExecutionById(
-        db,
-        executionId
-      )
+      const currentExecution = await getWorkflowExecutionById(db, executionId)
 
-      if (currentExecution && currentExecution.status !== WorkflowStatus.COMPLETED) {
+      if (
+        currentExecution &&
+        currentExecution.status !== WorkflowStatus.COMPLETED
+      ) {
         Logger.info(
           `🎉 All ${allStepExecutions.length} steps completed for workflow execution ${executionId}, marking workflow as COMPLETED`,
         )
@@ -2102,22 +2307,24 @@ Please analyze this webhook request and provide insights.`,
             completedBy: "system",
           })
           .where(eq(workflowExecution.id, executionId))
-        
-        Logger.info(`✅ Workflow ${executionId} marked as COMPLETED successfully`)
+
+        Logger.info(
+          `✅ Workflow ${executionId} marked as COMPLETED successfully`,
+        )
       }
     }
 
     return updatedResults
   } catch (error) {
     Logger.error(error, "Failed to execute workflow chain")
-    
+
     // Even if there's an error, check if we should mark workflow as completed
     try {
       await checkAndCompleteWorkflow(executionId)
     } catch (completionError) {
       Logger.error(`Failed to check workflow completion: ${completionError}`)
     }
-    
+
     return previousResults
   }
 }
@@ -2130,15 +2337,22 @@ export const checkAndCompleteWorkflow = async (executionId: string) => {
       .from(workflowStepExecution)
       .where(eq(workflowStepExecution.workflowExecutionId, executionId))
 
-    const completedSteps = allStepExecutions.filter(stepExec => stepExec.status === WorkflowStatus.COMPLETED)
+    const completedSteps = allStepExecutions.filter(
+      (stepExec) => stepExec.status === WorkflowStatus.COMPLETED,
+    )
     const allStepsCompleted = allStepExecutions.every(
       (stepExec) => stepExec.status === WorkflowStatus.COMPLETED,
     )
 
-    Logger.info(`🔍 Checking workflow completion for ${executionId}: ${completedSteps.length}/${allStepExecutions.length} steps completed`, {
-      completed: completedSteps.map(s => `${s.name}(${s.status})`),
-      remaining: allStepExecutions.filter(s => s.status !== WorkflowStatus.COMPLETED).map(s => `${s.name}(${s.status})`)
-    })
+    Logger.info(
+      `🔍 Checking workflow completion for ${executionId}: ${completedSteps.length}/${allStepExecutions.length} steps completed`,
+      {
+        completed: completedSteps.map((s) => `${s.name}(${s.status})`),
+        remaining: allStepExecutions
+          .filter((s) => s.status !== WorkflowStatus.COMPLETED)
+          .map((s) => `${s.name}(${s.status})`),
+      },
+    )
 
     if (allStepsCompleted && allStepExecutions.length > 0) {
       // Check if workflow execution is not already completed
@@ -2147,7 +2361,10 @@ export const checkAndCompleteWorkflow = async (executionId: string) => {
         .from(workflowExecution)
         .where(eq(workflowExecution.id, executionId))
 
-      if (currentExecution && currentExecution.status !== WorkflowStatus.COMPLETED) {
+      if (
+        currentExecution &&
+        currentExecution.status !== WorkflowStatus.COMPLETED
+      ) {
         Logger.info(
           `🎉 All ${allStepExecutions.length} steps completed for workflow execution ${executionId}, marking workflow as COMPLETED`,
         )
@@ -2159,8 +2376,10 @@ export const checkAndCompleteWorkflow = async (executionId: string) => {
             completedBy: "system",
           })
           .where(eq(workflowExecution.id, executionId))
-        
-        Logger.info(`✅ Workflow ${executionId} marked as COMPLETED successfully`)
+
+        Logger.info(
+          `✅ Workflow ${executionId} marked as COMPLETED successfully`,
+        )
         return true
       } else if (currentExecution?.status === WorkflowStatus.COMPLETED) {
         Logger.info(`✅ Workflow ${executionId} already marked as COMPLETED`)
@@ -2169,10 +2388,12 @@ export const checkAndCompleteWorkflow = async (executionId: string) => {
     } else {
       Logger.info(`⏳ Workflow ${executionId} still has pending steps`)
     }
-    
+
     return false
   } catch (error) {
-    Logger.error(`Failed to check workflow completion for ${executionId}: ${error}`)
+    Logger.error(
+      `Failed to check workflow completion for ${executionId}: ${error}`,
+    )
     return false
   }
 }
@@ -2188,7 +2409,7 @@ export const GetWorkflowExecutionStatusApi = async (c: Context) => {
       db,
       executionId,
       user.workspaceId,
-      user.id
+      user.id,
     )
 
     if (!execution) {
@@ -2203,11 +2424,11 @@ export const GetWorkflowExecutionStatusApi = async (c: Context) => {
         .select()
         .from(workflowStepExecution)
         .where(eq(workflowStepExecution.workflowExecutionId, executionId))
-      
-      const activeManualSteps = stepExecutions.filter(step => 
-        step.type === "manual" && step.status === "active"
+
+      const activeManualSteps = stepExecutions.filter(
+        (step) => step.type === "manual" && step.status === "active",
       )
-      
+
       if (activeManualSteps.length > 0) {
         finalStatus = "input_required"
       }
@@ -2236,7 +2457,7 @@ export const GetWorkflowExecutionApi = async (c: Context) => {
       db,
       executionId,
       user.workspaceId,
-      user.id
+      user.id,
     )
 
     if (!execution) {
@@ -2318,7 +2539,7 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
         db,
         stepId,
         user.workspaceId,
-        user.id
+        user.id,
       )
 
       if (!stepExecution) {
@@ -2331,9 +2552,9 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
 
       // Get step template to access form definition for validation
       const stepTemplate = await getWorkflowStepTemplateById(
-          db,
-          currentStepExecution.workflowStepTemplateId
-        )
+        db,
+        currentStepExecution.workflowStepTemplateId,
+      )
 
       if (!stepTemplate) {
         throw new HTTPException(404, { message: "Step template not found" })
@@ -2346,10 +2567,7 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
         })
       }
 
-      const formTool = await getWorkflowToolById(
-        db,
-        toolIds[0]
-      )
+      const formTool = await getWorkflowToolById(db, toolIds[0])
 
       if (!formTool) {
         throw new HTTPException(404, { message: "Form tool not found" })
@@ -2428,7 +2646,7 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
       formData = jsonData.formData || {}
     }
 
-    Logger.debug({ stepId }, 'Processing form submission')
+    Logger.debug({ stepId }, "Processing form submission")
 
     // Use the step execution and form tool we already fetched for multipart data
     let stepExecution =
@@ -2441,7 +2659,7 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
         db,
         stepId,
         user.workspaceId,
-        user.id
+        user.id,
       )
 
       if (!stepExecution) {
@@ -2452,9 +2670,9 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
 
       // Get the form tool for JSON case
       const stepTemplate = await getWorkflowStepTemplateById(
-          db,
-          stepExecution.workflowStepTemplateId
-        )
+        db,
+        stepExecution.workflowStepTemplateId,
+      )
       if (!stepTemplate) {
         throw new HTTPException(404, { message: "Step template not found" })
       }
@@ -2466,10 +2684,7 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
         })
       }
 
-      const formToolResult = await getWorkflowToolById(
-        db,
-        toolIds[0]
-      )
+      const formToolResult = await getWorkflowToolById(db, toolIds[0])
 
       if (!formToolResult) {
         throw new HTTPException(404, { message: "Form tool not found" })
@@ -2480,16 +2695,13 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
       // For multipart case, we already have the form tool fetched
       const stepTemplateForMultipart = await getWorkflowStepTemplateById(
         db,
-        stepExecution.workflowStepTemplateId
+        stepExecution.workflowStepTemplateId,
       )
 
       if (stepTemplateForMultipart) {
         const toolIds = stepTemplateForMultipart.toolIds || []
         if (toolIds.length > 0) {
-          const formToolResult = await getWorkflowToolById(
-            db,
-            toolIds[0]
-          )
+          const formToolResult = await getWorkflowToolById(db, toolIds[0])
 
           if (formToolResult) {
             formTool = formToolResult
@@ -2507,21 +2719,18 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
       })
     }
 
-    const toolExecutionRecord = await createToolExecution(
-      db,
-      {
-        workflowToolId: formTool.id,
-        workflowExecutionId: stepExecution.workflowExecutionId,
-        status: ToolExecutionStatus.COMPLETED,
-        result: {
-          formData: formData,
-          submittedAt: new Date().toISOString(),
-          submittedBy: "demo",
-        },
-        startedAt: new Date(),
-        completedAt: new Date()
-      }
-    )
+    const toolExecutionRecord = await createToolExecution(db, {
+      workflowToolId: formTool.id,
+      workflowExecutionId: stepExecution.workflowExecutionId,
+      status: ToolExecutionStatus.COMPLETED,
+      result: {
+        formData: formData,
+        submittedAt: new Date().toISOString(),
+        submittedBy: "demo",
+      },
+      startedAt: new Date(),
+      completedAt: new Date(),
+    })
 
     console.log("Tool execution created successfully")
 
@@ -2548,14 +2757,23 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
     console.log("Step execution updated successfully")
 
     // Get all toolIds from workflow step templates to fetch exactly the tools referenced by this workflow
-    const workflowExecution = await getWorkflowExecutionById(db, stepExecution.workflowExecutionId)
+    const workflowExecution = await getWorkflowExecutionById(
+      db,
+      stepExecution.workflowExecutionId,
+    )
     if (!workflowExecution) {
       throw new HTTPException(404, { message: "Workflow execution not found" })
     }
-    
-    const workflowSteps = await getWorkflowStepTemplatesByTemplateId(db, workflowExecution.workflowTemplateId)
-    const allToolIds = workflowSteps.flatMap((step) => step.toolIds as string[] || [])
-    const tools = allToolIds.length > 0 ? await getWorkflowToolsByIds(db, allToolIds) : []
+
+    const workflowSteps = await getWorkflowStepTemplatesByTemplateId(
+      db,
+      workflowExecution.workflowTemplateId,
+    )
+    const allToolIds = workflowSteps.flatMap(
+      (step) => (step.toolIds as string[]) || [],
+    )
+    const tools =
+      allToolIds.length > 0 ? await getWorkflowToolsByIds(db, allToolIds) : []
     const stepName = stepExecution.name || "unknown_step"
     const currentResults: Record<string, any> = {}
     currentResults[stepName] = {
@@ -2570,14 +2788,18 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
       status: "success", // Add status for consistency
     }
 
-    Logger.info(`📋 FORM SUBMISSION: Prepared results for next step execution:`, {
-      stepName: stepName,
-      stepId: stepExecution.id,
-      formDataKeys: Object.keys(formData),
-      formDataValues: JSON.stringify(formData, null, 2),
-      resultStructure: JSON.stringify(currentResults, null, 2).substring(0, 500) + "...",
-      nextStepIds: stepExecution.nextStepIds
-    })
+    Logger.info(
+      `📋 FORM SUBMISSION: Prepared results for next step execution:`,
+      {
+        stepName: stepName,
+        stepId: stepExecution.id,
+        formDataKeys: Object.keys(formData),
+        formDataValues: JSON.stringify(formData, null, 2),
+        resultStructure:
+          JSON.stringify(currentResults, null, 2).substring(0, 500) + "...",
+        nextStepIds: stepExecution.nextStepIds,
+      },
+    )
 
     // Execute next steps if they are automated using UUID arrays
     if (stepExecution.nextStepIds && Array.isArray(stepExecution.nextStepIds)) {
@@ -2603,23 +2825,28 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
             nextStepType: nextStep.type,
             workflowExecutionId: stepExecution.workflowExecutionId,
             currentResultsKeys: Object.keys(currentResults),
-            toolsCount: tools.length
+            toolsCount: tools.length,
           })
-          
+
           await executeWorkflowChain(
             stepExecution.workflowExecutionId,
             nextStep.id,
             tools,
             currentResults,
           )
-          
-          Logger.info(`✅ FORM SUBMISSION: Completed execution of next step: ${nextStep.name}`)
+
+          Logger.info(
+            `✅ FORM SUBMISSION: Completed execution of next step: ${nextStep.name}`,
+          )
         } else {
-          Logger.info(`⏸️ FORM SUBMISSION: Skipping next step (not automated):`, {
-            nextStepFound: !!nextStep,
-            nextStepType: nextStep?.type,
-            nextStepName: nextStep?.name
-          })
+          Logger.info(
+            `⏸️ FORM SUBMISSION: Skipping next step (not automated):`,
+            {
+              nextStepFound: !!nextStep,
+              nextStepType: nextStep?.type,
+              nextStepName: nextStep?.name,
+            },
+          )
         }
       }
     }
@@ -2656,25 +2883,29 @@ const generateCurlCommand = (webhookData: {
 }): string => {
   try {
     let curl = `curl -X ${webhookData.method.toUpperCase()}`
-    
+
     // Add headers
     Object.entries(webhookData.headers || {}).forEach(([key, value]) => {
       if (value) {
         curl += ` -H "${key}: ${value}"`
       }
     })
-    
+
     // Add body for POST/PUT/PATCH requests
-    if (webhookData.body && ["POST", "PUT", "PATCH"].includes(webhookData.method.toUpperCase())) {
-      const bodyStr = typeof webhookData.body === 'string' 
-        ? webhookData.body 
-        : JSON.stringify(webhookData.body)
+    if (
+      webhookData.body &&
+      ["POST", "PUT", "PATCH"].includes(webhookData.method.toUpperCase())
+    ) {
+      const bodyStr =
+        typeof webhookData.body === "string"
+          ? webhookData.body
+          : JSON.stringify(webhookData.body)
       curl += ` -d '${bodyStr}'`
     }
-    
+
     // Add URL (should be last)
     curl += ` "${webhookData.url}"`
-    
+
     return curl
   } catch (error) {
     return `curl -X ${webhookData.method.toUpperCase()} "${webhookData.url}"`
@@ -2682,13 +2913,12 @@ const generateCurlCommand = (webhookData: {
 }
 
 // Helper function to extract content from previous step results using simplified input paths
-// Workflow-Todo: This function can be enhanced to support more complex path syntaxes if needed, currently this 
+// Workflow-Todo: This function can be enhanced to support more complex path syntaxes if needed, currently this
 const extractContentFromPath = (
   previousStepResults: any,
   contentPath: string,
 ): string => {
   try {
-
     if (!contentPath.startsWith("input.")) {
       return `Invalid path: ${contentPath}. Only paths starting with 'input.' are supported.`
     }
@@ -2713,7 +2943,9 @@ const extractContentFromPath = (
         if (target && typeof target === "object" && part in target) {
           target = target[part]
         } else {
-          Logger.debug(`DEBUG - extractContentFromPath: Property '${part}' not found in latest step result`)
+          Logger.debug(
+            `DEBUG - extractContentFromPath: Property '${part}' not found in latest step result`,
+          )
           // Property not found - fall back to sending all available data as JSON
           return JSON.stringify(latestStepResult.result, null, 2)
         }
@@ -2734,7 +2966,9 @@ const extractContentFromPath = (
 }
 
 // Helper function to get execution context (user info) from workflow execution
-const getExecutionContext = async (executionId: string): Promise<{
+const getExecutionContext = async (
+  executionId: string,
+): Promise<{
   workspaceId: string
   userEmail: string
   workspaceInternalId: number
@@ -2742,10 +2976,7 @@ const getExecutionContext = async (executionId: string): Promise<{
 } | null> => {
   try {
     // Get workflow execution to access metadata
-    const execution = await getWorkflowExecutionById(
-      db,
-      executionId
-    )
+    const execution = await getWorkflowExecutionById(db, executionId)
 
     if (!execution) {
       Logger.warn(`No execution found for execution ${executionId}`)
@@ -2757,7 +2988,7 @@ const getExecutionContext = async (executionId: string): Promise<{
       workspaceId: user.workspaceExternalId,
       userEmail: user.email,
       workspaceInternalId: user.workspaceId,
-      userId: user.id
+      userId: user.id,
     }
     return executionContext
   } catch (error) {
@@ -2784,7 +3015,6 @@ const executeWorkflowTool = async (
           },
         }
 
-
       case "email":
         // Enhanced email tool using config for recipients and configurable path for content extraction
         const emailConfig = tool.config || {}
@@ -2792,13 +3022,11 @@ const executeWorkflowTool = async (
         const fromEmail = emailConfig.from_email || "no-reply@xyne.io"
 
         const contentType = emailConfig.content_type || "html"
-        const execution = await getWorkflowExecutionById(
-          db,
-          executionId
-        )
+        const execution = await getWorkflowExecutionById(db, executionId)
 
         const workflowName = execution?.name || "Unknown Workflow"
-        const subject = emailConfig.subject || `Results of Workflow: ${workflowName}`
+        const subject =
+          emailConfig.subject || `Results of Workflow: ${workflowName}`
         // New configurable content path feature
         const contentPath =
           emailConfig.content_path || emailConfig.content_source_path
@@ -2807,9 +3035,9 @@ const executeWorkflowTool = async (
           let emailBody = ""
 
           // Check for static body content first (new feature)
-          if (emailConfig.bodySource === 'static' && emailConfig.bodyContent) {
+          if (emailConfig.bodySource === "static" && emailConfig.bodyContent) {
             emailBody = emailConfig.bodyContent
-            Logger.info('📧 Email using static body content')
+            Logger.info("📧 Email using static body content")
           } else if (contentPath) {
             // Extract content using configurable path
             emailBody = extractContentFromPath(previousStepResults, contentPath)
@@ -2819,10 +3047,11 @@ const executeWorkflowTool = async (
             }
           } else {
             // Try multiple standard paths for email content
-            emailBody = extractContentFromPath(previousStepResults, "input.aiOutput") ||
-                       extractContentFromPath(previousStepResults, "input.content") ||
-                       extractContentFromPath(previousStepResults, "input.output")
-            
+            emailBody =
+              extractContentFromPath(previousStepResults, "input.aiOutput") ||
+              extractContentFromPath(previousStepResults, "input.content") ||
+              extractContentFromPath(previousStepResults, "input.output")
+
             if (!emailBody || emailBody.includes("not found")) {
               // Try direct path access for different types of previous step data
               const stepKeys = Object.keys(previousStepResults)
@@ -2831,23 +3060,31 @@ const executeWorkflowTool = async (
                 for (let i = stepKeys.length - 1; i >= 0; i--) {
                   const stepKey = stepKeys[i]
                   const stepData = previousStepResults[stepKey]
-                  
+
                   // Try AI Agent output first
                   if (stepData?.result?.aiOutput) {
                     emailBody = stepData.result.aiOutput
-                    Logger.info(`📧 Email using AI Agent output from step: ${stepKey}`)
+                    Logger.info(
+                      `📧 Email using AI Agent output from step: ${stepKey}`,
+                    )
                     break
                   }
-                  
+
                   // Try standard content fields
                   if (stepData?.result?.content || stepData?.result?.output) {
-                    emailBody = stepData.result.content || stepData.result.output
-                    Logger.info(`📧 Email using content/output from step: ${stepKey}`)
+                    emailBody =
+                      stepData.result.content || stepData.result.output
+                    Logger.info(
+                      `📧 Email using content/output from step: ${stepKey}`,
+                    )
                     break
                   }
-                  
+
                   // Handle HTTP node output
-                  if (stepData?.toolType === 'http_request' && stepData?.result?.data) {
+                  if (
+                    stepData?.toolType === "http_request" &&
+                    stepData?.result?.data
+                  ) {
                     const httpResult = stepData.result
                     emailBody = `HTTP Request Summary:
 URL: ${httpResult.url}
@@ -2857,19 +3094,25 @@ Success: ${httpResult.success}
 
 Response Data:
 ${JSON.stringify(httpResult.data, null, 2)}`
-                    Logger.info(`📧 Email using HTTP node output from step: ${stepKey}`)
+                    Logger.info(
+                      `📧 Email using HTTP node output from step: ${stepKey}`,
+                    )
                     break
                   }
                 }
-                
+
                 // Fallback if no suitable content found
                 if (!emailBody) {
                   emailBody = "No suitable content found from previous steps"
-                  Logger.warn(`📧 Email fallback: No content found in ${stepKeys.length} previous steps`)
+                  Logger.warn(
+                    `📧 Email fallback: No content found in ${stepKeys.length} previous steps`,
+                  )
                 }
               } else {
                 emailBody = "No previous steps available"
-                Logger.warn(`📧 Email fallback: No previous step results available`)
+                Logger.warn(
+                  `📧 Email fallback: No previous step results available`,
+                )
               }
             }
           }
@@ -2911,64 +3154,101 @@ ${JSON.stringify(httpResult.data, null, 2)}`
 
           // Get execution context for workspace/user info
           const executionContext = await getExecutionContext(executionId)
-          
+
           // Process all previous steps to extract content and attachments (same as AI agent)
           const stepKeys = Object.keys(previousStepResults)
-          Logger.info(`📧 Email processing ${stepKeys.length} previous steps for attachments`)
+          Logger.info(
+            `📧 Email processing ${stepKeys.length} previous steps for attachments`,
+          )
 
           if (stepKeys.length > 0) {
             for (let i = stepKeys.length - 1; i >= 0; i--) {
               const stepKey = stepKeys[i]
               const stepData = previousStepResults[stepKey]
 
-              Logger.info(`📊 Processing step ${i + 1}/${stepKeys.length}: ${stepKey}`, {
-                toolType: stepData?.toolType,
-                hasResult: !!stepData?.result,
-                resultKeys: stepData?.result ? Object.keys(stepData.result) : []
-              })
+              Logger.info(
+                `📊 Processing step ${i + 1}/${stepKeys.length}: ${stepKey}`,
+                {
+                  toolType: stepData?.toolType,
+                  hasResult: !!stepData?.result,
+                  resultKeys: stepData?.result
+                    ? Object.keys(stepData.result)
+                    : [],
+                },
+              )
 
               // Method 1: Form data attachments (same as AI agent)
-              if (stepData?.result?.formData || stepData?.formSubmission?.formData || stepData?.toolExecution?.result?.formData) {
-                const formData = stepData.result?.formData ||
-                               stepData.formSubmission?.formData ||
-                               stepData.toolExecution?.result?.formData || {}
+              if (
+                stepData?.result?.formData ||
+                stepData?.formSubmission?.formData ||
+                stepData?.toolExecution?.result?.formData
+              ) {
+                const formData =
+                  stepData.result?.formData ||
+                  stepData.formSubmission?.formData ||
+                  stepData.toolExecution?.result?.formData ||
+                  {}
 
-                Logger.info(`📎 Found form data in ${stepKey}, extracting attachment IDs`)
+                Logger.info(
+                  `📎 Found form data in ${stepKey}, extracting attachment IDs`,
+                )
                 const extractedIds = extractAttachmentIds(formData)
-                
+
                 // Convert attachment IDs to file paths for email attachments
-                const allAttachmentIds = [...extractedIds.imageAttachmentIds, ...extractedIds.documentAttachmentIds]
-                
+                const allAttachmentIds = [
+                  ...extractedIds.imageAttachmentIds,
+                  ...extractedIds.documentAttachmentIds,
+                ]
+
                 for (const attachmentId of allAttachmentIds) {
                   try {
                     // Get attachment metadata from Vespa instead of file system
-                    const vespaResults = await vespa.searchVespaInFiles(`id:${attachmentId}`, executionContext?.userEmail || "", [attachmentId], {})
-                    
-                    if (vespaResults?.root?.children && vespaResults.root.children.length > 0) {
+                    const vespaResults = await vespa.searchVespaInFiles(
+                      `id:${attachmentId}`,
+                      executionContext?.userEmail || "",
+                      [attachmentId],
+                      {},
+                    )
+
+                    if (
+                      vespaResults?.root?.children &&
+                      vespaResults.root.children.length > 0
+                    ) {
                       const fileData = vespaResults.root.children[0] as any
                       const filePath = fileData.url || fileData.path
-                      
-                    if (filePath) {
-                      const fs = await import('fs')
-                      if (fs.existsSync(filePath)) {
-                        attachments.push({
-                          filename: fileData.title || fileData.name || `attachment-${attachmentId}`,
-                          path: filePath,
-                          contentType: fileData.mime_type || 'application/octet-stream'
-                        })
-                        Logger.info(`📎 Adding form attachment: ${fileData.title} from ${filePath}`)
+
+                      if (filePath) {
+                        const fs = await import("fs")
+                        if (fs.existsSync(filePath)) {
+                          attachments.push({
+                            filename:
+                              fileData.title ||
+                              fileData.name ||
+                              `attachment-${attachmentId}`,
+                            path: filePath,
+                            contentType:
+                              fileData.mime_type || "application/octet-stream",
+                          })
+                          Logger.info(
+                            `📎 Adding form attachment: ${fileData.title} from ${filePath}`,
+                          )
+                        }
                       }
                     }
-                    }
                   } catch (err) {
-                    Logger.warn(`Could not process attachment ${attachmentId}:`, err)
+                    Logger.warn(
+                      `Could not process attachment ${attachmentId}:`,
+                      err,
+                    )
                   }
                 }
               }
 
               // Method 2: Direct attachment arrays (same as AI agent)
               if (stepData?.result?.attachments) {
-                const stepAttachments = Array.isArray(stepData.result.attachments)
+                const stepAttachments = Array.isArray(
+                  stepData.result.attachments,
+                )
                   ? stepData.result.attachments
                   : [stepData.result.attachments]
 
@@ -2976,26 +3256,44 @@ ${JSON.stringify(httpResult.data, null, 2)}`
                   if (attachment?.attachmentId) {
                     try {
                       // Get attachment metadata from Vespa instead of file system
-                      const vespaResults = await vespa.searchVespaInFiles(`id:${attachment.attachmentId}`, executionContext?.userEmail || "", [attachment.attachmentId], {})
-                      
-                      if (vespaResults?.root?.children && vespaResults.root.children.length > 0) {
+                      const vespaResults = await vespa.searchVespaInFiles(
+                        `id:${attachment.attachmentId}`,
+                        executionContext?.userEmail || "",
+                        [attachment.attachmentId],
+                        {},
+                      )
+
+                      if (
+                        vespaResults?.root?.children &&
+                        vespaResults.root.children.length > 0
+                      ) {
                         const fileData = vespaResults.root.children[0] as any
                         const filePath = fileData.url || fileData.path
-                        
-                      if (filePath) {
-                        const fs = await import('fs')
-                        if (fs.existsSync(filePath)) {
-                          attachments.push({
-                            filename: fileData.title || fileData.name || `attachment-${attachment.attachmentId}`,
-                            path: filePath,
-                            contentType: fileData.mime_type || 'application/octet-stream'
-                          })
-                          Logger.info(`📎 Adding direct attachment: ${fileData.title} from ${filePath}`)
+
+                        if (filePath) {
+                          const fs = await import("fs")
+                          if (fs.existsSync(filePath)) {
+                            attachments.push({
+                              filename:
+                                fileData.title ||
+                                fileData.name ||
+                                `attachment-${attachment.attachmentId}`,
+                              path: filePath,
+                              contentType:
+                                fileData.mime_type ||
+                                "application/octet-stream",
+                            })
+                            Logger.info(
+                              `📎 Adding direct attachment: ${fileData.title} from ${filePath}`,
+                            )
+                          }
                         }
                       }
-                      }
                     } catch (err) {
-                      Logger.warn(`Could not process direct attachment ${attachment.attachmentId}:`, err)
+                      Logger.warn(
+                        `Could not process direct attachment ${attachment.attachmentId}:`,
+                        err,
+                      )
                     }
                   }
                 }
@@ -3008,119 +3306,174 @@ ${JSON.stringify(httpResult.data, null, 2)}`
                 hasAttachmentMetadata: !!stepData?.result?.attachmentMetadata,
                 hasAttachmentId: !!stepData?.result?.attachmentId,
                 toolType: stepData?.toolType,
-                attachmentId: stepData?.result?.attachmentId
+                attachmentId: stepData?.result?.attachmentId,
               })
-              
-              if (stepData?.result?.attachmentMetadata && stepData?.result?.attachmentId) {
+
+              if (
+                stepData?.result?.attachmentMetadata &&
+                stepData?.result?.attachmentId
+              ) {
                 Logger.info(`🎯 Found Q&A attachment metadata for email!`, {
                   attachmentId: stepData.result.attachmentId,
-                  fileName: stepData.result.attachmentMetadata.fileName
+                  fileName: stepData.result.attachmentMetadata.fileName,
                 })
-                
+
                 const attachmentMetadata = stepData.result.attachmentMetadata
                 const attachmentId = stepData.result.attachmentId
-                
+
                 try {
-                  // Retrieve file from Vespa using attachment service  
-                  const { sharedVespaService: vespa } = await import('../search/vespaService')
-                  
-                  Logger.info(`🔍 Retrieving Q&A attachment from Vespa:`, { 
+                  // Retrieve file from Vespa using attachment service
+                  const { sharedVespaService: vespa } = await import(
+                    "../search/vespaService"
+                  )
+
+                  Logger.info(`🔍 Retrieving Q&A attachment from Vespa:`, {
                     attachmentId,
                     schemaName: fileSchema,
-                    documentId: `${fileSchema}:${attachmentId}`
+                    documentId: `${fileSchema}:${attachmentId}`,
                   })
-                  const vespaDoc = await vespa.getDocumentOrNull(fileSchema, attachmentId)
-                  Logger.info(`📄 Vespa document result:`, { 
-                    found: !!vespaDoc, 
+                  const vespaDoc = await vespa.getDocumentOrNull(
+                    fileSchema,
+                    attachmentId,
+                  )
+                  Logger.info(`📄 Vespa document result:`, {
+                    found: !!vespaDoc,
                     hasFields: !!vespaDoc?.fields,
                     hasContent: !!(vespaDoc?.fields as any)?.content,
                     contentType: typeof (vespaDoc?.fields as any)?.content,
-                    contentLength: (vespaDoc?.fields as any)?.content ? (vespaDoc?.fields as any).content.length : 0,
+                    contentLength: (vespaDoc?.fields as any)?.content
+                      ? (vespaDoc?.fields as any).content.length
+                      : 0,
                     documentId: attachmentId,
                     schemaUsed: fileSchema,
-                    fieldKeys: vespaDoc?.fields ? Object.keys(vespaDoc.fields) : []
+                    fieldKeys: vespaDoc?.fields
+                      ? Object.keys(vespaDoc.fields)
+                      : [],
                   })
-                  
+
                   if (vespaDoc && vespaDoc.fields) {
                     // For Q&A results, the Base64 content is stored in metadata.base64Content
                     let base64Content = (vespaDoc.fields as any).content // Try content field first (for regular attachments)
-                    
+
                     // If no content field, check metadata for Q&A results
                     if (!base64Content && (vespaDoc.fields as any).metadata) {
                       try {
-                        const metadata = JSON.parse((vespaDoc.fields as any).metadata)
+                        const metadata = JSON.parse(
+                          (vespaDoc.fields as any).metadata,
+                        )
                         base64Content = metadata.base64Content
-                        Logger.info(`📄 Using Base64 content from metadata for Q&A results`)
+                        Logger.info(
+                          `📄 Using Base64 content from metadata for Q&A results`,
+                        )
                       } catch (error) {
                         Logger.error(`❌ Failed to parse metadata JSON:`, error)
                       }
                     }
-                    
-                    Logger.info(`📄 Vespa content info:`, { 
+
+                    Logger.info(`📄 Vespa content info:`, {
                       contentLength: base64Content ? base64Content.length : 0,
                       contentType: typeof base64Content,
-                      contentSource: (vespaDoc.fields as any).content ? 'content field' : 'metadata field'
+                      contentSource: (vespaDoc.fields as any).content
+                        ? "content field"
+                        : "metadata field",
                     })
                     if (base64Content) {
                       const tmpFilePath = `/tmp/email_attachment_${attachmentId}_${Date.now()}.xlsx`
-                      const buffer = Buffer.from(base64Content, 'base64')
+                      const buffer = Buffer.from(base64Content, "base64")
                       await Bun.write(tmpFilePath, buffer)
-                      
+
                       // Check for duplicates
-                      const isDuplicate = attachments.some(att => att.path === tmpFilePath)
+                      const isDuplicate = attachments.some(
+                        (att) => att.path === tmpFilePath,
+                      )
                       if (!isDuplicate) {
                         attachments.push({
-                          filename: attachmentMetadata.filename || `qa-results-${executionId}.xlsx`,
+                          filename:
+                            attachmentMetadata.filename ||
+                            `qa-results-${executionId}.xlsx`,
                           path: tmpFilePath,
-                          contentType: attachmentMetadata.mimeType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                          contentType:
+                            attachmentMetadata.mimeType ||
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         })
-                        Logger.info(`📎 Successfully adding Q&A Vespa attachment to email: ${attachmentMetadata.filename} (${attachmentId})`)
+                        Logger.info(
+                          `📎 Successfully adding Q&A Vespa attachment to email: ${attachmentMetadata.filename} (${attachmentId})`,
+                        )
                       }
                     }
                   }
                 } catch (error) {
-                  Logger.error(`❌ Failed to retrieve Q&A attachment from Vespa:`, error)
+                  Logger.error(
+                    `❌ Failed to retrieve Q&A attachment from Vespa:`,
+                    error,
+                  )
                 }
               }
 
               // Method 4: Files array (existing logic for backward compatibility)
-              if (stepData?.result?.files && Array.isArray(stepData.result.files)) {
+              if (
+                stepData?.result?.files &&
+                Array.isArray(stepData.result.files)
+              ) {
                 for (const file of stepData.result.files) {
-                  if (file && typeof file === 'object' && file.fileName) {
+                  if (file && typeof file === "object" && file.fileName) {
                     // Use the same file fetching pattern as Q&A and AI agent
-                    let filePath = file.filePath || file.path || file.absolutePath
-                    if (!filePath && file.workflowExecutionId && file.workflowStepId) {
+                    let filePath =
+                      file.filePath || file.path || file.absolutePath
+                    if (
+                      !filePath &&
+                      file.workflowExecutionId &&
+                      file.workflowStepId
+                    ) {
                       // Search for the actual uploaded file in the workflow directory
-                      const fs = await import('fs')
-                      const path = await import('path')
+                      const fs = await import("fs")
+                      const path = await import("path")
                       const baseDir = "/tmp/workflow_uploads"
-                      const stepDir = path.join(baseDir, file.workflowExecutionId, file.workflowStepId)
-                      
+                      const stepDir = path.join(
+                        baseDir,
+                        file.workflowExecutionId,
+                        file.workflowStepId,
+                      )
+
                       try {
                         if (fs.existsSync(stepDir)) {
                           const files = fs.readdirSync(stepDir)
                           // Find file that ends with the original filename
-                          const matchingFile = files.find(f => f.endsWith(`_${file.fileName}`))
+                          const matchingFile = files.find((f) =>
+                            f.endsWith(`_${file.fileName}`),
+                          )
                           if (matchingFile) {
                             filePath = path.join(stepDir, matchingFile)
-                            Logger.info(`📎 Found legacy file attachment at: ${filePath}`)
+                            Logger.info(
+                              `📎 Found legacy file attachment at: ${filePath}`,
+                            )
                           }
                         }
                       } catch (err) {
-                        Logger.warn(`Could not search for file in ${stepDir}:`, err)
+                        Logger.warn(
+                          `Could not search for file in ${stepDir}:`,
+                          err,
+                        )
                       }
                     }
-                    
-                    if (filePath && await import('fs').then(fs => fs.existsSync(filePath))) {
+
+                    if (
+                      filePath &&
+                      (await import("fs").then((fs) => fs.existsSync(filePath)))
+                    ) {
                       // Check for duplicates
-                      const isDuplicate = attachments.some(att => att.path === filePath)
+                      const isDuplicate = attachments.some(
+                        (att) => att.path === filePath,
+                      )
                       if (!isDuplicate) {
                         attachments.push({
                           filename: file.fileName,
                           path: filePath,
-                          contentType: file.mimetype || file.contentType
+                          contentType: file.mimetype || file.contentType,
                         })
-                        Logger.info(`📎 Adding legacy attachment: ${file.fileName} from ${filePath}`)
+                        Logger.info(
+                          `📎 Adding legacy attachment: ${file.fileName} from ${filePath}`,
+                        )
                       }
                     }
                   }
@@ -3131,7 +3484,9 @@ ${JSON.stringify(httpResult.data, null, 2)}`
 
           Logger.info(`📧 Email will include ${attachments.length} attachments`)
           if (attachments.length > 0) {
-            Logger.info(`📎 Attachments: ${attachments.map(a => a.filename).join(', ')}`)
+            Logger.info(
+              `📎 Attachments: ${attachments.map((a) => a.filename).join(", ")}`,
+            )
           }
 
           // Validate email configuration
@@ -3192,14 +3547,14 @@ ${JSON.stringify(httpResult.data, null, 2)}`
                 content_type: contentType,
                 body_length: emailBody.length,
                 attachments_count: attachments.length,
-                attachments: attachments.map(att => ({
+                attachments: attachments.map((att) => ({
                   filename: att.filename,
-                  contentType: att.contentType
+                  contentType: att.contentType,
                 })),
               },
               message: allSent
-                ? `Email sent successfully to all ${successCount} recipients${attachments.length > 0 ? ` with ${attachments.length} attachments` : ''}`
-                : `Email sent to ${successCount} of ${recipients.length} recipients${attachments.length > 0 ? ` with ${attachments.length} attachments` : ''}`,
+                ? `Email sent successfully to all ${successCount} recipients${attachments.length > 0 ? ` with ${attachments.length} attachments` : ""}`
+                : `Email sent to ${successCount} of ${recipients.length} recipients${attachments.length > 0 ? ` with ${attachments.length} attachments` : ""}`,
             },
           }
         } catch (error) {
@@ -3218,16 +3573,18 @@ ${JSON.stringify(httpResult.data, null, 2)}`
         const aiValue = tool.value || {}
         const agentId = aiConfig.agentId
 
-
         if (!agentId) {
-          Logger.error("No agent ID found in tool config - agent creation may have failed during template creation")
+          Logger.error(
+            "No agent ID found in tool config - agent creation may have failed during template creation",
+          )
           return {
             status: "error",
             result: {
               error: "No agent ID configured for this AI agent tool",
-              details: "Agent should have been created during workflow template creation",
-              config: aiConfig
-            }
+              details:
+                "Agent should have been created during workflow template creation",
+              config: aiConfig,
+            },
           }
         }
 
@@ -3239,13 +3596,16 @@ ${JSON.stringify(httpResult.data, null, 2)}`
               status: "error",
               result: {
                 error: "Could not retrieve execution context",
-                details: "User information not available for agent execution"
-              }
+                details: "User information not available for agent execution",
+              },
             }
           }
 
           // Extract agent parameters with dynamic values
-          const prompt = aiValue.prompt || aiValue.systemPrompt || "Please analyze the provided content"
+          const prompt =
+            aiValue.prompt ||
+            aiValue.systemPrompt ||
+            "Please analyze the provided content"
           const temperature = aiConfig.temperature || 0.7
           const workspaceId = executionContext.workspaceId
           const userEmail = executionContext.userEmail
@@ -3255,13 +3615,20 @@ ${JSON.stringify(httpResult.data, null, 2)}`
           let imageAttachmentIds: string[] = []
           let documentAttachmentIds: string[] = []
 
-          Logger.info(`🔄 AI Agent processing input for execution ${executionId}:`, {
-            inputType: aiConfig.inputType,
-            prompt: prompt.substring(0, 100) + "...",
-            previousStepsCount: Object.keys(previousStepResults).length,
-            previousStepsKeys: Object.keys(previousStepResults),
-            fullPreviousStepResults: JSON.stringify(previousStepResults, null, 2)
-          })
+          Logger.info(
+            `🔄 AI Agent processing input for execution ${executionId}:`,
+            {
+              inputType: aiConfig.inputType,
+              prompt: prompt.substring(0, 100) + "...",
+              previousStepsCount: Object.keys(previousStepResults).length,
+              previousStepsKeys: Object.keys(previousStepResults),
+              fullPreviousStepResults: JSON.stringify(
+                previousStepResults,
+                null,
+                2,
+              ),
+            },
+          )
 
           // Process all previous steps to extract content and attachments
           const stepKeys = Object.keys(previousStepResults)
@@ -3274,19 +3641,30 @@ ${JSON.stringify(httpResult.data, null, 2)}`
               const stepKey = stepKeys[i]
               const stepData = previousStepResults[stepKey]
 
-              Logger.info(`📊 Processing step ${i + 1}/${stepKeys.length}: ${stepKey}`, {
-                toolType: stepData?.toolType,
-                hasResult: !!stepData?.result,
-                resultKeys: stepData?.result ? Object.keys(stepData.result) : []
-              })
+              Logger.info(
+                `📊 Processing step ${i + 1}/${stepKeys.length}: ${stepKey}`,
+                {
+                  toolType: stepData?.toolType,
+                  hasResult: !!stepData?.result,
+                  resultKeys: stepData?.result
+                    ? Object.keys(stepData.result)
+                    : [],
+                },
+              )
 
               // Extract attachments from any step (form, file uploads, direct attachments, etc.)
 
               // Method 1: Form data attachments
-              if (stepData?.result?.formData || stepData?.formSubmission?.formData || stepData?.toolExecution?.result?.formData) {
-                const formData = stepData.result?.formData ||
-                               stepData.formSubmission?.formData ||
-                               stepData.toolExecution?.result?.formData || {}
+              if (
+                stepData?.result?.formData ||
+                stepData?.formSubmission?.formData ||
+                stepData?.toolExecution?.result?.formData
+              ) {
+                const formData =
+                  stepData.result?.formData ||
+                  stepData.formSubmission?.formData ||
+                  stepData.toolExecution?.result?.formData ||
+                  {}
 
                 Logger.info(`📋 DETAILED Form data analysis for ${stepKey}:`, {
                   stepName: stepKey,
@@ -3296,27 +3674,42 @@ ${JSON.stringify(httpResult.data, null, 2)}`
                     hasResult: !!stepData?.result,
                     hasFormSubmission: !!stepData?.formSubmission,
                     hasToolExecution: !!stepData?.toolExecution,
-                    resultKeys: stepData?.result ? Object.keys(stepData.result) : [],
-                    formSubmissionKeys: stepData?.formSubmission ? Object.keys(stepData.formSubmission) : [],
-                    toolExecutionResultKeys: stepData?.toolExecution?.result ? Object.keys(stepData.toolExecution.result) : []
+                    resultKeys: stepData?.result
+                      ? Object.keys(stepData.result)
+                      : [],
+                    formSubmissionKeys: stepData?.formSubmission
+                      ? Object.keys(stepData.formSubmission)
+                      : [],
+                    toolExecutionResultKeys: stepData?.toolExecution?.result
+                      ? Object.keys(stepData.toolExecution.result)
+                      : [],
                   },
-                  rawStepData: JSON.stringify(stepData, null, 2).substring(0, 1000) + "..."
+                  rawStepData:
+                    JSON.stringify(stepData, null, 2).substring(0, 1000) +
+                    "...",
                 })
 
                 // Try to extract attachment IDs with enhanced debugging
-                Logger.info(`🔍 Starting attachment extraction for ${stepKey}...`)
+                Logger.info(
+                  `🔍 Starting attachment extraction for ${stepKey}...`,
+                )
                 const extractedIds = extractAttachmentIds(formData)
                 imageAttachmentIds.push(...extractedIds.imageAttachmentIds)
-                documentAttachmentIds.push(...extractedIds.documentAttachmentIds)
+                documentAttachmentIds.push(
+                  ...extractedIds.documentAttachmentIds,
+                )
 
-                Logger.info(`📎 FINAL Extracted form attachments from ${stepKey}:`, {
-                  images: extractedIds.imageAttachmentIds.length,
-                  documents: extractedIds.documentAttachmentIds.length,
-                  imageIds: extractedIds.imageAttachmentIds,
-                  documentIds: extractedIds.documentAttachmentIds,
-                  totalImagesSoFar: imageAttachmentIds.length,
-                  totalDocumentsSoFar: documentAttachmentIds.length
-                })
+                Logger.info(
+                  `📎 FINAL Extracted form attachments from ${stepKey}:`,
+                  {
+                    images: extractedIds.imageAttachmentIds.length,
+                    documents: extractedIds.documentAttachmentIds.length,
+                    imageIds: extractedIds.imageAttachmentIds,
+                    documentIds: extractedIds.documentAttachmentIds,
+                    totalImagesSoFar: imageAttachmentIds.length,
+                    totalDocumentsSoFar: documentAttachmentIds.length,
+                  },
+                )
               }
 
               // Method 2: Direct attachment arrays
@@ -3335,21 +3728,36 @@ ${JSON.stringify(httpResult.data, null, 2)}`
                   }
                 })
 
-                Logger.info(`📎 Extracted direct attachments from ${stepKey}: ${attachments.length}`)
+                Logger.info(
+                  `📎 Extracted direct attachments from ${stepKey}: ${attachments.length}`,
+                )
               }
 
               // Method 3: File IDs arrays (common format)
-              if (stepData?.result?.fileIds && Array.isArray(stepData.result.fileIds)) {
+              if (
+                stepData?.result?.fileIds &&
+                Array.isArray(stepData.result.fileIds)
+              ) {
                 documentAttachmentIds.push(...stepData.result.fileIds)
-                Logger.info(`📎 Extracted file IDs from ${stepKey}: ${stepData.result.fileIds.length}`)
+                Logger.info(
+                  `📎 Extracted file IDs from ${stepKey}: ${stepData.result.fileIds.length}`,
+                )
               }
 
               // Method 4: Image/document specific arrays
-              if (stepData?.result?.imageAttachmentIds && Array.isArray(stepData.result.imageAttachmentIds)) {
+              if (
+                stepData?.result?.imageAttachmentIds &&
+                Array.isArray(stepData.result.imageAttachmentIds)
+              ) {
                 imageAttachmentIds.push(...stepData.result.imageAttachmentIds)
               }
-              if (stepData?.result?.documentAttachmentIds && Array.isArray(stepData.result.documentAttachmentIds)) {
-                documentAttachmentIds.push(...stepData.result.documentAttachmentIds)
+              if (
+                stepData?.result?.documentAttachmentIds &&
+                Array.isArray(stepData.result.documentAttachmentIds)
+              ) {
+                documentAttachmentIds.push(
+                  ...stepData.result.documentAttachmentIds,
+                )
               }
 
               // Extract content only from the most recent relevant step
@@ -3359,27 +3767,33 @@ ${JSON.stringify(httpResult.data, null, 2)}`
                   content = stepData.result.aiOutput
                   Logger.info(`🤖 Using AI output from step: ${stepKey}`)
                   hasProcessedContent = true
-                } else if (stepData?.result?.content || stepData?.result?.output) {
+                } else if (
+                  stepData?.result?.content ||
+                  stepData?.result?.output
+                ) {
                   content = stepData.result.content || stepData.result.output
                   Logger.info(`📄 Using content/output from step: ${stepKey}`)
                   hasProcessedContent = true
                 }
                 // Priority 2: HTTP node data
-                else if (stepData?.toolType === 'http_request' && stepData?.result?.data) {
+                else if (
+                  stepData?.toolType === "http_request" &&
+                  stepData?.result?.data
+                ) {
                   const httpData = stepData.result
                   content = `HTTP Request Results:
-- URL: ${httpData.url || 'N/A'}
-- Method: ${httpData.method || 'N/A'}
-- Status: ${httpData.statusCode} ${httpData.statusText || ''}
+- URL: ${httpData.url || "N/A"}
+- Method: ${httpData.method || "N/A"}
+- Status: ${httpData.statusCode} ${httpData.statusText || ""}
 - Success: ${httpData.success || false}
 - Duration: ${httpData.duration || 0}ms
-- Content Type: ${httpData.contentType || 'N/A'}
+- Content Type: ${httpData.contentType || "N/A"}
 
 Response Data:
 ${JSON.stringify(httpData.data, null, 2)}
 
 Raw Response Preview:
-${(httpData.rawResponse || '').substring(0, 1000)}${httpData.rawResponse?.length > 1000 ? '...' : ''}
+${(httpData.rawResponse || "").substring(0, 1000)}${httpData.rawResponse?.length > 1000 ? "..." : ""}
 
 Response Headers:
 ${JSON.stringify(httpData.headers || {}, null, 2)}`
@@ -3388,18 +3802,23 @@ ${JSON.stringify(httpData.headers || {}, null, 2)}`
                     url: httpData.url,
                     status: httpData.statusCode,
                     dataType: typeof httpData.data,
-                    dataSize: JSON.stringify(httpData.data || {}).length
+                    dataSize: JSON.stringify(httpData.data || {}).length,
                   })
                   hasProcessedContent = true
                 }
                 // Priority 3: Webhook data (includes both webhook and Jira triggers)
-                else if (stepData?.toolType === 'webhook' || stepData?.toolType === 'jira' || stepData?.result?.webhook) {
-                  const webhookData = stepData.result?.webhook || stepData.result
+                else if (
+                  stepData?.toolType === "webhook" ||
+                  stepData?.toolType === "jira" ||
+                  stepData?.result?.webhook
+                ) {
+                  const webhookData =
+                    stepData.result?.webhook || stepData.result
                   content = `Webhook Request Details:
-- Method: ${webhookData.method || 'N/A'}
-- URL: ${webhookData.url || 'N/A'}
-- Path: ${webhookData.path || 'N/A'}
-- Timestamp: ${webhookData.timestamp || 'N/A'}
+- Method: ${webhookData.method || "N/A"}
+- URL: ${webhookData.url || "N/A"}
+- Path: ${webhookData.path || "N/A"}
+- Timestamp: ${webhookData.timestamp || "N/A"}
 
 Headers:
 ${JSON.stringify(webhookData.headers || {}, null, 2)}
@@ -3414,12 +3833,20 @@ ${JSON.stringify(webhookData.body || {}, null, 2)}`
                   hasProcessedContent = true
                 }
                 // Priority 4: Form data text fields
-                else if (stepData?.result?.formData || stepData?.formSubmission?.formData || stepData?.toolExecution?.result?.formData) {
-                  const formData = stepData.result?.formData ||
-                                 stepData.formSubmission?.formData ||
-                                 stepData.toolExecution?.result?.formData || {}
+                else if (
+                  stepData?.result?.formData ||
+                  stepData?.formSubmission?.formData ||
+                  stepData?.toolExecution?.result?.formData
+                ) {
+                  const formData =
+                    stepData.result?.formData ||
+                    stepData.formSubmission?.formData ||
+                    stepData.toolExecution?.result?.formData ||
+                    {}
                   const textFields = Object.entries(formData)
-                    .filter(([, value]) => typeof value === "string" && value.trim())
+                    .filter(
+                      ([, value]) => typeof value === "string" && value.trim(),
+                    )
                     .map(([key, value]) => `${key}: ${value}`)
                     .join("\n")
 
@@ -3430,8 +3857,11 @@ ${JSON.stringify(webhookData.body || {}, null, 2)}`
                   }
                 }
                 // Priority 5: Raw data fallback
-                else if (stepData?.result && Object.keys(stepData.result).length > 0) {
-                  content = `Data from ${stepKey} (${stepData.toolType || 'unknown'} tool):
+                else if (
+                  stepData?.result &&
+                  Object.keys(stepData.result).length > 0
+                ) {
+                  content = `Data from ${stepKey} (${stepData.toolType || "unknown"} tool):
 ${JSON.stringify(stepData.result, null, 2)}`
                   Logger.info(`🔍 Using raw data from step: ${stepKey}`)
                   hasProcessedContent = true
@@ -3447,51 +3877,66 @@ ${JSON.stringify(stepData.result, null, 2)}`
               images: imageAttachmentIds.length,
               documents: documentAttachmentIds.length,
               imageIds: imageAttachmentIds,
-              documentIds: documentAttachmentIds
+              documentIds: documentAttachmentIds,
             })
           }
 
           // Build the final user query
-          if (content || imageAttachmentIds.length > 0 || documentAttachmentIds.length > 0) {
+          if (
+            content ||
+            imageAttachmentIds.length > 0 ||
+            documentAttachmentIds.length > 0
+          ) {
             let queryParts = [prompt]
-            
+
             if (content) {
               queryParts.push(`\nContent to analyze:\n${content}`)
             }
-            
+
             if (imageAttachmentIds.length > 0) {
-              queryParts.push(`\nImage attachments: ${imageAttachmentIds.length} file(s)`)
+              queryParts.push(
+                `\nImage attachments: ${imageAttachmentIds.length} file(s)`,
+              )
             }
-            
+
             if (documentAttachmentIds.length > 0) {
-              queryParts.push(`\nDocument attachments: ${documentAttachmentIds.length} file(s)`)
+              queryParts.push(
+                `\nDocument attachments: ${documentAttachmentIds.length} file(s)`,
+              )
             }
-            
+
             userQuery = queryParts.join("")
-            Logger.info(`✅ AI Agent query built with document content/attachments`)
+            Logger.info(
+              `✅ AI Agent query built with document content/attachments`,
+            )
           } else {
             // If we have previous steps but no content was extracted, this indicates a problem
             if (stepKeys.length > 0) {
-              Logger.error(`❌ AI Agent ERROR: Previous steps exist but no content/attachments extracted!`, {
-                stepCount: stepKeys.length,
-                stepNames: stepKeys,
-                totalImagesSoFar: imageAttachmentIds.length,
-                totalDocumentsSoFar: documentAttachmentIds.length
-              })
-              
+              Logger.error(
+                `❌ AI Agent ERROR: Previous steps exist but no content/attachments extracted!`,
+                {
+                  stepCount: stepKeys.length,
+                  stepNames: stepKeys,
+                  totalImagesSoFar: imageAttachmentIds.length,
+                  totalDocumentsSoFar: documentAttachmentIds.length,
+                },
+              )
+
               return {
                 status: "error",
                 result: {
                   error: "No document content found from previous steps",
-                  details: `Expected document content from ${stepKeys.join(', ')} but none was extracted`,
+                  details: `Expected document content from ${stepKeys.join(", ")} but none was extracted`,
                   stepCount: stepKeys.length,
-                  stepNames: stepKeys
-                }
+                  stepNames: stepKeys,
+                },
               }
             }
-            
+
             userQuery = prompt
-            Logger.info(`📝 AI Agent using only prompt - no previous step data found`)
+            Logger.info(
+              `📝 AI Agent using only prompt - no previous step data found`,
+            )
           }
 
           Logger.info(`🤖 AI Agent final query prepared:`, {
@@ -3502,26 +3947,38 @@ ${JSON.stringify(stepData.result, null, 2)}`
             hasDocuments: documentAttachmentIds.length > 0,
             imageAttachmentIds: imageAttachmentIds,
             documentAttachmentIds: documentAttachmentIds,
-            contentPreview: content.substring(0, 200) + (content.length > 200 ? "..." : ""),
-            fullQuery: userQuery.substring(0, 500) + (userQuery.length > 500 ? "..." : ""),
-            promptPreview: prompt.substring(0, 200) + (prompt.length > 200 ? "..." : ""),
+            contentPreview:
+              content.substring(0, 200) + (content.length > 200 ? "..." : ""),
+            fullQuery:
+              userQuery.substring(0, 500) +
+              (userQuery.length > 500 ? "..." : ""),
+            promptPreview:
+              prompt.substring(0, 200) + (prompt.length > 200 ? "..." : ""),
             hasContent: content.length > 0,
             isPromptOnlyQuery: userQuery === prompt,
-            contentSourceDetected: content.includes("Form Data:") || content.includes("Document") || content.includes("PDF") || content.includes("file")
+            contentSourceDetected:
+              content.includes("Form Data:") ||
+              content.includes("Document") ||
+              content.includes("PDF") ||
+              content.includes("file"),
           })
           const isExistingAgent = aiConfig.isExistingAgent
-          Logger.info(`Executing agent ${agentId} (existing: ${isExistingAgent}) for user ${userEmail} in workspace ${workspaceId}`)
+          Logger.info(
+            `Executing agent ${agentId} (existing: ${isExistingAgent}) for user ${userEmail} in workspace ${workspaceId}`,
+          )
 
           Logger.info(`🤖 About to call executeAgentForWorkflowWithRag with:`, {
             agentId,
             userEmail,
             workspaceId,
             userQueryLength: userQuery.length,
-            userQueryPreview: userQuery.substring(0, 300) + (userQuery.length > 300 ? "..." : ""),
+            userQueryPreview:
+              userQuery.substring(0, 300) +
+              (userQuery.length > 300 ? "..." : ""),
             imageAttachmentIds: imageAttachmentIds,
             nonImageAttachmentFileIds: documentAttachmentIds,
             temperature,
-            isStreamable: false
+            isStreamable: false,
           })
 
           const fullResult = await executeAgentForWorkflowWithRag({
@@ -3539,25 +3996,28 @@ ${JSON.stringify(stepData.result, null, 2)}`
             success: fullResult.success,
             hasResponse: !!fullResult.response,
             responseLength: fullResult.response?.length || 0,
-            responsePreview: fullResult.response ? (fullResult.response.substring(0, 300) + (fullResult.response.length > 300 ? "..." : "")) : "No response",
+            responsePreview: fullResult.response
+              ? fullResult.response.substring(0, 300) +
+                (fullResult.response.length > 300 ? "..." : "")
+              : "No response",
             error: fullResult.error,
             fullResultKeys: Object.keys(fullResult),
             agentId: agentId,
-            executionId: executionId
+            executionId: executionId,
           })
 
           if (!fullResult.success) {
             Logger.error(`🚨 AI Agent execution failed:`, {
               error: fullResult.error,
               agentId: agentId,
-              executionId: executionId
+              executionId: executionId,
             })
             return {
               status: "error",
               result: {
                 error: "Agent execution failed",
                 details: fullResult.error,
-              }
+              },
             }
           }
 
@@ -3565,7 +4025,7 @@ ${JSON.stringify(stepData.result, null, 2)}`
             responseLength: fullResult.response?.length || 0,
             responsePreview: fullResult.response?.substring(0, 100) + "...",
             agentId: agentId,
-            executionId: executionId
+            executionId: executionId,
           })
 
           return {
@@ -3576,8 +4036,8 @@ ${JSON.stringify(stepData.result, null, 2)}`
               model: aiConfig.model || aiConfig.modelId || "gpt-4o",
               inputType: aiConfig.inputType || "text",
               processedAt: new Date().toISOString(),
-              chatId: null
-            }
+              chatId: null,
+            },
           }
         } catch (error) {
           Logger.error(error, "ExecuteAgentForWorkflow failed in workflow")
@@ -3587,7 +4047,7 @@ ${JSON.stringify(stepData.result, null, 2)}`
               error: "Agent execution failed",
               message: error instanceof Error ? error.message : String(error),
               inputType: aiConfig.inputType,
-            }
+            },
           }
         }
 
@@ -3603,19 +4063,25 @@ ${JSON.stringify(stepData.result, null, 2)}`
             status: "error",
             result: {
               error: "No agent ID configured for this Q&A agent tool",
-              details: "Agent should have been created during workflow template creation",
-              config: qaConfig
-            }
+              details:
+                "Agent should have been created during workflow template creation",
+              config: qaConfig,
+            },
           }
         }
 
         try {
-          Logger.info(`🔄 Q&A Agent extracting Excel metadata for execution ${executionId}`)
+          Logger.info(
+            `🔄 Q&A Agent extracting Excel metadata for execution ${executionId}`,
+          )
 
           // Find Excel file from previous steps using helper function
           const stepKeys = Object.keys(previousStepResults)
-          const stepDataArray = stepKeys.map(key => previousStepResults[key])
-          let excelFileData = await findExcelFileFromStepResults(stepDataArray, 'previousSteps')
+          const stepDataArray = stepKeys.map((key) => previousStepResults[key])
+          let excelFileData = await findExcelFileFromStepResults(
+            stepDataArray,
+            "previousSteps",
+          )
           let excelMetadata = null
 
           if (!excelFileData) {
@@ -3623,55 +4089,68 @@ ${JSON.stringify(stepData.result, null, 2)}`
               status: "error",
               result: {
                 error: "No Excel file found in previous steps",
-                details: "Q&A agent requires an Excel file from a previous workflow step"
-              }
+                details:
+                  "Q&A agent requires an Excel file from a previous workflow step",
+              },
             }
           }
 
           // Extract Excel metadata using XLSX library
-          const XLSX = await import('xlsx')
-          
+          const XLSX = await import("xlsx")
+
           try {
             // Fetch the actual Excel file content
             let fileBuffer: Buffer
             if (excelFileData.path) {
               // If file has a path, fetch it
-              const fs = await import('fs')
-              Logger.info(`📁 Attempting to read Excel file at: ${excelFileData.path}`)
-              
+              const fs = await import("fs")
+              Logger.info(
+                `📁 Attempting to read Excel file at: ${excelFileData.path}`,
+              )
+
               // Check if file exists first
               if (!fs.existsSync(excelFileData.path)) {
-                throw new Error(`Excel file not found at path: ${excelFileData.path}`)
+                throw new Error(
+                  `Excel file not found at path: ${excelFileData.path}`,
+                )
               }
-              
+
               fileBuffer = fs.readFileSync(excelFileData.path)
-              Logger.info(`📊 Successfully read Excel file, size: ${fileBuffer.length} bytes`)
+              Logger.info(
+                `📊 Successfully read Excel file, size: ${fileBuffer.length} bytes`,
+              )
             } else {
               throw new Error("Excel file path not available")
             }
 
             // Parse Excel workbook
-            const workbook = XLSX.read(fileBuffer, { type: 'buffer' })
-            Logger.info(`📋 Excel workbook parsed, found ${workbook.SheetNames.length} sheets: ${workbook.SheetNames.join(', ')}`)
-            
+            const workbook = XLSX.read(fileBuffer, { type: "buffer" })
+            Logger.info(
+              `📋 Excel workbook parsed, found ${workbook.SheetNames.length} sheets: ${workbook.SheetNames.join(", ")}`,
+            )
+
             // Extract sheet metadata
-            const sheets = workbook.SheetNames.map(sheetName => {
+            const sheets = workbook.SheetNames.map((sheetName) => {
               const worksheet = workbook.Sheets[sheetName]
-              const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:A1')
-              
+              const range = XLSX.utils.decode_range(
+                worksheet["!ref"] || "A1:A1",
+              )
+
               // Extract column headers (first row)
               const columns: string[] = []
               for (let col = range.s.c; col <= range.e.c; col++) {
                 const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col })
                 const cell = worksheet[cellAddress]
-                const columnName = cell ? String(cell.v) : XLSX.utils.encode_col(col)
+                const columnName = cell
+                  ? String(cell.v)
+                  : XLSX.utils.encode_col(col)
                 columns.push(columnName)
               }
-              
+
               return {
                 name: sheetName,
                 columns: columns,
-                rowCount: range.e.r + 1
+                rowCount: range.e.r + 1,
               }
             })
 
@@ -3679,16 +4158,19 @@ ${JSON.stringify(stepData.result, null, 2)}`
               filename: excelFileData.filename,
               fileId: excelFileData.fileId,
               filePath: excelFileData.path,
-              sheets: sheets
+              sheets: sheets,
             }
           } catch (fileError) {
             Logger.error("❌ Failed to parse Excel file:", {
-              error: fileError instanceof Error ? fileError.message : String(fileError),
+              error:
+                fileError instanceof Error
+                  ? fileError.message
+                  : String(fileError),
               stack: fileError instanceof Error ? fileError.stack : undefined,
               excelFilePath: excelFileData.path,
-              excelFileName: excelFileData.filename
+              excelFileName: excelFileData.filename,
             })
-            
+
             // Don't provide fallback data - fail the step instead
             return {
               status: "error",
@@ -3696,15 +4178,15 @@ ${JSON.stringify(stepData.result, null, 2)}`
                 error: "Failed to parse Excel file",
                 details: `Could not read or parse the Excel file: ${fileError instanceof Error ? fileError.message : String(fileError)}`,
                 filePath: excelFileData.path,
-                fileName: excelFileData.filename
-              }
+                fileName: excelFileData.filename,
+              },
             }
           }
 
           Logger.info(`✅ Q&A Agent extracted Excel metadata:`, {
             filename: excelMetadata.filename,
             sheetCount: excelMetadata.sheets.length,
-            sheetNames: excelMetadata.sheets.map((s: any) => s.name)
+            sheetNames: excelMetadata.sheets.map((s: any) => s.name),
           })
 
           // Return metadata for frontend to use for sheet/column selection
@@ -3718,8 +4200,9 @@ ${JSON.stringify(stepData.result, null, 2)}`
               model: qaConfig.model || config.defaultBestModel,
               processedAt: new Date().toISOString(),
               awaitingUserSelection: true, // Flag to indicate waiting for sheet/column selection
-              message: "Excel metadata extracted. Please select sheet and column to process questions."
-            }
+              message:
+                "Excel metadata extracted. Please select sheet and column to process questions.",
+            },
           }
         } catch (error) {
           Logger.error(error, "Q&A Agent metadata extraction failed")
@@ -3728,7 +4211,7 @@ ${JSON.stringify(stepData.result, null, 2)}`
             result: {
               error: "Q&A Agent metadata extraction failed",
               message: error instanceof Error ? error.message : String(error),
-            }
+            },
           }
         }
 
@@ -3736,15 +4219,23 @@ ${JSON.stringify(stepData.result, null, 2)}`
         try {
           const httpConfig = tool.config || {}
           const httpValue = tool.value || {}
-          
+
           // Extract configuration from both config and value objects
           const url = httpValue.url || httpConfig.url
-          const method = (httpValue.method || httpConfig.method || "GET").toUpperCase()
+          const method = (
+            httpValue.method ||
+            httpConfig.method ||
+            "GET"
+          ).toUpperCase()
           const headers = { ...httpConfig.headers, ...httpValue.headers }
-          const queryParams = { ...httpConfig.queryParams, ...httpValue.queryParams }
+          const queryParams = {
+            ...httpConfig.queryParams,
+            ...httpValue.queryParams,
+          }
           const body = httpValue.body || httpConfig.body
           const bodyType = httpValue.bodyType || httpConfig.bodyType || "json"
-          const authentication = httpConfig.authentication || httpValue.authentication || "none"
+          const authentication =
+            httpConfig.authentication || httpValue.authentication || "none"
           const authConfig = httpConfig.authConfig || httpValue.authConfig || {}
           const timeout = httpConfig.timeout || httpValue.timeout || 30000
 
@@ -3754,8 +4245,8 @@ ${JSON.stringify(stepData.result, null, 2)}`
               status: "error",
               result: {
                 error: "URL is required for HTTP request",
-                config: { httpConfig, httpValue }
-              }
+                config: { httpConfig, httpValue },
+              },
             }
           }
 
@@ -3768,8 +4259,11 @@ ${JSON.stringify(stepData.result, null, 2)}`
               result: {
                 error: "Invalid URL format",
                 url: url,
-                details: urlError instanceof Error ? urlError.message : String(urlError)
-              }
+                details:
+                  urlError instanceof Error
+                    ? urlError.message
+                    : String(urlError),
+              },
             }
           }
 
@@ -3787,7 +4281,7 @@ ${JSON.stringify(stepData.result, null, 2)}`
 
           // Build request headers
           const requestHeaders: Record<string, string> = {
-            'User-Agent': 'Xyne-Workflow/1.0'
+            "User-Agent": "Xyne-Workflow/1.0",
           }
 
           // Add custom headers
@@ -3796,12 +4290,22 @@ ${JSON.stringify(stepData.result, null, 2)}`
           }
 
           // Handle authentication
-          if (authentication === "basic" && authConfig?.username && authConfig?.password) {
-            const credentials = btoa(`${authConfig.username}:${authConfig.password}`)
-            requestHeaders['Authorization'] = `Basic ${credentials}`
+          if (
+            authentication === "basic" &&
+            authConfig?.username &&
+            authConfig?.password
+          ) {
+            const credentials = btoa(
+              `${authConfig.username}:${authConfig.password}`,
+            )
+            requestHeaders["Authorization"] = `Basic ${credentials}`
           } else if (authentication === "bearer" && authConfig?.token) {
-            requestHeaders['Authorization'] = `Bearer ${authConfig.token}`
-          } else if (authentication === "api_key" && authConfig?.apiKey && authConfig?.apiKeyHeader) {
+            requestHeaders["Authorization"] = `Bearer ${authConfig.token}`
+          } else if (
+            authentication === "api_key" &&
+            authConfig?.apiKey &&
+            authConfig?.apiKeyHeader
+          ) {
             requestHeaders[authConfig.apiKeyHeader] = authConfig.apiKey
           }
 
@@ -3809,10 +4313,12 @@ ${JSON.stringify(stepData.result, null, 2)}`
           let requestBody: string | undefined
           if (body && ["POST", "PUT", "PATCH"].includes(method)) {
             if (bodyType === "json") {
-              requestHeaders['Content-Type'] = 'application/json'
-              requestBody = typeof body === 'string' ? body : JSON.stringify(body)
+              requestHeaders["Content-Type"] = "application/json"
+              requestBody =
+                typeof body === "string" ? body : JSON.stringify(body)
             } else if (bodyType === "form") {
-              requestHeaders['Content-Type'] = 'application/x-www-form-urlencoded'
+              requestHeaders["Content-Type"] =
+                "application/x-www-form-urlencoded"
               requestBody = body
             } else {
               requestBody = body
@@ -3824,7 +4330,7 @@ ${JSON.stringify(stepData.result, null, 2)}`
             method,
             hasBody: !!requestBody,
             bodyLength: requestBody?.length || 0,
-            headerCount: Object.keys(requestHeaders).length
+            headerCount: Object.keys(requestHeaders).length,
           })
 
           // Make the HTTP request
@@ -3833,29 +4339,31 @@ ${JSON.stringify(stepData.result, null, 2)}`
             const timeoutId = setTimeout(() => controller.abort(), timeout)
 
             const startTime = Date.now()
-            
+
             const response = await fetch(finalUrl.toString(), {
               method,
               headers: requestHeaders,
               body: requestBody,
-              signal: controller.signal
+              signal: controller.signal,
             })
 
             clearTimeout(timeoutId)
             const duration = Date.now() - startTime
 
-            Logger.info(`📥 Response received: ${response.status} ${response.statusText} (${duration}ms)`)
+            Logger.info(
+              `📥 Response received: ${response.status} ${response.statusText} (${duration}ms)`,
+            )
 
             // Read response body
             let responseText = ""
             let responseData: any = null
-            
+
             try {
               responseText = await response.text()
-              const contentType = response.headers.get('content-type') || ''
-              
+              const contentType = response.headers.get("content-type") || ""
+
               // Try to parse as JSON if appropriate
-              if (contentType.includes('application/json') && responseText) {
+              if (contentType.includes("application/json") && responseText) {
                 try {
                   responseData = JSON.parse(responseText)
                 } catch {
@@ -3891,11 +4399,10 @@ ${JSON.stringify(stepData.result, null, 2)}`
                 method: method,
                 duration: duration,
                 success: isSuccess,
-                contentType: response.headers.get('content-type') || '',
-                timestamp: new Date().toISOString()
-              }
+                contentType: response.headers.get("content-type") || "",
+                timestamp: new Date().toISOString(),
+              },
             }
-
           } catch (fetchError) {
             Logger.error(`❌ HTTP request failed:`, fetchError)
 
@@ -3903,9 +4410,10 @@ ${JSON.stringify(stepData.result, null, 2)}`
             let troubleshooting = "Check URL and network connectivity"
 
             if (fetchError instanceof Error) {
-              if (fetchError.name === 'AbortError') {
+              if (fetchError.name === "AbortError") {
                 errorMessage = `Request timed out after ${timeout}ms`
-                troubleshooting = "Increase timeout or check if service is responding"
+                troubleshooting =
+                  "Increase timeout or check if service is responding"
               } else {
                 errorMessage = fetchError.message
                 troubleshooting = "Verify URL is correct and accessible"
@@ -3923,12 +4431,14 @@ ${JSON.stringify(stepData.result, null, 2)}`
                 timestamp: new Date().toISOString(),
                 debug: {
                   timeout: timeout,
-                  originalError: fetchError instanceof Error ? fetchError.message : String(fetchError)
-                }
-              }
+                  originalError:
+                    fetchError instanceof Error
+                      ? fetchError.message
+                      : String(fetchError),
+                },
+              },
             }
           }
-
         } catch (error) {
           Logger.error(error, "HTTP request tool execution failed")
           return {
@@ -3937,15 +4447,15 @@ ${JSON.stringify(stepData.result, null, 2)}`
               error: "HTTP request tool execution failed",
               message: error instanceof Error ? error.message : String(error),
               config: tool.config,
-              value: tool.value
-            }
+              value: tool.value,
+            },
           }
         }
 
       case "webhook":
         try {
           Logger.info(`🚀 Executing webhook tool for execution ${executionId}`)
-          
+
           // Get webhook execution data from the execution metadata
           const [execution] = await db
             .select()
@@ -3958,26 +4468,28 @@ ${JSON.stringify(stepData.result, null, 2)}`
               status: "error",
               result: {
                 error: "No webhook execution data found",
-                executionId: executionId
-              }
+                executionId: executionId,
+              },
             }
           }
 
           const webhookMetadata = execution.metadata as any
           const webhookData = webhookMetadata.webhook || webhookMetadata
-          
-          Logger.info(`📡 Webhook metadata found:`, { 
+
+          Logger.info(`📡 Webhook metadata found:`, {
             hasMetadata: !!execution.metadata,
             hasWebhookData: !!webhookData,
             triggerType: webhookMetadata.triggerType,
             method: webhookData.method,
-            path: webhookData.path 
+            path: webhookData.path,
           })
-          
+
           // Extract webhook request data for output
           const webhookOutput = {
             method: webhookData.method || "POST",
-            url: webhookData.url || `http://localhost:3000${webhookData.path || "/workflow/webhook"}`,
+            url:
+              webhookData.url ||
+              `http://localhost:3000${webhookData.path || "/workflow/webhook"}`,
             path: webhookData.path || "/workflow/webhook",
             headers: webhookData.headers || {},
             query: webhookData.query || {},
@@ -3988,9 +4500,11 @@ ${JSON.stringify(stepData.result, null, 2)}`
             // Generate cURL command for easy sharing/debugging
             curl: generateCurlCommand({
               method: webhookData.method || "POST",
-              url: webhookData.url || `http://localhost:3000${webhookData.path || "/workflow/webhook"}`,
+              url:
+                webhookData.url ||
+                `http://localhost:3000${webhookData.path || "/workflow/webhook"}`,
               headers: webhookData.headers || {},
-              body: webhookData.body || webhookData.requestData || {}
+              body: webhookData.body || webhookData.requestData || {},
             }),
             // Add formatted summary for AI analysis
             summary: `Webhook received: ${webhookData.method || "POST"} request to ${webhookData.path || "/workflow/webhook"}`,
@@ -4004,15 +4518,17 @@ ${JSON.stringify(stepData.result, null, 2)}`
 - Body: ${JSON.stringify(webhookData.body || {}, null, 2)}`,
             // Add specific fields that other tools might need
             aiOutput: `Analyze this webhook request:\n${JSON.stringify(webhookData, null, 2)}`,
-            output: `Webhook ${webhookData.method || "POST"} ${webhookData.path || "/workflow/webhook"} - ${new Date().toISOString()}`
+            output: `Webhook ${webhookData.method || "POST"} ${webhookData.path || "/workflow/webhook"} - ${new Date().toISOString()}`,
           }
 
-          Logger.info(`✅ Webhook tool processed successfully - method: ${webhookOutput.method}, path: ${webhookOutput.path}`)
-          Logger.info(`📤 Webhook output data:`, { 
+          Logger.info(
+            `✅ Webhook tool processed successfully - method: ${webhookOutput.method}, path: ${webhookOutput.path}`,
+          )
+          Logger.info(`📤 Webhook output data:`, {
             hasUrl: !!webhookOutput.url,
             hasBody: !!webhookOutput.body,
             hasHeaders: Object.keys(webhookOutput.headers).length > 0,
-            hasCurl: !!webhookOutput.curl
+            hasCurl: !!webhookOutput.curl,
           })
 
           // Create formatted content for AI Agent analysis
@@ -4051,7 +4567,7 @@ Please analyze this webhook request and provide insights.`
                 aiOutput: formattedContent,
                 content: formattedContent,
                 summary: `Webhook received: ${webhookOutput.method} request to ${webhookOutput.path}`,
-                data: webhookOutput
+                data: webhookOutput,
               },
               // Raw data for advanced usage
               data: webhookOutput,
@@ -4060,18 +4576,17 @@ Please analyze this webhook request and provide insights.`
               message: `Webhook triggered: ${webhookOutput.method} ${webhookOutput.path}`,
               timestamp: webhookOutput.timestamp,
               // Curl info for HTTP Request tool if needed
-              curlCommand: webhookOutput.curl
-            }
+              curlCommand: webhookOutput.curl,
+            },
           }
-
         } catch (error) {
           Logger.error(error, "Error processing webhook tool")
           return {
             status: "error",
             result: {
               error: "Failed to process webhook data",
-              details: error instanceof Error ? error.message : String(error)
-            }
+              details: error instanceof Error ? error.message : String(error),
+            },
           }
         }
 
@@ -4101,7 +4616,7 @@ export const ListWorkflowToolsApi = async (c: Context) => {
     const tools = await getAccessibleWorkflowTools(
       db,
       user.workspaceId,
-      user.id
+      user.id,
     )
     return c.json({
       success: true,
@@ -4120,24 +4635,18 @@ export const ListWorkflowToolsApi = async (c: Context) => {
 // Create workflow template
 export const CreateWorkflowTemplateApi = async (c: Context) => {
   try {
-    const user = await getUserFromJWT(
-      db,
-      c.get(JwtPayloadKey)
-    )
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const requestData = await c.req.json()
 
-    const template = await createWorkflowTemplate(
-      db,
-      {
-        name: requestData.name,
-        userId: user.id,
-        workspaceId: user.workspaceId,
-        isPublic: requestData.isPublic,
-        description: requestData.description,
-        version: requestData.version,
-        config: requestData.config,
-      }
-    )
+    const template = await createWorkflowTemplate(db, {
+      name: requestData.name,
+      userId: user.id,
+      workspaceId: user.workspaceId,
+      isPublic: requestData.isPublic,
+      description: requestData.description,
+      version: requestData.version,
+      config: requestData.config,
+    })
 
     return c.json({
       success: true,
@@ -4154,11 +4663,7 @@ export const CreateWorkflowTemplateApi = async (c: Context) => {
 // Create complex workflow template from frontend workflow builder
 export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
   try {
-    const user = await getUserFromJWT(
-      db,
-      c.get(JwtPayloadKey)
-    )
-
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
 
     let jwtPayload
     try {
@@ -4169,7 +4674,9 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
 
     const userEmail = jwtPayload?.sub
     if (!userEmail) {
-      throw new HTTPException(400, { message: "Could not get the email of the user" })
+      throw new HTTPException(400, {
+        message: "Could not get the email of the user",
+      })
     }
 
     // Get workspace ID from JWT payload
@@ -4184,18 +4691,15 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
     const requestData = await c.req.json()
 
     // Create the main workflow template
-    const template = await createWorkflowTemplate(
-      db,
-      {
-        name: requestData.name,
-        userId: user.id,
-        workspaceId: user.workspaceId,
-        isPublic: requestData.isPublic,
-        description: requestData.description,
-        version: requestData.version,
-        config: requestData.config,
-      }
-    )
+    const template = await createWorkflowTemplate(db, {
+      name: requestData.name,
+      userId: user.id,
+      workspaceId: user.workspaceId,
+      isPublic: requestData.isPublic,
+      description: requestData.description,
+      version: requestData.version,
+      config: requestData.config,
+    })
 
     const templateId = template.id
 
@@ -4211,7 +4715,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
     // Create unique tools (deduplicate by frontend tool ID if it exists)
     const uniqueTools = allTools.reduce((acc: any[], tool: any) => {
       // If tool has an ID and we haven't seen it, add it
-      if (tool.id && !acc.find(t => t.id === tool.id)) {
+      if (tool.id && !acc.find((t) => t.id === tool.id)) {
         acc.push(tool)
       } else if (!tool.id) {
         // If tool has no ID, always add it (will get new ID)
@@ -4224,28 +4728,40 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       // Check if this tool already exists in the database
       // Only query if the ID is a valid UUID (not temporary IDs like "tool-email-2")
       let existingTool = null
-      const isValidUUID = tool.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tool.id)
+      const isValidUUID =
+        tool.id &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          tool.id,
+        )
 
       if (isValidUUID) {
         try {
           const [foundTool] = await db
             .select()
             .from(workflowTool)
-            .where(and(
-              eq(workflowTool.id, tool.id),
-              eq(workflowTool.workspaceId, user.workspaceId),
-              eq(workflowTool.userId, user.id)
-            ))
+            .where(
+              and(
+                eq(workflowTool.id, tool.id),
+                eq(workflowTool.workspaceId, user.workspaceId),
+                eq(workflowTool.userId, user.id),
+              ),
+            )
           existingTool = foundTool
         } catch (error) {
-          Logger.error({ error, toolId: tool.id }, 'Failed to check for existing tool')
+          Logger.error(
+            { error, toolId: tool.id },
+            "Failed to check for existing tool",
+          )
           // Continue with creation if query fails
         }
       }
 
       // If tool exists, reuse it and skip creation
       if (existingTool) {
-        Logger.info({ toolId: tool.id, type: tool.type }, 'Reusing existing workflow tool')
+        Logger.info(
+          { toolId: tool.id, type: tool.type },
+          "Reusing existing workflow tool",
+        )
         createdTools.push(existingTool)
         toolIdMap.set(tool.id, existingTool.id)
         continue // Skip to next tool
@@ -4254,19 +4770,22 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       // Process form tools to ensure file fields use "document_file" as ID
       let processedValue = tool.value || {}
 
-
-      if (tool.type === ToolType.FORM && processedValue.fields && Array.isArray(processedValue.fields)) {
+      if (
+        tool.type === ToolType.FORM &&
+        processedValue.fields &&
+        Array.isArray(processedValue.fields)
+      ) {
         processedValue = {
           ...processedValue,
           fields: processedValue.fields.map((field: any) => {
             if (field.type === "file") {
               return {
                 ...field,
-                id: "document_file"
+                id: "document_file",
               }
             }
             return field
-          })
+          }),
         }
       }
 
@@ -4289,19 +4808,24 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
               agentName: tool.value.name,
               model: tool.value?.model,
               isExistingAgent: true,
-              dynamicallyCreated: false
+              dynamicallyCreated: false,
             }
 
-            Logger.info(`Tool config updated with existing agent ID: ${tool.value.agentId}`)
-
+            Logger.info(
+              `Tool config updated with existing agent ID: ${tool.value.agentId}`,
+            )
           } else {
             // Create new agent for workflow (existing behavior)
             Logger.info(`Creating new agent for workflow`)
 
             const agentData: CreateAgentPayload = {
               name: tool.value?.name || `Workflow Agent - ${template.name}`,
-              description: tool.value?.description || "Auto-generated agent for workflow execution",
-              prompt: tool.value?.systemPrompt || "You are a helpful assistant that processes workflow data.",
+              description:
+                tool.value?.description ||
+                "Auto-generated agent for workflow execution",
+              prompt:
+                tool.value?.systemPrompt ||
+                "You are a helpful assistant that processes workflow data.",
               model: tool.value?.model || "googleai-gemini-2-5-flash",
               isPublic: true, // Make auto-generated agents public by default to avoid agent-workflow permission sync during workflow sharing
               appIntegrations: [],
@@ -4310,15 +4834,23 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
               uploadedFileNames: [],
               docIds: [],
               ownerEmails: [],
-              userEmails: []
+              userEmails: [],
             }
 
-            Logger.info(`Creating agent with data: ${JSON.stringify(agentData)}`)
+            Logger.info(
+              `Creating agent with data: ${JSON.stringify(agentData)}`,
+            )
 
             // Create the agent using createAgentForWorkflow
-            const newAgent: SelectAgent = await createAgentForWorkflow(agentData, userId, user.workspaceId)
+            const newAgent: SelectAgent = await createAgentForWorkflow(
+              agentData,
+              userId,
+              user.workspaceId,
+            )
 
-            Logger.info(`Successfully created agent: ${newAgent.externalId} for workflow tool`)
+            Logger.info(
+              `Successfully created agent: ${newAgent.externalId} for workflow tool`,
+            )
 
             processedConfig = {
               ...processedConfig,
@@ -4328,22 +4860,28 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
               agentName: newAgent.name,
               model: tool.value?.model,
               isExistingAgent: false,
-              dynamicallyCreated: true
+              dynamicallyCreated: true,
             }
 
-            Logger.info(`Tool config updated with agent ID: ${newAgent.externalId}`)
+            Logger.info(
+              `Tool config updated with agent ID: ${newAgent.externalId}`,
+            )
           }
-
         } catch (agentCreationError) {
-          Logger.error(agentCreationError, `Failed to process agent for workflow tool`)
+          Logger.error(
+            agentCreationError,
+            `Failed to process agent for workflow tool`,
+          )
 
           processedConfig = {
             ...processedConfig,
             inputType: "form",
             model: tool.value?.model,
             agentCreationFailed: true,
-            agentCreationError: agentCreationError instanceof Error ? agentCreationError.message :
-              String(agentCreationError)
+            agentCreationError:
+              agentCreationError instanceof Error
+                ? agentCreationError.message
+                : String(agentCreationError),
           }
         }
       }
@@ -4389,7 +4927,12 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
           workflowTemplateId: template.id,
           name: stepData.name,
           description: stepData.description || "",
-          type: stepData.type === "form_submission" || stepData.type === "manual" || stepData.type === "qna_agent" ? "manual" : "automated",
+          type:
+            stepData.type === "form_submission" ||
+            stepData.type === "manual" ||
+            stepData.type === "qna_agent"
+              ? "manual"
+              : "automated",
           timeEstimate: 180, // Default time estimate
           metadata: {
             icon: stepData.metadata?.icon,
@@ -4413,12 +4956,20 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
 
     // Second pass: update relationships based on edges
     for (const step of createdSteps) {
-      const frontendStepId = [...stepIdMap.entries()].find(([_, backendId]) => backendId === step.id)?.[0]
-      const correspondingNode = requestData.nodes.find((n: any) => n.data.step.id === frontendStepId)
+      const frontendStepId = [...stepIdMap.entries()].find(
+        ([_, backendId]) => backendId === step.id,
+      )?.[0]
+      const correspondingNode = requestData.nodes.find(
+        (n: any) => n.data.step.id === frontendStepId,
+      )
 
       // Find edges where this step is involved
-      const outgoingEdges = requestData.edges.filter((edge: any) => edge.source === frontendStepId)
-      const incomingEdges = requestData.edges.filter((edge: any) => edge.target === frontendStepId)
+      const outgoingEdges = requestData.edges.filter(
+        (edge: any) => edge.source === frontendStepId,
+      )
+      const incomingEdges = requestData.edges.filter(
+        (edge: any) => edge.target === frontendStepId,
+      )
 
       // Map frontend step IDs to backend step IDs
       const nextStepIds = outgoingEdges
@@ -4437,9 +4988,10 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
             stepToolIds.push(toolIdMap.get(tool.id)!)
           } else {
             // Find tool by type and config if no ID mapping
-            const matchingTool = createdTools.find(t =>
-              t.type === tool.type &&
-              JSON.stringify(t.value) === JSON.stringify(tool.value || {})
+            const matchingTool = createdTools.find(
+              (t) =>
+                t.type === tool.type &&
+                JSON.stringify(t.value) === JSON.stringify(tool.value || {}),
             )
             if (matchingTool) {
               stepToolIds.push(matchingTool.id)
@@ -4463,22 +5015,22 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
     let rootStepId = null
     if (createdSteps.length > 0) {
       // Find the step with no incoming edges (root step)
-      const rootStep = createdSteps.find(step => {
-        const frontendStepId = [...stepIdMap.entries()].find(([_, backendId]) => backendId === step.id)?.[0]
-        const hasIncomingEdges = requestData.edges.some((edge: any) => edge.target === frontendStepId)
+      const rootStep = createdSteps.find((step) => {
+        const frontendStepId = [...stepIdMap.entries()].find(
+          ([_, backendId]) => backendId === step.id,
+        )?.[0]
+        const hasIncomingEdges = requestData.edges.some(
+          (edge: any) => edge.target === frontendStepId,
+        )
         return !hasIncomingEdges
       })
 
       rootStepId = rootStep?.id || createdSteps[0].id
 
       // Update template with root step ID
-      await updateWorkflowTemplateById(
-        db,
-        templateId,
-        {
-          rootWorkflowStepTemplateId: rootStepId,
-        }
-      )
+      await updateWorkflowTemplateById(db, templateId, {
+        rootWorkflowStepTemplateId: rootStepId,
+      })
     }
 
     // Return the complete workflow template with steps and tools
@@ -4491,10 +5043,14 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
 
     // Check if workflow contains webhook tools and reload webhooks if needed
     if (hasWebhookTools(createdTools)) {
-      Logger.info("🔄 Workflow contains webhook tools, triggering webhook reload...")
+      Logger.info(
+        "🔄 Workflow contains webhook tools, triggering webhook reload...",
+      )
       const reloadResult = await triggerWebhookReload()
       if (reloadResult.success) {
-        Logger.info(`✅ Webhooks reloaded successfully: ${reloadResult.count} webhooks active`)
+        Logger.info(
+          `✅ Webhooks reloaded successfully: ${reloadResult.count} webhooks active`,
+        )
       } else {
         Logger.warn(`⚠️ Webhook reload failed: ${reloadResult.error}`)
       }
@@ -4522,48 +5078,63 @@ export const UpdateWorkflowTemplateApi = async (c: Context) => {
     const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const templateId = c.req.param("templateId")
     const requestData = await c.req.json<UpdateWorkflowTemplateRequest>()
-    
+
     const existingTemplate = await getWorkflowTemplateByIdWithPermissionCheck(
       db,
       templateId,
       user.workspaceId,
-      user.id
+      user.id,
     )
 
     if (!existingTemplate || existingTemplate.userId !== user.id) {
-      return c.json({ message: "Workflow not found or access denied"}, 404)
+      return c.json({ message: "Workflow not found or access denied" }, 404)
     }
 
     // Check for unauthorized agents when updating user permissions
-    if (requestData.userEmails !== undefined && requestData.userEmails.length > 0) {
-      Logger.info(`Checking for unauthorized agents when updating workflow ${templateId} permissions with user emails: ${requestData.userEmails.join(', ')}`)
-      
+    if (
+      requestData.userEmails !== undefined &&
+      requestData.userEmails.length > 0
+    ) {
+      Logger.info(
+        `Checking for unauthorized agents when updating workflow ${templateId} permissions with user emails: ${requestData.userEmails.join(", ")}`,
+      )
+
       const authorizationCheck = await hasUnauthorizedAgent(
         existingTemplate.id,
         requestData.userEmails,
-        user.workspaceId
+        user.workspaceId,
       )
 
       if (authorizationCheck.hasUnauthorized) {
         Logger.warn(`Unauthorized agents found in workflow ${templateId}`)
-        
-        // Create detailed error message with agent information
-        const unauthorizedDetails = authorizationCheck.unauthorizedAgents.map(agent => 
-          `Agent "${agent.agentName}" (${agent.agentId}) is not accessible to: ${agent.missingUserEmails.join(', ')}`
-        ).join('; ')
 
-        return c.json({
-          success: false,
-          message: "Cannot update workflow permissions due to unauthorized agent access",
-          details: {
-            message: "Some agents in this workflow are not accessible to the users you're trying to share with",
-            unauthorizedAgents: authorizationCheck.unauthorizedAgents,
-            description: unauthorizedDetails
-          }
-        }, 403)
+        // Create detailed error message with agent information
+        const unauthorizedDetails = authorizationCheck.unauthorizedAgents
+          .map(
+            (agent) =>
+              `Agent "${agent.agentName}" (${agent.agentId}) is not accessible to: ${agent.missingUserEmails.join(", ")}`,
+          )
+          .join("; ")
+
+        return c.json(
+          {
+            success: false,
+            message:
+              "Cannot update workflow permissions due to unauthorized agent access",
+            details: {
+              message:
+                "Some agents in this workflow are not accessible to the users you're trying to share with",
+              unauthorizedAgents: authorizationCheck.unauthorizedAgents,
+              description: unauthorizedDetails,
+            },
+          },
+          403,
+        )
       }
 
-      Logger.info(`All agents in workflow ${templateId} are properly authorized for the provided users`)
+      Logger.info(
+        `All agents in workflow ${templateId} are properly authorized for the provided users`,
+      )
     }
 
     // Update workflow and sync user permissions in a transaction
@@ -4578,7 +5149,7 @@ export const UpdateWorkflowTemplateApi = async (c: Context) => {
           status: requestData.status,
           config: requestData.config,
           isPublic: requestData.isPublic,
-        }
+        },
       )
 
       if (!updatedTemplate) {
@@ -4621,10 +5192,14 @@ export const UpdateWorkflowTemplateApi = async (c: Context) => {
     })
 
     // Trigger webhook reload after template update (config might contain workflow changes)
-    Logger.info("🔄 Template updated, triggering webhook reload to ensure webhooks are current...")
+    Logger.info(
+      "🔄 Template updated, triggering webhook reload to ensure webhooks are current...",
+    )
     const reloadResult = await triggerWebhookReload()
     if (reloadResult.success) {
-      Logger.info(`✅ Webhooks reloaded successfully: ${reloadResult.count} webhooks active`)
+      Logger.info(
+        `✅ Webhooks reloaded successfully: ${reloadResult.count} webhooks active`,
+      )
     } else {
       Logger.warn(`⚠️ Webhook reload failed: ${reloadResult.error}`)
     }
@@ -4644,34 +5219,28 @@ export const UpdateWorkflowTemplateApi = async (c: Context) => {
 // Create workflow execution
 export const CreateWorkflowExecutionApi = async (c: Context) => {
   try {
-    const user = await getUserFromJWT(
-      db,
-      c.get(JwtPayloadKey)
-    )
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const requestData = await c.req.json()
 
     const template = await getWorkflowTemplateByIdWithPermissionCheck(
       db,
       requestData.workflowTemplateId,
       user.workspaceId,
-      user.id
+      user.id,
     )
 
     if (!template) {
       throw new Error("Workflow Template not found or access denied")
     }
 
-    const execution = await createWorkflowExecution(
-      db,
-      {
-        workflowTemplateId: template.id,
-        workspaceId: user.workspaceId,
-        userId: user.id,
-        name: requestData.name,
-        description: requestData.description,
-        metadata: requestData.metadata || {},
-      }
-    )
+    const execution = await createWorkflowExecution(db, {
+      workflowTemplateId: template.id,
+      workspaceId: user.workspaceId,
+      userId: user.id,
+      name: requestData.name,
+      description: requestData.description,
+      metadata: requestData.metadata || {},
+    })
 
     return c.json({
       success: true,
@@ -4701,7 +5270,7 @@ export const ListWorkflowExecutionsApi = async (c: Context) => {
     // Build where conditions
     const whereConditions = [
       eq(workflowExecution.workspaceId, user.workspaceId),
-      eq(workflowExecution.userId, user.id)
+      eq(workflowExecution.userId, user.id),
     ]
 
     // Filter by ID (exact match)
@@ -4799,9 +5368,13 @@ export const CreateWorkflowToolApi = async (c: Context) => {
     const requestData = await c.req.json()
 
     // For JIRA tools, check if a tool with the same webhook URL already exists
-    if (requestData.type === 'jira') {
-      const productionWebhookUrl = requestData.config?.productionWebhookUrl || requestData.value?.productionWebhookUrl || requestData.value?.webhookUrl
-      const webhookId = requestData.config?.webhookId || requestData.value?.webhookId
+    if (requestData.type === "jira") {
+      const productionWebhookUrl =
+        requestData.config?.productionWebhookUrl ||
+        requestData.value?.productionWebhookUrl ||
+        requestData.value?.webhookUrl
+      const webhookId =
+        requestData.config?.webhookId || requestData.value?.webhookId
 
       if (productionWebhookUrl || webhookId) {
         // Get all JIRA tools for this workspace and user
@@ -4810,10 +5383,10 @@ export const CreateWorkflowToolApi = async (c: Context) => {
           .from(workflowTool)
           .where(
             and(
-              eq(workflowTool.type, 'jira'),
+              eq(workflowTool.type, "jira"),
               eq(workflowTool.workspaceId, user.workspaceId),
-              eq(workflowTool.userId, user.id)
-            )
+              eq(workflowTool.userId, user.id),
+            ),
           )
 
         // Check if any tool has the same webhook URL or ID
@@ -4821,11 +5394,17 @@ export const CreateWorkflowToolApi = async (c: Context) => {
           const config = tool.config as any
           const value = tool.value as any
 
-          const existingProductionUrl = config?.productionWebhookUrl || value?.productionWebhookUrl || value?.webhookUrl
+          const existingProductionUrl =
+            config?.productionWebhookUrl ||
+            value?.productionWebhookUrl ||
+            value?.webhookUrl
           const existingWebhookId = config?.webhookId || value?.webhookId
 
           // Check if webhook URL matches
-          if (productionWebhookUrl && existingProductionUrl === productionWebhookUrl) {
+          if (
+            productionWebhookUrl &&
+            existingProductionUrl === productionWebhookUrl
+          ) {
             return true
           }
 
@@ -4838,21 +5417,25 @@ export const CreateWorkflowToolApi = async (c: Context) => {
         })
 
         if (duplicateTool) {
-          Logger.warn({
-            existingToolId: duplicateTool.id,
-            productionWebhookUrl,
-            webhookId,
-          }, "⚠️ JIRA tool with same webhook URL already exists, returning existing tool instead of creating duplicate")
+          Logger.warn(
+            {
+              existingToolId: duplicateTool.id,
+              productionWebhookUrl,
+              webhookId,
+            },
+            "⚠️ JIRA tool with same webhook URL already exists, returning existing tool instead of creating duplicate",
+          )
 
           // Sanitize config before returning
           const sanitizedDuplicate = {
             ...duplicateTool,
-            config: duplicateTool.config && typeof duplicateTool.config === 'object'
-              ? (() => {
-                  const { apiToken, ...rest } = duplicateTool.config as any
-                  return rest
-                })()
-              : duplicateTool.config
+            config:
+              duplicateTool.config && typeof duplicateTool.config === "object"
+                ? (() => {
+                    const { apiToken, ...rest } = duplicateTool.config as any
+                    return rest
+                  })()
+                : duplicateTool.config,
           }
 
           return c.json({
@@ -4864,50 +5447,55 @@ export const CreateWorkflowToolApi = async (c: Context) => {
       }
     }
 
-    const tool = await createWorkflowTool(
-      db,
-      {
-        type: requestData.type,
-        workspaceId: user.workspaceId,
-        userId: user.id,
-        value: requestData.value,
-        config: requestData.config || {},
-      }
-    )
+    const tool = await createWorkflowTool(db, {
+      type: requestData.type,
+      workspaceId: user.workspaceId,
+      userId: user.id,
+      value: requestData.value,
+      config: requestData.config || {},
+    })
 
     // If this is a webhook tool, register the webhook
     if (tool.type === ToolType.WEBHOOK && tool.config && tool.value) {
       try {
         const config = tool.config as any
         const value = tool.value as any
-        
+
         if (config.path || value.path) {
           const webhookConfig = {
-            webhookUrl: value.webhookUrl || `http://localhost:3000/workflow/webhook${config.path || value.path}`,
-            httpMethod: config.httpMethod || 'POST',
+            webhookUrl:
+              value.webhookUrl ||
+              `http://localhost:3000/workflow/webhook${config.path || value.path}`,
+            httpMethod: config.httpMethod || "POST",
             path: config.path || value.path,
-            authentication: config.authentication || 'none',
+            authentication: config.authentication || "none",
             selectedCredential: config.selectedCredential,
-            responseMode: config.responseMode || 'immediately',
+            responseMode: config.responseMode || "immediately",
             options: config.options || {},
             headers: config.headers || {},
-            queryParams: config.queryParams || {}
+            queryParams: config.queryParams || {},
           }
-          
+
           // Get workflow template ID (simplified - in real implementation you'd get this from context)
-          const templateId = requestData.workflowTemplateId || 'default-template'
-          
+          const templateId =
+            requestData.workflowTemplateId || "default-template"
+
           await webhookRegistry.registerWebhook(
             webhookConfig.path,
             templateId,
             tool.id,
-            webhookConfig
+            webhookConfig,
           )
-          
-          Logger.info(`Registered webhook ${webhookConfig.path} for tool ${tool.id}`)
+
+          Logger.info(
+            `Registered webhook ${webhookConfig.path} for tool ${tool.id}`,
+          )
         }
       } catch (webhookError) {
-        Logger.error(webhookError, `Failed to register webhook for tool ${tool.id}`)
+        Logger.error(
+          webhookError,
+          `Failed to register webhook for tool ${tool.id}`,
+        )
         // Don't fail the tool creation if webhook registration fails
       }
     }
@@ -4936,7 +5524,7 @@ export const UpdateWorkflowToolApi = async (c: Context) => {
       db,
       toolId,
       user.workspaceId,
-      user.id
+      user.id,
     )
 
     if (!existingTool) {
@@ -4996,27 +5584,34 @@ export const UpdateWorkflowToolApi = async (c: Context) => {
     })
 
     // If this is a webhook tool, update the webhook registration
-    if (result.tool.type === ToolType.WEBHOOK && result.tool.config && result.tool.value) {
+    if (
+      result.tool.type === ToolType.WEBHOOK &&
+      result.tool.config &&
+      result.tool.value
+    ) {
       try {
         const config = result.tool.config as any
         const value = result.tool.value as any
-        
+
         if (config.path || value.path) {
           const webhookConfig = {
-            webhookUrl: value.webhookUrl || `http://localhost:3000/workflow/webhook${config.path || value.path}`,
-            httpMethod: config.httpMethod || 'POST',
+            webhookUrl:
+              value.webhookUrl ||
+              `http://localhost:3000/workflow/webhook${config.path || value.path}`,
+            httpMethod: config.httpMethod || "POST",
             path: config.path || value.path,
-            authentication: config.authentication || 'none',
+            authentication: config.authentication || "none",
             selectedCredential: config.selectedCredential,
-            responseMode: config.responseMode || 'immediately',
+            responseMode: config.responseMode || "immediately",
             options: config.options || {},
             headers: config.headers || {},
-            queryParams: config.queryParams || {}
+            queryParams: config.queryParams || {},
           }
-          
+
           // Get workflow template ID (simplified - in real implementation you'd get this from context)
-          const templateId = requestData.workflowTemplateId || 'default-template'
-          
+          const templateId =
+            requestData.workflowTemplateId || "default-template"
+
           // Unregister old webhook first (if path changed)
           if (existingTool && existingTool.value) {
             const oldValue = existingTool.value as any
@@ -5024,19 +5619,24 @@ export const UpdateWorkflowToolApi = async (c: Context) => {
               await webhookRegistry.unregisterWebhook(oldValue.path)
             }
           }
-          
+
           // Register new/updated webhook
           await webhookRegistry.registerWebhook(
             webhookConfig.path,
             templateId,
             result.tool.id,
-            webhookConfig
+            webhookConfig,
           )
-          
-          Logger.info(`Updated webhook registration ${webhookConfig.path} for tool ${result.tool.id}`)
+
+          Logger.info(
+            `Updated webhook registration ${webhookConfig.path} for tool ${result.tool.id}`,
+          )
         }
       } catch (webhookError) {
-        Logger.error(webhookError, `Failed to update webhook for tool ${result.tool.id}`)
+        Logger.error(
+          webhookError,
+          `Failed to update webhook for tool ${result.tool.id}`,
+        )
         // Don't fail the tool update if webhook registration fails
       }
     }
@@ -5069,7 +5669,7 @@ export const GetWorkflowToolApi = async (c: Context) => {
       db,
       toolId,
       user.workspaceId,
-      user.id
+      user.id,
     )
 
     if (!tool) {
@@ -5101,7 +5701,7 @@ export const DeleteWorkflowToolApi = async (c: Context) => {
       db,
       toolId,
       user.workspaceId,
-      user.id
+      user.id,
     )
 
     if (!existingTool) {
@@ -5135,7 +5735,7 @@ export const AddStepToWorkflowApi = async (c: Context) => {
       db,
       templateId,
       user.workspaceId,
-      user.id
+      user.id,
     )
 
     if (!template || template.userId !== user.id) {
@@ -5161,7 +5761,7 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     // 2. Get all existing steps for this template
     const existingStepsRaw = await getWorkflowStepTemplatesByTemplateId(
       db,
-      template.id
+      template.id,
     )
     const existingSteps = topologicalSortSteps(existingStepsRaw)
     const isFirstStep =
@@ -5194,13 +5794,9 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     // 4. Handle step connections
     if (isFirstStep) {
       // This is the first/root step
-      await updateWorkflowTemplateById(
-        db,
-        templateId,
-        {
-          rootWorkflowStepTemplateId: newStep.id,
-        }
-      )
+      await updateWorkflowTemplateById(db, templateId, {
+        rootWorkflowStepTemplateId: newStep.id,
+      })
 
       Logger.info(`Set step ${newStep.id} as root step`)
     } else {
@@ -5237,12 +5833,12 @@ export const AddStepToWorkflowApi = async (c: Context) => {
       db,
       templateId,
       user.workspaceId,
-      user.id
+      user.id,
     )
 
     const allStepsRaw = await getWorkflowStepTemplatesByTemplateId(
       db,
-      template.id
+      template.id,
     )
     const allSteps = topologicalSortSteps(allStepsRaw)
 
@@ -5286,10 +5882,7 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
     const stepId = c.req.param("stepId")
 
     // 1. Check if step exists and get its details
-    const stepToDelete = await getWorkflowStepTemplateById(
-      db,
-      stepId
-    ) 
+    const stepToDelete = await getWorkflowStepTemplateById(db, stepId)
 
     if (!stepToDelete) {
       throw new HTTPException(404, {
@@ -5304,7 +5897,7 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
       db,
       templateId,
       user.workspaceId,
-      user.id
+      user.id,
     )
 
     if (!template || template.userId !== user.id) {
@@ -5314,8 +5907,8 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
     }
 
     // 3. Handle step chain reconnection
-    const prevStepIds = stepToDelete.prevStepIds as string[] || []
-    const nextStepIds = stepToDelete.nextStepIds as string[] || []
+    const prevStepIds = (stepToDelete.prevStepIds as string[]) || []
+    const nextStepIds = (stepToDelete.nextStepIds as string[]) || []
 
     // Update previous steps to point to next steps
     for (const prevStepId of prevStepIds) {
@@ -5348,19 +5941,15 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
       // If no next steps, set to null
       newRootStepId = nextStepIds.length > 0 ? nextStepIds[0] : null
 
-      await updateWorkflowTemplateById(
-        db,
-        template.id,
-        {
-          rootWorkflowStepTemplateId: newRootStepId,
-        }
-      )
+      await updateWorkflowTemplateById(db, template.id, {
+        rootWorkflowStepTemplateId: newRootStepId,
+      })
 
       Logger.info(`Updated root step from ${stepId} to ${newRootStepId}`)
     }
 
     // 6. Delete associated tools if they are only used by this step
-    const toolIdsToCheck = stepToDelete.toolIds as string[] || []
+    const toolIdsToCheck = (stepToDelete.toolIds as string[]) || []
 
     for (const toolId of toolIdsToCheck) {
       // Check if any other steps use this tool
@@ -5393,7 +5982,7 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
     // 8. Update step orders for remaining steps
     const remainingStepsRaw = await getWorkflowStepTemplatesByTemplateId(
       db,
-      templateId
+      templateId,
     )
 
     const remainingSteps = topologicalSortSteps(remainingStepsRaw)
@@ -5414,7 +6003,7 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
           .update(workflowStepTemplate)
           .set({
             metadata: {
-              ...(step.metadata as Object || {}),
+              ...((step.metadata as Object) || {}),
               step_order: newOrder,
             },
             updatedAt: new Date(),
@@ -5428,12 +6017,12 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
       db,
       template.id,
       user.workspaceId,
-      user.id
+      user.id,
     )
 
     const updatedStepsRaw = await getWorkflowStepTemplatesByTemplateId(
       db,
-      templateId
+      templateId,
     )
     const updatedSteps = topologicalSortSteps(updatedStepsRaw)
 
@@ -5471,7 +6060,8 @@ export const UpdateWorkflowStepExecutionApi = async (c: Context) => {
       .set({
         status: requestData.status,
         completedBy: requestData.completedBy,
-        completedAt: requestData.status === WorkflowStatus.COMPLETED ? new Date() : null,
+        completedAt:
+          requestData.status === WorkflowStatus.COMPLETED ? new Date() : null,
         metadata: requestData.metadata,
       })
       .where(eq(workflowStepExecution.id, stepId))
@@ -5523,10 +6113,7 @@ export const SubmitFormStepApi = SubmitWorkflowFormApi
 export const GetFormDefinitionApi = async (c: Context) => {
   try {
     const stepId = c.req.param("stepId")
-    const user = await getUserFromJWT(
-      db,
-      c.get(JwtPayloadKey)
-    )
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
 
     const stepExecutions = await db
       .select()
@@ -5540,7 +6127,7 @@ export const GetFormDefinitionApi = async (c: Context) => {
     const stepExecution = stepExecutions[0]
     const stepTemplate = await getWorkflowStepTemplateById(
       db,
-      stepExecution.workflowStepTemplateId
+      stepExecution.workflowStepTemplateId,
     )
 
     if (!stepTemplate) {
@@ -5558,7 +6145,7 @@ export const GetFormDefinitionApi = async (c: Context) => {
       db,
       toolIds[0],
       user.workspaceId,
-      user.id
+      user.id,
     )
 
     if (!formTool) {
@@ -5600,25 +6187,33 @@ export const GetVertexAIModelEnumsApi = async (c: Context) => {
         websearch: config.websearch,
         deepResearch: config.deepResearch,
         // Add model type for better categorization in frontend
-        modelType: enumValue.includes('gemini') ? 'gemini' :
-          enumValue.includes('claude') ? 'claude' : 'other',
+        modelType: enumValue.includes("gemini")
+          ? "gemini"
+          : enumValue.includes("claude")
+            ? "claude"
+            : "other",
       }))
       .sort((a, b) => {
-        const typeOrder: Record<string, number> = { claude: 1, gemini: 2, other: 3 };
-        const orderA = typeOrder[a.modelType] ?? 99;
-        const orderB = typeOrder[b.modelType] ?? 99;
+        const typeOrder: Record<string, number> = {
+          claude: 1,
+          gemini: 2,
+          other: 3,
+        }
+        const orderA = typeOrder[a.modelType] ?? 99
+        const orderB = typeOrder[b.modelType] ?? 99
 
         if (orderA !== orderB) {
-          return orderA - orderB;
+          return orderA - orderB
         }
-        return a.labelName.localeCompare(b.labelName);
+        return a.labelName.localeCompare(b.labelName)
       })
 
     return c.json({
       success: true,
       data: vertexAIModelEnums,
       count: vertexAIModelEnums.length,
-      message: "VertexAI models include both Claude and Gemini models optimized for enterprise use",
+      message:
+        "VertexAI models include both Claude and Gemini models optimized for enterprise use",
     })
   } catch (error) {
     Logger.error(error, "Failed to get VertexAI model enums")
@@ -5655,23 +6250,34 @@ export const GetModelEnumsApi = async (c: Context) => {
         reasoning: model.reasoning,
         websearch: model.websearch,
         deepResearch: model.deepResearch,
-        modelType: model.id.includes('gemini') ? 'gemini' :
-          model.id.includes('claude') ? 'claude' : 'other',
+        modelType: model.id.includes("gemini")
+          ? "gemini"
+          : model.id.includes("claude")
+            ? "claude"
+            : "other",
       }))
 
       // Sort by model type and then by label name
       modelEnums.sort((a, b) => {
-        const typeOrder: Record<string, number> = { claude: 1, gemini: 2, other: 3 };
-        const orderA = typeOrder[a.modelType] ?? 99;
-        const orderB = typeOrder[b.modelType] ?? 99;
+        const typeOrder: Record<string, number> = {
+          claude: 1,
+          gemini: 2,
+          other: 3,
+        }
+        const orderA = typeOrder[a.modelType] ?? 99
+        const orderB = typeOrder[b.modelType] ?? 99
 
         if (orderA !== orderB) {
-          return orderA - orderB;
+          return orderA - orderB
         }
-        return a.labelName.localeCompare(b.labelName);
+        return a.labelName.localeCompare(b.labelName)
       })
 
-      console.log(`Model enums for LiteLLM provider from API:`, modelEnums.length, "models")
+      console.log(
+        `Model enums for LiteLLM provider from API:`,
+        modelEnums.length,
+        "models",
+      )
 
       return c.json({
         success: true,
@@ -5694,20 +6300,27 @@ export const GetModelEnumsApi = async (c: Context) => {
         websearch: config.websearch,
         deepResearch: config.deepResearch,
         // Add model type for better categorization in frontend
-        modelType: enumValue.includes('gemini') ? 'gemini' :
-          enumValue.includes('claude') ? 'claude' : 'other',
+        modelType: enumValue.includes("gemini")
+          ? "gemini"
+          : enumValue.includes("claude")
+            ? "claude"
+            : "other",
       }))
       .sort((a, b) => {
-        const typeOrder: Record<string, number> = { claude: 1, gemini: 2, other: 3 };
-        const orderA = typeOrder[a.modelType] ?? 99;
-        const orderB = typeOrder[b.modelType] ?? 99;
+        const typeOrder: Record<string, number> = {
+          claude: 1,
+          gemini: 2,
+          other: 3,
+        }
+        const orderA = typeOrder[a.modelType] ?? 99
+        const orderB = typeOrder[b.modelType] ?? 99
 
         if (orderA !== orderB) {
-          return orderA - orderB;
+          return orderA - orderB
         }
-        return a.labelName.localeCompare(b.labelName);
+        return a.labelName.localeCompare(b.labelName)
       })
-      console.log(`Model enums for provider ${activeProvider}:`, modelEnums)
+    console.log(`Model enums for provider ${activeProvider}:`, modelEnums)
 
     return c.json({
       success: true,
@@ -5726,7 +6339,9 @@ export const GetModelEnumsApi = async (c: Context) => {
 
 // Legacy endpoint - kept for backward compatibility but redirects to VertexAI
 export const GetGeminiModelEnumsApi = async (c: Context) => {
-  Logger.warn("GetGeminiModelEnumsApi is deprecated, use GetVertexAIModelEnumsApi instead")
+  Logger.warn(
+    "GetGeminiModelEnumsApi is deprecated, use GetVertexAIModelEnumsApi instead",
+  )
   return GetVertexAIModelEnumsApi(c)
 }
 
@@ -5741,7 +6356,7 @@ export const GetWorkflowUsersApi = async (c: Context) => {
       db,
       templateId,
       user.workspaceId,
-      user.id
+      user.id,
     )
 
     if (!template) {
@@ -5750,7 +6365,9 @@ export const GetWorkflowUsersApi = async (c: Context) => {
 
     // Check if user is the owner (only owners can view user list)
     if (template.userId !== user.id) {
-      throw new HTTPException(403, { message: "Only workflow owners can view user permissions" })
+      throw new HTTPException(403, {
+        message: "Only workflow owners can view user permissions",
+      })
     }
 
     // Get all users with permissions for this workflow
@@ -5812,27 +6429,34 @@ export const TestJiraConnectionApi = async (c: Context) => {
       })
     }
 
-    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+    if (error.code === "ENOTFOUND" || error.code === "ECONNREFUSED") {
       throw new HTTPException(400, {
         message: "Invalid Jira domain. Please check the domain name.",
       })
     }
 
-    if (error.code === 'ETIMEDOUT' || error.message?.includes('timeout')) {
+    if (error.code === "ETIMEDOUT" || error.message?.includes("timeout")) {
       throw new HTTPException(408, {
-        message: "Connection timed out. Please check your network or try again.",
+        message:
+          "Connection timed out. Please check your network or try again.",
       })
     }
 
     // Generic network/connection errors
-    if (error.code?.startsWith('E') || error.message?.toLowerCase().includes('network')) {
+    if (
+      error.code?.startsWith("E") ||
+      error.message?.toLowerCase().includes("network")
+    ) {
       throw new HTTPException(500, {
-        message: "Unable to connect to Jira. Please verify the domain, email, and API token are correct.",
+        message:
+          "Unable to connect to Jira. Please verify the domain, email, and API token are correct.",
       })
     }
 
     throw new HTTPException(500, {
-      message: error.message || "Unable to connect to Jira. Please verify the domain, email, and API token are correct.",
+      message:
+        error.message ||
+        "Unable to connect to Jira. Please verify the domain, email, and API token are correct.",
     })
   }
 }
@@ -5843,17 +6467,30 @@ export const RegisterJiraWebhookApi = async (c: Context) => {
     const body = await c.req.json()
     const { domain, email, apiToken, webhookUrl, events, name, filters } = body
 
-    Logger.info({
-      domain,
-      email: email?.substring(0, 10) + "...",
-      webhookUrl,
-      events,
-      name,
-      hasFilters: !!filters,
-    }, "🔗 Attempting to register Jira webhook")
+    Logger.info(
+      {
+        domain,
+        email: email?.substring(0, 10) + "...",
+        webhookUrl,
+        events,
+        name,
+        hasFilters: !!filters,
+      },
+      "🔗 Attempting to register Jira webhook",
+    )
 
-    if (!domain || !email || !apiToken || !webhookUrl || !events || events.length === 0) {
-      Logger.error({ domain, email, webhookUrl, eventsCount: events?.length }, "❌ Missing required fields for webhook registration")
+    if (
+      !domain ||
+      !email ||
+      !apiToken ||
+      !webhookUrl ||
+      !events ||
+      events.length === 0
+    ) {
+      Logger.error(
+        { domain, email, webhookUrl, eventsCount: events?.length },
+        "❌ Missing required fields for webhook registration",
+      )
       throw new HTTPException(400, {
         message: "domain, email, apiToken, webhookUrl, and events are required",
       })
@@ -5877,7 +6514,10 @@ export const RegisterJiraWebhookApi = async (c: Context) => {
 
     const result = await trigger.register()
 
-    Logger.info({ webhookId: result.webhookId }, "✅ Webhook registered successfully with Jira")
+    Logger.info(
+      { webhookId: result.webhookId },
+      "✅ Webhook registered successfully with Jira",
+    )
 
     return c.json({
       success: true,
@@ -5885,12 +6525,15 @@ export const RegisterJiraWebhookApi = async (c: Context) => {
       message: "Webhook registered successfully",
     })
   } catch (error: any) {
-    Logger.error({
-      error: error.message,
-      stack: error.stack,
-      response: error.response?.data,
-      status: error.response?.status,
-    }, "❌ Failed to register Jira webhook")
+    Logger.error(
+      {
+        error: error.message,
+        stack: error.stack,
+        response: error.response?.data,
+        status: error.response?.status,
+      },
+      "❌ Failed to register Jira webhook",
+    )
 
     // Return user-friendly error messages
     if (error.response?.status === 401) {
@@ -5988,7 +6631,10 @@ export const GetJiraMetadataApi = async (c: Context) => {
       })
     }
 
-    Logger.info({ domain, hasProjectKeys: !!projectKeys }, "🔍 Fetching Jira metadata")
+    Logger.info(
+      { domain, hasProjectKeys: !!projectKeys },
+      "🔍 Fetching Jira metadata",
+    )
 
     // Import Jira client
     const { JiraClient } = await import("@/integrations/jira/client")
@@ -6001,11 +6647,14 @@ export const GetJiraMetadataApi = async (c: Context) => {
       client.getStatuses(),
     ])
 
-    Logger.info({
-      projectsCount: projects.length,
-      prioritiesCount: priorities.length,
-      statusesCount: statuses.length,
-    }, "✅ Base metadata fetched")
+    Logger.info(
+      {
+        projectsCount: projects.length,
+        prioritiesCount: priorities.length,
+        statusesCount: statuses.length,
+      },
+      "✅ Base metadata fetched",
+    )
 
     // Prepare response
     const metadata: any = {
@@ -6033,35 +6682,44 @@ export const GetJiraMetadataApi = async (c: Context) => {
       Logger.info({ projectKeys }, "🔍 Fetching project-specific metadata")
 
       // Fetch data for each project in parallel
-      const projectDataPromises = projectKeys.map(async (projectKey: string) => {
-        try {
-          const [issueTypes, epics, components] = await Promise.all([
-            client.getIssueTypes(projectKey),
-            client.getEpics(projectKey),
-            client.getComponents(projectKey),
-          ])
+      const projectDataPromises = projectKeys.map(
+        async (projectKey: string) => {
+          try {
+            const [issueTypes, epics, components] = await Promise.all([
+              client.getIssueTypes(projectKey),
+              client.getEpics(projectKey),
+              client.getComponents(projectKey),
+            ])
 
-          return {
-            projectKey,
-            issueTypes,
-            epics,
-            components,
+            return {
+              projectKey,
+              issueTypes,
+              epics,
+              components,
+            }
+          } catch (error: any) {
+            Logger.error(
+              { projectKey, error: error.message },
+              "Failed to fetch data for project",
+            )
+            return {
+              projectKey,
+              issueTypes: [],
+              epics: [],
+              components: [],
+            }
           }
-        } catch (error: any) {
-          Logger.error({ projectKey, error: error.message }, "Failed to fetch data for project")
-          return {
-            projectKey,
-            issueTypes: [],
-            epics: [],
-            components: [],
-          }
-        }
-      })
+        },
+      )
 
       // Also fetch recent issues from selected projects (for dropdown)
       let recentIssues: any[] = []
       try {
-        recentIssues = await client.searchIssuesByProjects(projectKeys, undefined, 100)
+        recentIssues = await client.searchIssuesByProjects(
+          projectKeys,
+          undefined,
+          100,
+        )
       } catch (error: any) {
         Logger.error({ error: error.message }, "Failed to fetch recent issues")
       }
@@ -6109,12 +6767,15 @@ export const GetJiraMetadataApi = async (c: Context) => {
         priority: issue.fields?.priority?.name,
       }))
 
-      Logger.info({
-        issueTypesCount: metadata.issueTypes.length,
-        epicsCount: metadata.epics.length,
-        componentsCount: metadata.components.length,
-        issuesCount: metadata.issues.length,
-      }, "✅ Project-specific metadata fetched")
+      Logger.info(
+        {
+          issueTypesCount: metadata.issueTypes.length,
+          epicsCount: metadata.epics.length,
+          componentsCount: metadata.components.length,
+          issuesCount: metadata.issues.length,
+        },
+        "✅ Project-specific metadata fetched",
+      )
     }
 
     return c.json({
@@ -6136,7 +6797,7 @@ export const GetJiraMetadataApi = async (c: Context) => {
 async function executeWorkflowFromWebhook(
   templateId: string,
   requestData: any,
-  config: { webhookId: string; createdBy: string; rawPayload?: any }
+  config: { webhookId: string; createdBy: string; rawPayload?: any },
 ): Promise<string> {
   try {
     const { executionId } = await triggerWorkflowFromWebhook(
@@ -6144,12 +6805,13 @@ async function executeWorkflowFromWebhook(
       requestData,
       templateId,
       config.createdBy,
-      config.rawPayload
+      config.rawPayload,
     )
 
-    Logger.info(`Created workflow execution ${executionId} from webhook ${config.webhookId}`)
+    Logger.info(
+      `Created workflow execution ${executionId} from webhook ${config.webhookId}`,
+    )
     return executionId
-
   } catch (error) {
     Logger.error(`Failed to execute workflow from webhook: ${error}`)
     throw new Error("Failed to execute workflow")
@@ -6180,22 +6842,26 @@ function redactJiraWebhookData(eventData: any): Record<string, any> {
   return {
     webhookId: eventData.webhookId,
     webhookEvent: eventData.event,
-    jiraIssue: eventData.issue ? {
-      key: eventData.issue?.key,
-      id: eventData.issue?.id,
-      summary: eventData.issue?.fields?.summary,
-      status: eventData.issue?.fields?.status?.name,
-      issueType: eventData.issue?.fields?.issuetype?.name,
-      priority: eventData.issue?.fields?.priority?.name,
-      // Exclude: description (may contain PII), comments, attachments
-    } : undefined,
-    jiraProject: eventData.project ? {
-      key: eventData.project?.key,
-      id: eventData.project?.id,
-      name: eventData.project?.name,
-      projectTypeKey: eventData.project?.projectTypeKey,
-      // Exclude: description (may contain PII)
-    } : undefined,
+    jiraIssue: eventData.issue
+      ? {
+          key: eventData.issue?.key,
+          id: eventData.issue?.id,
+          summary: eventData.issue?.fields?.summary,
+          status: eventData.issue?.fields?.status?.name,
+          issueType: eventData.issue?.fields?.issuetype?.name,
+          priority: eventData.issue?.fields?.priority?.name,
+          // Exclude: description (may contain PII), comments, attachments
+        }
+      : undefined,
+    jiraProject: eventData.project
+      ? {
+          key: eventData.project?.key,
+          id: eventData.project?.id,
+          name: eventData.project?.name,
+          projectTypeKey: eventData.project?.projectTypeKey,
+          // Exclude: description (may contain PII)
+        }
+      : undefined,
     jiraUser: {
       accountId: eventData.user?.accountId,
       displayName: eventData.user?.displayName,
@@ -6221,14 +6887,17 @@ async function triggerWorkflowFromWebhook(
   eventData: any,
   workflowTemplateId: string,
   createdBy: string,
-  rawPayload?: any
+  rawPayload?: any,
 ): Promise<{ executionId: string; rootStepId: string }> {
   try {
-    Logger.info({
-      webhookId,
-      workflowTemplateId,
-      eventType: eventData.event,
-    }, "🚀 Triggering workflow from webhook event")
+    Logger.info(
+      {
+        webhookId,
+        workflowTemplateId,
+        eventType: eventData.event,
+      },
+      "🚀 Triggering workflow from webhook event",
+    )
 
     // Get template and validate
     const template = await db
@@ -6262,8 +6931,8 @@ async function triggerWorkflowFromWebhook(
         userId: template[0].userId, // Use the template's user ID
         workspaceId: template[0].workspaceId, // Use the template's workspace ID
         completedBy: createdBy || "webhook",
-        name: `${template[0].name} - ${eventData.issue?.key || eventData.project?.key || 'Webhook Event'}`,
-        description: `Triggered by ${eventData.event} on ${eventData.issue?.key || eventData.project?.name || 'unknown'}`,
+        name: `${template[0].name} - ${eventData.issue?.key || eventData.project?.key || "Webhook Event"}`,
+        description: `Triggered by ${eventData.event} on ${eventData.issue?.key || eventData.project?.name || "unknown"}`,
         metadata: {
           ...redactJiraWebhookData(eventData),
         },
@@ -6317,29 +6986,36 @@ async function triggerWorkflowFromWebhook(
       .update(workflowExecution)
       .set({ rootWorkflowStepExeId: rootStepExecution.id })
       .where(eq(workflowExecution.id, execution.id))
-    
+
     // Mark root step as ACTIVE when workflow starts
     await db
       .update(workflowStepExecution)
-      .set({ 
+      .set({
         status: WorkflowStatus.ACTIVE,
-        updatedAt: new Date()
+        updatedAt: new Date(),
       })
       .where(eq(workflowStepExecution.id, rootStepExecution.id))
-    
-    Logger.info(`🚀 Marked root step as ACTIVE: ${rootStepExecution.name} (${rootStepExecution.id})`)
 
-    Logger.info({
-      executionId: execution.id,
-      rootStepId: rootStepExecution.id,
-      workflowName: template[0].name,
-    }, "✅ Workflow execution created from webhook")
+    Logger.info(
+      `🚀 Marked root step as ACTIVE: ${rootStepExecution.name} (${rootStepExecution.id})`,
+    )
+
+    Logger.info(
+      {
+        executionId: execution.id,
+        rootStepId: rootStepExecution.id,
+        workflowName: template[0].name,
+      },
+      "✅ Workflow execution created from webhook",
+    )
 
     // Get the root step template to find the Jira tool ID
     const [rootStepTemplate] = await db
       .select()
       .from(workflowStepTemplate)
-      .where(eq(workflowStepTemplate.id, template[0].rootWorkflowStepTemplateId!))
+      .where(
+        eq(workflowStepTemplate.id, template[0].rootWorkflowStepTemplateId!),
+      )
 
     // Create a tool execution record for the webhook trigger so the frontend can display the data
     const webhookData = redactJiraWebhookData(eventData)
@@ -6373,10 +7049,13 @@ async function triggerWorkflowFromWebhook(
         })
         .where(eq(workflowStepExecution.id, rootStepExecution.id))
 
-      Logger.info({
-        rootStepId: rootStepExecution.id,
-        webhookToolExecId: webhookToolExec.id,
-      }, "✅ Root step (JIRA trigger) marked as completed with tool execution")
+      Logger.info(
+        {
+          rootStepId: rootStepExecution.id,
+          webhookToolExecId: webhookToolExec.id,
+        },
+        "✅ Root step (JIRA trigger) marked as completed with tool execution",
+      )
     } else {
       // Fallback: Mark step as completed without tool execution (shouldn't happen)
       await db
@@ -6392,9 +7071,12 @@ async function triggerWorkflowFromWebhook(
         })
         .where(eq(workflowStepExecution.id, rootStepExecution.id))
 
-      Logger.warn({
-        rootStepId: rootStepExecution.id,
-      }, "⚠️ Root step marked as completed but no Jira tool ID found")
+      Logger.warn(
+        {
+          rootStepId: rootStepExecution.id,
+        },
+        "⚠️ Root step marked as completed but no Jira tool ID found",
+      )
     }
 
     // Execute automated workflow steps in background if root step has next steps
@@ -6403,10 +7085,13 @@ async function triggerWorkflowFromWebhook(
       Array.isArray(rootStepExecution.nextStepIds) &&
       rootStepExecution.nextStepIds.length > 0
     ) {
-      Logger.info({
-        executionId: execution.id,
-        nextStepIds: rootStepExecution.nextStepIds,
-      }, "🚀 Starting automated workflow execution in background")
+      Logger.info(
+        {
+          executionId: execution.id,
+          nextStepIds: rootStepExecution.nextStepIds,
+        },
+        "🚀 Starting automated workflow execution in background",
+      )
 
       // Get all tools for step execution
       const allTools = await db.select().from(workflowTool)
@@ -6435,9 +7120,12 @@ async function triggerWorkflowFromWebhook(
       })
     } else {
       // No next steps - check if all steps are completed and mark workflow as completed
-      Logger.info({
-        executionId: execution.id,
-      }, "ℹ️ No next steps to execute - checking workflow completion")
+      Logger.info(
+        {
+          executionId: execution.id,
+        },
+        "ℹ️ No next steps to execute - checking workflow completion",
+      )
 
       const allStepExecutions = await db
         .select()
@@ -6449,9 +7137,12 @@ async function triggerWorkflowFromWebhook(
       )
 
       if (allStepsCompleted) {
-        Logger.info({
-          executionId: execution.id,
-        }, "✅ All steps completed - marking workflow as completed")
+        Logger.info(
+          {
+            executionId: execution.id,
+          },
+          "✅ All steps completed - marking workflow as completed",
+        )
 
         await db
           .update(workflowExecution)
@@ -6462,10 +7153,16 @@ async function triggerWorkflowFromWebhook(
           })
           .where(eq(workflowExecution.id, execution.id))
       } else {
-        Logger.warn({
-          executionId: execution.id,
-          stepStatuses: allStepExecutions.map(s => ({ name: s.name, status: s.status })),
-        }, "⚠️ Workflow has no next steps but not all steps are completed")
+        Logger.warn(
+          {
+            executionId: execution.id,
+            stepStatuses: allStepExecutions.map((s) => ({
+              name: s.name,
+              status: s.status,
+            })),
+          },
+          "⚠️ Workflow has no next steps but not all steps are completed",
+        )
       }
     }
 
@@ -6474,11 +7171,14 @@ async function triggerWorkflowFromWebhook(
       rootStepId: rootStepExecution.id,
     }
   } catch (error: any) {
-    Logger.error({
-      error: error.message,
-      webhookId,
-      workflowTemplateId,
-    }, "❌ Failed to trigger workflow from webhook")
+    Logger.error(
+      {
+        error: error.message,
+        webhookId,
+        workflowTemplateId,
+      },
+      "❌ Failed to trigger workflow from webhook",
+    )
     throw error
   }
 }
@@ -6486,15 +7186,18 @@ async function triggerWorkflowFromWebhook(
 // Receive Jira webhook event
 export const ReceiveJiraWebhookApi = async (c: Context) => {
   try {
-    const webhookId = c.req.param('webhookId')
+    const webhookId = c.req.param("webhookId")
     const body = await c.req.json()
 
-    Logger.info({
-      webhookId,
-      webhookEvent: body.webhookEvent,
-      hasIssue: !!body.issue,
-      hasProject: !!body.project,
-    }, '🔔 Jira webhook event received')
+    Logger.info(
+      {
+        webhookId,
+        webhookEvent: body.webhookEvent,
+        hasIssue: !!body.issue,
+        hasProject: !!body.project,
+      },
+      "🔔 Jira webhook event received",
+    )
 
     if (!webhookId) {
       throw new HTTPException(400, {
@@ -6508,15 +7211,18 @@ export const ReceiveJiraWebhookApi = async (c: Context) => {
     // Process webhook event
     const processedEvent = JiraTrigger.processWebhookEvent(body)
 
-    Logger.debug({
-      event: processedEvent.event,
-      issueKey: processedEvent.issue?.key,
-      projectKey: processedEvent.project?.key,
-      projectName: processedEvent.project?.name,
-      user: processedEvent.user?.displayName,
-      timestamp: processedEvent.timestamp,
-      changesCount: processedEvent.changelog?.items?.length || 0
-    }, 'Processed Jira webhook event')
+    Logger.debug(
+      {
+        event: processedEvent.event,
+        issueKey: processedEvent.issue?.key,
+        projectKey: processedEvent.project?.key,
+        projectName: processedEvent.project?.name,
+        user: processedEvent.user?.displayName,
+        timestamp: processedEvent.timestamp,
+        changesCount: processedEvent.changelog?.items?.length || 0,
+      },
+      "Processed Jira webhook event",
+    )
 
     // Find workflow template associated with this webhook
     // Look for a JIRA trigger tool with this webhookId in its config
@@ -6529,10 +7235,13 @@ export const ReceiveJiraWebhookApi = async (c: Context) => {
       .from(workflowTool)
       .where(eq(workflowTool.type, ToolType.JIRA))
 
-    Logger.info({
-      webhookId,
-      jiraToolsCount: jiraTools.length,
-    }, "🔍 Searching for workflow template with matching webhook ID")
+    Logger.info(
+      {
+        webhookId,
+        jiraToolsCount: jiraTools.length,
+      },
+      "🔍 Searching for workflow template with matching webhook ID",
+    )
 
     // Find the tool that matches this webhookId
     // Check both config.webhookId, value.webhookId, and webhook URLs
@@ -6552,16 +7261,25 @@ export const ReceiveJiraWebhookApi = async (c: Context) => {
       }
 
       // Also check if the production or test webhook URL contains this webhookId
-      const productionUrl = config?.productionWebhookUrl || value?.productionWebhookUrl || value?.webhookUrl
+      const productionUrl =
+        config?.productionWebhookUrl ||
+        value?.productionWebhookUrl ||
+        value?.webhookUrl
       const testUrl = config?.testWebhookUrl || value?.testWebhookUrl
 
       if (productionUrl && productionUrl.includes(webhookId)) {
-        Logger.info({ toolId: tool.toolId, productionUrl }, "✅ Matched via production webhook URL")
+        Logger.info(
+          { toolId: tool.toolId, productionUrl },
+          "✅ Matched via production webhook URL",
+        )
         return true
       }
 
       if (testUrl && testUrl.includes(webhookId)) {
-        Logger.info({ toolId: tool.toolId, testUrl }, "✅ Matched via test webhook URL")
+        Logger.info(
+          { toolId: tool.toolId, testUrl },
+          "✅ Matched via test webhook URL",
+        )
         return true
       }
 
@@ -6569,17 +7287,22 @@ export const ReceiveJiraWebhookApi = async (c: Context) => {
     })
 
     if (!matchingTool) {
-      Logger.warn({
-        webhookId,
-        availableWebhookIds: jiraTools.map((t: any) => ({
-          configWebhookId: (t.config as any)?.webhookId,
-          valueWebhookId: (t.value as any)?.webhookId,
-        })),
-        availableWebhookUrls: jiraTools.map((t: any) => ({
-          configUrl: (t.config as any)?.productionWebhookUrl,
-          valueUrl: (t.value as any)?.webhookUrl || (t.value as any)?.productionWebhookUrl
-        })),
-      }, "⚠️  No workflow template found for this webhook ID")
+      Logger.warn(
+        {
+          webhookId,
+          availableWebhookIds: jiraTools.map((t: any) => ({
+            configWebhookId: (t.config as any)?.webhookId,
+            valueWebhookId: (t.value as any)?.webhookId,
+          })),
+          availableWebhookUrls: jiraTools.map((t: any) => ({
+            configUrl: (t.config as any)?.productionWebhookUrl,
+            valueUrl:
+              (t.value as any)?.webhookUrl ||
+              (t.value as any)?.productionWebhookUrl,
+          })),
+        },
+        "⚠️  No workflow template found for this webhook ID",
+      )
 
       return c.json({
         success: true,
@@ -6587,10 +7310,13 @@ export const ReceiveJiraWebhookApi = async (c: Context) => {
       })
     }
 
-    Logger.info({
-      webhookId,
-      toolId: matchingTool.toolId,
-    }, "✅ Found matching JIRA tool")
+    Logger.info(
+      {
+        webhookId,
+        toolId: matchingTool.toolId,
+      },
+      "✅ Found matching JIRA tool",
+    )
 
     // Find the workflow step template that uses this tool
     // Get all step templates and filter by toolIds in JavaScript
@@ -6604,58 +7330,83 @@ export const ReceiveJiraWebhookApi = async (c: Context) => {
       .from(workflowStepTemplate)
 
     // Filter for steps that have this tool in their toolIds array
-    const stepTemplate = allStepTemplates.filter(st => {
+    const stepTemplate = allStepTemplates.filter((st) => {
       const hasToolIds = st.toolIds && Array.isArray(st.toolIds)
-      const includesToolId = hasToolIds && (st.toolIds ?? []).includes(matchingTool.toolId)
+      const includesToolId =
+        hasToolIds && (st.toolIds ?? []).includes(matchingTool.toolId)
       return includesToolId
     })
 
-    Logger.info({
-      webhookId,
-      toolId: matchingTool.toolId,
-      allStepTemplatesCount: allStepTemplates.length,
-      stepTemplateCount: stepTemplate.length,
-      stepTemplates: stepTemplate.map(s => ({ id: s.id, name: s.name, toolIds: s.toolIds })),
-    }, "🔍 Step template query result")
+    Logger.info(
+      {
+        webhookId,
+        toolId: matchingTool.toolId,
+        allStepTemplatesCount: allStepTemplates.length,
+        stepTemplateCount: stepTemplate.length,
+        stepTemplates: stepTemplate.map((s) => ({
+          id: s.id,
+          name: s.name,
+          toolIds: s.toolIds,
+        })),
+      },
+      "🔍 Step template query result",
+    )
 
     // AUTO-FIX duplicate tool issue
     if (!stepTemplate || stepTemplate.length === 0) {
-      Logger.warn({
-        webhookId,
-        toolId: matchingTool.toolId,
-      }, "⚠️  No workflow step template uses this JIRA tool - attempting auto-fix")
+      Logger.warn(
+        {
+          webhookId,
+          toolId: matchingTool.toolId,
+        },
+        "⚠️  No workflow step template uses this JIRA tool - attempting auto-fix",
+      )
 
       // Check if there's a duplicate tool with same webhook URL
       const duplicateTools = jiraTools.filter((tool) => {
         const config = tool.config as any
         const value = tool.value as any
-        const productionUrl = config?.productionWebhookUrl || value?.productionWebhookUrl || value?.webhookUrl
+        const productionUrl =
+          config?.productionWebhookUrl ||
+          value?.productionWebhookUrl ||
+          value?.webhookUrl
 
-        const matchedUrl = (matchingTool.config as any)?.productionWebhookUrl ||
-                           (matchingTool.value as any)?.productionWebhookUrl ||
-                           (matchingTool.value as any)?.webhookUrl
+        const matchedUrl =
+          (matchingTool.config as any)?.productionWebhookUrl ||
+          (matchingTool.value as any)?.productionWebhookUrl ||
+          (matchingTool.value as any)?.webhookUrl
 
         return productionUrl && matchedUrl && productionUrl === matchedUrl
       })
 
       if (duplicateTools.length > 1) {
-        Logger.info({
-          webhookId,
-          duplicateToolIds: duplicateTools.map(t => t.toolId),
-        }, "🔧 Found duplicate tools - searching for workflow using any of them")
+        Logger.info(
+          {
+            webhookId,
+            duplicateToolIds: duplicateTools.map((t) => t.toolId),
+          },
+          "🔧 Found duplicate tools - searching for workflow using any of them",
+        )
 
         // Try to find workflow using any of the duplicate tools
         for (const dupTool of duplicateTools) {
-          const stepsWithDupTool = allStepTemplates.filter(st => {
-            return st.toolIds && Array.isArray(st.toolIds) && st.toolIds.includes(dupTool.toolId)
+          const stepsWithDupTool = allStepTemplates.filter((st) => {
+            return (
+              st.toolIds &&
+              Array.isArray(st.toolIds) &&
+              st.toolIds.includes(dupTool.toolId)
+            )
           })
 
           if (stepsWithDupTool.length > 0) {
-            Logger.info({
-              foundToolId: dupTool.toolId,
-              matchedToolId: matchingTool.toolId,
-              stepId: stepsWithDupTool[0].id,
-            }, "✅ Found workflow using duplicate tool - auto-fixing reference")
+            Logger.info(
+              {
+                foundToolId: dupTool.toolId,
+                matchedToolId: matchingTool.toolId,
+                stepId: stepsWithDupTool[0].id,
+              },
+              "✅ Found workflow using duplicate tool - auto-fixing reference",
+            )
 
             // Update the step to use the correct tool (the one webhook matched)
             await db
@@ -6671,10 +7422,13 @@ export const ReceiveJiraWebhookApi = async (c: Context) => {
               .delete(workflowTool)
               .where(eq(workflowTool.id, dupTool.toolId))
 
-            Logger.info({
-              deletedToolId: dupTool.toolId,
-              keptToolId: matchingTool.toolId,
-            }, "🧹 Cleaned up duplicate tool")
+            Logger.info(
+              {
+                deletedToolId: dupTool.toolId,
+                keptToolId: matchingTool.toolId,
+              },
+              "🧹 Cleaned up duplicate tool",
+            )
 
             // Use the found step
             stepTemplate.push(stepsWithDupTool[0])
@@ -6696,11 +7450,14 @@ export const ReceiveJiraWebhookApi = async (c: Context) => {
 
     const workflowTemplateId = stepTemplate[0].workflowTemplateId
 
-    Logger.info({
-      webhookId,
-      workflowTemplateId,
-      stepName: stepTemplate[0].name,
-    }, "🎯 Found workflow template to trigger")
+    Logger.info(
+      {
+        webhookId,
+        workflowTemplateId,
+        stepName: stepTemplate[0].name,
+      },
+      "🎯 Found workflow template to trigger",
+    )
 
     // Execute workflow from webhook (following reference pattern)
     const executionId = await executeWorkflowFromWebhook(
@@ -6710,10 +7467,10 @@ export const ReceiveJiraWebhookApi = async (c: Context) => {
         webhookId,
         createdBy: processedEvent.user?.emailAddress || "webhook",
         rawPayload: body, // Pass raw JIRA payload for full data storage
-      }
+      },
     )
 
-    Logger.debug({ executionId }, 'Workflow execution created and started')
+    Logger.debug({ executionId }, "Workflow execution created and started")
 
     // Build webhook response
     return c.json(buildWebhookResponse(executionId, processedEvent))
@@ -6745,53 +7502,76 @@ export const ServeWorkflowFileApi = async (c: Context) => {
 
 // Helper function to find Excel files from workflow step results
 const findExcelFileFromStepResults = async (
-  stepResults: any[], 
-  resultType: 'previousSteps' | 'stepExecutions' = 'previousSteps'
+  stepResults: any[],
+  resultType: "previousSteps" | "stepExecutions" = "previousSteps",
 ): Promise<any> => {
   let excelFileData = null
 
   for (const stepData of stepResults) {
     // For previousSteps format (from qa_agent case)
-    if (resultType === 'previousSteps') {
+    if (resultType === "previousSteps") {
       // Check uploadedFiles array (legacy format)
-      const uploadedFiles = stepData?.result?.uploadedFiles || stepData?.toolExecution?.result?.uploadedFiles || []
-      
+      const uploadedFiles =
+        stepData?.result?.uploadedFiles ||
+        stepData?.toolExecution?.result?.uploadedFiles ||
+        []
+
       for (const file of uploadedFiles) {
         // Check for Excel files
-        if (file?.mimeType?.includes('spreadsheet') || 
-            file?.filename?.match(/\.(xlsx|xls)$/i)) {
+        if (
+          file?.mimeType?.includes("spreadsheet") ||
+          file?.filename?.match(/\.(xlsx|xls)$/i)
+        ) {
           excelFileData = file
           Logger.info(`📊 Found Excel file in uploadedFiles: ${file.filename}`)
           break
         }
       }
-      
+
       // Also check form data structure (new format)
       if (!excelFileData) {
-        const formData = stepData?.result?.formData || stepData?.toolExecution?.result?.formData
+        const formData =
+          stepData?.result?.formData ||
+          stepData?.toolExecution?.result?.formData
         if (formData) {
           // Check all form fields for file data
           for (const [fieldName, fieldValue] of Object.entries(formData)) {
-            if (fieldValue && typeof fieldValue === 'object' && 
-                (fieldValue as any).fileName && (fieldValue as any).mimetype) {
+            if (
+              fieldValue &&
+              typeof fieldValue === "object" &&
+              (fieldValue as any).fileName &&
+              (fieldValue as any).mimetype
+            ) {
               const file = fieldValue as any
               // Check for Excel files
-              if (file.mimetype?.includes('spreadsheet') || 
-                  file.fileName?.match(/\.(xlsx|xls)$/i)) {
+              if (
+                file.mimetype?.includes("spreadsheet") ||
+                file.fileName?.match(/\.(xlsx|xls)$/i)
+              ) {
                 // Convert form file data to expected format
                 let filePath = file.filePath || file.path || file.absolutePath
-                if (!filePath && file.workflowExecutionId && file.workflowStepId) {
+                if (
+                  !filePath &&
+                  file.workflowExecutionId &&
+                  file.workflowStepId
+                ) {
                   // Search for the actual uploaded file in the workflow directory
-                  const fs = await import('fs')
-                  const path = await import('path')
+                  const fs = await import("fs")
+                  const path = await import("path")
                   const baseDir = "/tmp/workflow_uploads"
-                  const stepDir = path.join(baseDir, file.workflowExecutionId, file.workflowStepId)
-                  
+                  const stepDir = path.join(
+                    baseDir,
+                    file.workflowExecutionId,
+                    file.workflowStepId,
+                  )
+
                   try {
                     if (fs.existsSync(stepDir)) {
                       const files = fs.readdirSync(stepDir)
                       // Find file that ends with the original filename
-                      const matchingFile = files.find(f => f.endsWith(`_${file.fileName}`))
+                      const matchingFile = files.find((f) =>
+                        f.endsWith(`_${file.fileName}`),
+                      )
                       if (matchingFile) {
                         filePath = path.join(stepDir, matchingFile)
                         Logger.info(`Found Excel file at: ${filePath}`)
@@ -6801,64 +7581,84 @@ const findExcelFileFromStepResults = async (
                     Logger.warn(`Could not search for file in ${stepDir}:`, err)
                   }
                 }
-                
+
                 excelFileData = {
                   filename: file.fileName,
                   mimeType: file.mimetype,
                   path: filePath,
                   fileId: file.fileId,
-                  fileSize: file.fileSize
+                  fileSize: file.fileSize,
                 }
-                Logger.info(`📊 Found Excel file in form data: ${file.fileName}`)
+                Logger.info(
+                  `📊 Found Excel file in form data: ${file.fileName}`,
+                )
                 break
               }
             }
           }
         }
       }
-    } 
+    }
     // For stepExecutions format (from processQAQuestionsInBackground)
-    else if (resultType === 'stepExecutions') {
+    else if (resultType === "stepExecutions") {
       const metadata = stepData.metadata as any
-      
+
       // Check uploadedFiles array (legacy format)
       const uploadedFiles = metadata?.uploadedFiles || []
-      
+
       for (const file of uploadedFiles) {
-        if (file?.mimeType?.includes('spreadsheet') || 
-            file?.filename?.match(/\.(xlsx|xls)$/i)) {
+        if (
+          file?.mimeType?.includes("spreadsheet") ||
+          file?.filename?.match(/\.(xlsx|xls)$/i)
+        ) {
           excelFileData = file
           Logger.info(`✅ Found Excel in uploadedFiles:`, excelFileData)
           break
         }
       }
-      
+
       // Also check form data structure (new format)
       if (!excelFileData && metadata?.formSubmission?.formData) {
         const formData = metadata.formSubmission.formData
-        
+
         // Check all form fields for file data
         for (const [fieldName, fieldValue] of Object.entries(formData)) {
-          if (fieldValue && typeof fieldValue === 'object' && 
-              (fieldValue as any).fileName && (fieldValue as any).mimetype) {
+          if (
+            fieldValue &&
+            typeof fieldValue === "object" &&
+            (fieldValue as any).fileName &&
+            (fieldValue as any).mimetype
+          ) {
             const file = fieldValue as any
             // Check for Excel files
-            if (file.mimetype?.includes('spreadsheet') || 
-                file.fileName?.match(/\.(xlsx|xls)$/i)) {
+            if (
+              file.mimetype?.includes("spreadsheet") ||
+              file.fileName?.match(/\.(xlsx|xls)$/i)
+            ) {
               // Convert form file data to expected format
               let filePath = file.filePath || file.path || file.absolutePath
-              if (!filePath && file.workflowExecutionId && file.workflowStepId) {
+              if (
+                !filePath &&
+                file.workflowExecutionId &&
+                file.workflowStepId
+              ) {
                 // Search for the actual uploaded file in the workflow directory
-                const fs = await import('fs')
-                const path = await import('path')
+                const fs = await import("fs")
+                const path = await import("path")
                 const baseDir = "/tmp/workflow_uploads"
-                const stepDir = path.join(baseDir, file.workflowExecutionId, file.workflowStepId)
-                
+                const stepDir = path.join(
+                  baseDir,
+                  file.workflowExecutionId,
+                  file.workflowStepId,
+                )
+
                 try {
                   if (fs.existsSync(stepDir)) {
                     const files = fs.readdirSync(stepDir)
                     // Find file that ends with the original filename
-                    const matchingFile = files.find(f => f.endsWith(`_${file.fileName}`))
+                    const matchingFile = files.find((f) =>
+                      f.endsWith(`_${file.fileName}`),
+                    )
                     if (matchingFile) {
                       filePath = path.join(stepDir, matchingFile)
                       Logger.info(`Found Excel file at: ${filePath}`)
@@ -6868,13 +7668,13 @@ const findExcelFileFromStepResults = async (
                   Logger.warn(`Could not search for file in ${stepDir}:`, err)
                 }
               }
-              
+
               excelFileData = {
                 filename: file.fileName,
                 mimeType: file.mimetype,
                 path: filePath,
                 fileId: file.fileId,
-                fileSize: file.fileSize
+                fileSize: file.fileSize,
               }
               Logger.info(`📊 Found Excel file in form data: ${file.fileName}`)
               break
@@ -6883,7 +7683,7 @@ const findExcelFileFromStepResults = async (
         }
       }
     }
-    
+
     if (excelFileData) break
   }
 
@@ -6899,34 +7699,51 @@ const processQAQuestionsInBackground = async (
   executionContext: any,
   execution: any,
   stepExecutions: any[],
-  toolExecutions: any[]
+  toolExecutions: any[],
 ) => {
   try {
-    Logger.info(`🔄 Starting background Q&A processing for execution ${executionId}`)
+    Logger.info(
+      `🔄 Starting background Q&A processing for execution ${executionId}`,
+    )
 
     // Find Excel file data using helper function
-    Logger.info(`🔍 Searching for Excel file in ${stepExecutions.length} step executions and ${toolExecutions.length} tool executions`)
-    let excelFileData = await findExcelFileFromStepResults(stepExecutions, 'stepExecutions')
+    Logger.info(
+      `🔍 Searching for Excel file in ${stepExecutions.length} step executions and ${toolExecutions.length} tool executions`,
+    )
+    let excelFileData = await findExcelFileFromStepResults(
+      stepExecutions,
+      "stepExecutions",
+    )
 
     // If not found in step executions, check tool executions for Q&A agent metadata
     if (!excelFileData) {
-      Logger.info(`🔍 Excel not found in step executions, checking tool executions...`)
-      
+      Logger.info(
+        `🔍 Excel not found in step executions, checking tool executions...`,
+      )
+
       for (const toolExec of toolExecutions) {
-        if (toolExec.toolType === 'qna_agent' && toolExec.result) {
+        if (toolExec.toolType === "qna_agent" && toolExec.result) {
           const result = toolExec.result as any
           Logger.info(`📋 Q&A Tool result:`, JSON.stringify(result, null, 2))
-          
-          // Check if this Q&A tool has Excel metadata  
-          if (result.qaMetadata && result.qaMetadata.sheets && Array.isArray(result.qaMetadata.sheets)) {
+
+          // Check if this Q&A tool has Excel metadata
+          if (
+            result.qaMetadata &&
+            result.qaMetadata.sheets &&
+            Array.isArray(result.qaMetadata.sheets)
+          ) {
             excelFileData = {
-              filename: result.qaMetadata.filename || 'Excel File',
-              mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
+              filename: result.qaMetadata.filename || "Excel File",
+              mimeType:
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
               path: result.qaMetadata.filePath,
               fileId: result.qaMetadata.fileId,
-              sheets: result.qaMetadata.sheets
+              sheets: result.qaMetadata.sheets,
             }
-            Logger.info(`✅ Found Excel metadata in Q&A tool result:`, excelFileData)
+            Logger.info(
+              `✅ Found Excel metadata in Q&A tool result:`,
+              excelFileData,
+            )
             break
           }
         }
@@ -6938,14 +7755,14 @@ const processQAQuestionsInBackground = async (
     }
 
     // Parse Excel and extract questions
-    const XLSX = await import('xlsx')
-    
+    const XLSX = await import("xlsx")
+
     let questions: string[] = []
     // Fetch the Excel file
-    const fs = await import('fs')
+    const fs = await import("fs")
     const fileBuffer = fs.readFileSync(excelFileData.path)
-    const workbook = XLSX.read(fileBuffer, { type: 'buffer' })
-    
+    const workbook = XLSX.read(fileBuffer, { type: "buffer" })
+
     // Find the specified sheet
     const worksheet = workbook.Sheets[sheetName]
     if (!worksheet) {
@@ -6953,8 +7770,8 @@ const processQAQuestionsInBackground = async (
     }
 
     // Extract questions from the specified column
-    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:A1')
-    
+    const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1:A1")
+
     // Find column index by name
     let columnIndex = -1
     for (let col = range.s.c; col <= range.e.c; col++) {
@@ -6966,7 +7783,9 @@ const processQAQuestionsInBackground = async (
     }
 
     if (columnIndex === -1) {
-      throw new Error(`Column "${columnName}" not found in sheet "${sheetName}"`)
+      throw new Error(
+        `Column "${columnName}" not found in sheet "${sheetName}"`,
+      )
     }
 
     // Extract questions (skip header row)
@@ -6978,10 +7797,14 @@ const processQAQuestionsInBackground = async (
       }
     }
 
-    Logger.info(`📊 Extracted ${questions.length} questions from ${sheetName}[${columnName}]`)
+    Logger.info(
+      `📊 Extracted ${questions.length} questions from ${sheetName}[${columnName}]`,
+    )
 
     if (questions.length === 0) {
-      throw new Error(`No questions found in column "${columnName}" of sheet "${sheetName}"`)
+      throw new Error(
+        `No questions found in column "${columnName}" of sheet "${sheetName}"`,
+      )
     }
 
     // Process each question individually with the agent
@@ -6990,8 +7813,10 @@ const processQAQuestionsInBackground = async (
 
     for (let i = 0; i < questions.length; i++) {
       const question = questions[i]
-      Logger.info(`🤖 Processing question ${i + 1}/${questions.length}: ${question.substring(0, 50)}...`)
-      
+      Logger.info(
+        `🤖 Processing question ${i + 1}/${questions.length}: ${question.substring(0, 50)}...`,
+      )
+
       try {
         const result = await executeAgentForWorkflowWithRag({
           agentId: agentId,
@@ -7008,7 +7833,7 @@ const processQAQuestionsInBackground = async (
           answers.push(result.response)
           Logger.info(`✅ Question ${i + 1} answered successfully`)
         } else {
-          const errorMsg = `Failed to get answer: ${result?.error || 'Unknown error'}`
+          const errorMsg = `Failed to get answer: ${result?.error || "Unknown error"}`
           answers.push(errorMsg)
           errors.push(`Question ${i + 1}: ${errorMsg}`)
           Logger.error(`❌ Question ${i + 1} failed:`, result?.error)
@@ -7022,28 +7847,31 @@ const processQAQuestionsInBackground = async (
     }
 
     // Generate new Excel file with questions and answers
-    const XLSX2 = await import('xlsx')
+    const XLSX2 = await import("xlsx")
     const newWorkbook = XLSX2.utils.book_new()
-    
+
     // Create data array with questions and answers
     const qaData = [
-      ['Question', 'Answer'], // Header row
-      ...questions.map((question, index) => [question, answers[index]])
+      ["Question", "Answer"], // Header row
+      ...questions.map((question, index) => [question, answers[index]]),
     ]
-    
+
     const qaWorksheet = XLSX2.utils.aoa_to_sheet(qaData)
-    XLSX2.utils.book_append_sheet(newWorkbook, qaWorksheet, 'Q&A Results')
-    
+    XLSX2.utils.book_append_sheet(newWorkbook, qaWorksheet, "Q&A Results")
+
     // Generate file buffer
-    const resultBuffer = XLSX2.write(newWorkbook, { type: 'buffer', bookType: 'xlsx' })
-    
+    const resultBuffer = XLSX2.write(newWorkbook, {
+      type: "buffer",
+      bookType: "xlsx",
+    })
+
     // Upload to Vespa instead of saving to disk (following form tool pattern)
     const qaResultsFileName = `qa-results-${executionId}.xlsx`
     const attachmentMetadata = await uploadQAResultsToVespa(
       resultBuffer,
-      qaResultsFileName, 
+      qaResultsFileName,
       executionContext.userEmail,
-      executionId
+      executionId,
     )
 
     Logger.info(`✅ Background Q&A processing completed:`, {
@@ -7051,23 +7879,25 @@ const processQAQuestionsInBackground = async (
       successfulAnswers: answers.length - errors.length,
       errors: errors.length,
       attachmentId: attachmentMetadata.fileId,
-      resultFile: qaResultsFileName
+      resultFile: qaResultsFileName,
     })
 
     // Mark the Q&A step as completed
-    const qaToolExecution = toolExecutions.find(te => te.toolType === 'qna_agent' && te.status !== 'completed')
-    
+    const qaToolExecution = toolExecutions.find(
+      (te) => te.toolType === "qna_agent" && te.status !== "completed",
+    )
+
     if (qaToolExecution) {
       Logger.info(`🎯 Marking Q&A step as completed:`, {
         toolExecutionId: qaToolExecution.id,
-        toolType: qaToolExecution.toolType
+        toolType: qaToolExecution.toolType,
       })
 
       // Update the tool execution with the results
       await db
         .update(toolExecution)
         .set({
-          status: 'completed',
+          status: "completed",
           result: {
             ...((qaToolExecution.result as any) || {}),
             qaProcessingCompleted: true,
@@ -7082,34 +7912,34 @@ const processQAQuestionsInBackground = async (
               resultFile: {
                 filename: qaResultsFileName,
                 attachmentId: attachmentMetadata.fileId,
-                size: resultBuffer.length
+                size: resultBuffer.length,
               },
               questionsAndAnswers: questions.map((question, index) => ({
                 question,
-                answer: answers[index]
-              }))
-            }
+                answer: answers[index],
+              })),
+            },
           },
-          completedAt: new Date()
+          completedAt: new Date(),
         })
         .where(eq(toolExecution.id, qaToolExecution.id))
 
       // Also find and update the corresponding workflow step execution using tool association
-      const qaStepExecution = stepExecutions.find(se => 
-        se.toolExecIds && se.toolExecIds.includes(qaToolExecution.id)
+      const qaStepExecution = stepExecutions.find(
+        (se) => se.toolExecIds && se.toolExecIds.includes(qaToolExecution.id),
       )
-      
-      if (qaStepExecution && qaStepExecution.status !== 'completed') {
+
+      if (qaStepExecution && qaStepExecution.status !== "completed") {
         Logger.info(`📝 Marking step execution as completed:`, {
           stepExecutionId: qaStepExecution.id,
-          stepName: qaStepExecution.name
+          stepName: qaStepExecution.name,
         })
 
         await db
           .update(workflowStepExecution)
           .set({
-            status: 'completed',
-            completedAt: new Date()
+            status: "completed",
+            completedAt: new Date(),
           })
           .where(eq(workflowStepExecution.id, qaStepExecution.id))
       }
@@ -7121,22 +7951,28 @@ const processQAQuestionsInBackground = async (
         // Find the next step to execute using nextStepIds
         const currentQAStep = qaStepExecution
         if (currentQAStep) {
-          Logger.info(`🔄 Starting workflow continuation after Q&A step: ${currentQAStep.name}`)
-          
+          Logger.info(
+            `🔄 Starting workflow continuation after Q&A step: ${currentQAStep.name}`,
+          )
+
           // Get the current step template to access nextStepIds
           const currentStepTemplate = await db
             .select()
             .from(workflowStepTemplate)
-            .where(eq(workflowStepTemplate.id, currentQAStep.workflowStepTemplateId))
+            .where(
+              eq(workflowStepTemplate.id, currentQAStep.workflowStepTemplateId),
+            )
             .limit(1)
 
           if (currentStepTemplate.length === 0) {
-            Logger.warn(`❌ Could not find step template for step: ${currentQAStep.id}`)
+            Logger.warn(
+              `❌ Could not find step template for step: ${currentQAStep.id}`,
+            )
             return
           }
 
           const nextStepIds = currentStepTemplate[0].nextStepIds
-          
+
           if (!nextStepIds || nextStepIds.length === 0) {
             Logger.info(`✅ Q&A step has no next steps - workflow completion`)
             return
@@ -7155,76 +7991,98 @@ const processQAQuestionsInBackground = async (
               continue
             }
             const currentNextStepTemplate = nextStepTemplate[0]
-            
+
             // Check if next step execution already exists
-            let nextStepExecution = stepExecutions.find(se => 
-              se.workflowStepTemplateId === currentNextStepTemplate.id
+            let nextStepExecution = stepExecutions.find(
+              (se) => se.workflowStepTemplateId === currentNextStepTemplate.id,
             )
-            
+
             if (nextStepExecution) {
               // Mark next step as active if it's not already completed
-              if (nextStepExecution.status !== 'completed') {
-                Logger.info(`📍 Marking next step as active: ${currentNextStepTemplate.name}`)
-                
+              if (nextStepExecution.status !== "completed") {
+                Logger.info(
+                  `📍 Marking next step as active: ${currentNextStepTemplate.name}`,
+                )
+
                 await db
                   .update(workflowStepExecution)
                   .set({
-                    status: 'active'
+                    status: "active",
                   })
                   .where(eq(workflowStepExecution.id, nextStepExecution.id))
               }
-              
+
               // Continue workflow execution synchronously (no setImmediate)
-              Logger.info(`🚀 Starting workflow execution from step: ${currentNextStepTemplate.name}`)
-              
+              Logger.info(
+                `🚀 Starting workflow execution from step: ${currentNextStepTemplate.name}`,
+              )
+
               // Get tools for the workflow execution
               const tools = await db.select().from(workflowTool)
-              
+
               // Build previous results from all completed steps before the current step
-              const previousResults = await buildPreviousStepResults(executionId, nextStepExecution!.id)
+              const previousResults = await buildPreviousStepResults(
+                executionId,
+                nextStepExecution!.id,
+              )
               Logger.info(`📊 Built previous results for continuation:`, {
                 previousResultsKeys: Object.keys(previousResults || {}),
-                totalSteps: Object.keys(previousResults || {}).length
+                totalSteps: Object.keys(previousResults || {}).length,
               })
-              
+
               await executeWorkflowChain(
                 executionId,
                 nextStepExecution!.id,
                 tools,
-                previousResults
+                previousResults,
               )
             } else {
-              Logger.info(`ℹ️ Next step execution not found, workflow may need manual step creation`)
+              Logger.info(
+                `ℹ️ Next step execution not found, workflow may need manual step creation`,
+              )
             }
           }
         }
       } catch (backgroundContinuationError) {
-        Logger.error(backgroundContinuationError, "Failed to start workflow continuation")
+        Logger.error(
+          backgroundContinuationError,
+          "Failed to start workflow continuation",
+        )
         throw backgroundContinuationError
       }
     } else {
       Logger.info(`ℹ️ No pending Q&A tool execution found to mark as completed`)
     }
 
-    Logger.info(`🎉 Background Q&A processing fully completed for execution ${executionId}`)
-
+    Logger.info(
+      `🎉 Background Q&A processing fully completed for execution ${executionId}`,
+    )
   } catch (error) {
-    Logger.error(error, `❌ Background Q&A processing failed for execution ${executionId}`)
-    
+    Logger.error(
+      error,
+      `❌ Background Q&A processing failed for execution ${executionId}`,
+    )
+
     // Mark Q&A step as failed
     try {
       // Find QA tool execution first to locate associated step
-      const failedQAToolExecution = toolExecutions.find(te => te.toolType === 'qna_agent' && te.status !== 'completed')
-      const qaStepExecution = failedQAToolExecution 
-        ? stepExecutions.find(se => se.toolExecIds && se.toolExecIds.includes(failedQAToolExecution.id))
+      const failedQAToolExecution = toolExecutions.find(
+        (te) => te.toolType === "qna_agent" && te.status !== "completed",
+      )
+      const qaStepExecution = failedQAToolExecution
+        ? stepExecutions.find(
+            (se) =>
+              se.toolExecIds &&
+              se.toolExecIds.includes(failedQAToolExecution.id),
+          )
         : null
-      
+
       if (qaStepExecution) {
         await db
           .update(workflowStepExecution)
           .set({
             status: WorkflowStatus.FAILED,
-            completedAt: new Date()
+            completedAt: new Date(),
           })
           .where(eq(workflowStepExecution.id, qaStepExecution.id))
 
@@ -7236,20 +8094,20 @@ const processQAQuestionsInBackground = async (
         await db
           .update(toolExecution)
           .set({
-            status: 'failed',
+            status: "failed",
             result: {
               ...((failedQAToolExecution.result as any) || {}),
               error: error instanceof Error ? error.message : String(error),
-              failedAt: new Date().toISOString()
+              failedAt: new Date().toISOString(),
             },
-            completedAt: new Date()
+            completedAt: new Date(),
           })
           .where(eq(toolExecution.id, failedQAToolExecution.id))
       }
     } catch (markFailedError) {
       Logger.error(markFailedError, "Failed to mark Q&A step as failed")
     }
-    
+
     throw error
   }
 }
@@ -7259,20 +8117,24 @@ export const ProcessQAQuestionsApi = async (c: Context) => {
   try {
     const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const body = await c.req.json()
-    
+
     const { executionId, sheetName, columnName, agentId } = body
 
     if (!executionId || !sheetName || !columnName || !agentId) {
-      return c.json({
-        success: false,
-        error: "Missing required parameters: executionId, sheetName, columnName, agentId"
-      }, 400)
+      return c.json(
+        {
+          success: false,
+          error:
+            "Missing required parameters: executionId, sheetName, columnName, agentId",
+        },
+        400,
+      )
     }
 
     Logger.info(`🔄 Q&A API called for execution ${executionId}:`, {
       sheetName,
       columnName,
-      agentId
+      agentId,
     })
 
     // Get the execution with proper permission checks
@@ -7280,23 +8142,29 @@ export const ProcessQAQuestionsApi = async (c: Context) => {
       db,
       executionId,
       user.workspaceId,
-      user.id
+      user.id,
     )
 
     if (!execution) {
-      return c.json({
-        success: false,
-        error: "Workflow execution not found"
-      }, 404)
+      return c.json(
+        {
+          success: false,
+          error: "Workflow execution not found",
+        },
+        404,
+      )
     }
 
     // Get execution context after confirming execution exists
     const executionContext = await getExecutionContext(executionId)
     if (!executionContext) {
-      return c.json({
-        success: false,
-        error: "Execution context not found"
-      }, 404)
+      return c.json(
+        {
+          success: false,
+          error: "Execution context not found",
+        },
+        404,
+      )
     }
 
     // Get step executions and tool executions
@@ -7323,31 +8191,41 @@ export const ProcessQAQuestionsApi = async (c: Context) => {
       .where(eq(toolExecution.workflowExecutionId, executionId))
 
     // Find Q&A step execution using tool association
-    const qaToolExecution = toolExecutions.find(te => te.toolType === 'qna_agent')
-    const qaStepExecution = qaToolExecution 
-      ? stepExecutions.find(se => se.toolExecIds && se.toolExecIds.includes(qaToolExecution.id))
+    const qaToolExecution = toolExecutions.find(
+      (te) => te.toolType === "qna_agent",
+    )
+    const qaStepExecution = qaToolExecution
+      ? stepExecutions.find(
+          (se) => se.toolExecIds && se.toolExecIds.includes(qaToolExecution.id),
+        )
       : null
 
     if (!qaStepExecution) {
-      return c.json({
-        success: false,
-        error: "Q&A step execution not found"
-      }, 404)
+      return c.json(
+        {
+          success: false,
+          error: "Q&A step execution not found",
+        },
+        404,
+      )
     }
 
     Logger.info(`📊 Q&A step status check:`, {
       stepId: qaStepExecution.id,
       stepName: qaStepExecution.name,
       stepStatus: qaStepExecution.status,
-      toolStatus: qaToolExecution?.status
+      toolStatus: qaToolExecution?.status,
     })
 
     // Check current step status and return appropriate response
     if (qaStepExecution.status === WorkflowStatus.COMPLETED) {
       // Step is already completed - return existing results
       Logger.info(`✅ Q&A step already completed, returning existing results`)
-      
-      if (qaToolExecution?.result && (qaToolExecution.result as any).qaResults) {
+
+      if (
+        qaToolExecution?.result &&
+        (qaToolExecution.result as any).qaResults
+      ) {
         const qaResults = (qaToolExecution.result as any).qaResults
         return c.json({
           success: true,
@@ -7358,14 +8236,15 @@ export const ProcessQAQuestionsApi = async (c: Context) => {
             successfulAnswers: qaResults.successfulAnswers,
             errors: qaResults.errors || [],
             resultFile: qaResults.resultFile,
-            questionsAndAnswers: qaResults.questionsAndAnswers
-          }
+            questionsAndAnswers: qaResults.questionsAndAnswers,
+          },
         })
       } else {
         return c.json({
           success: true,
           status: "completed",
-          message: "Q&A processing completed but results not found in expected format"
+          message:
+            "Q&A processing completed but results not found in expected format",
         })
       }
     }
@@ -7377,9 +8256,9 @@ export const ProcessQAQuestionsApi = async (c: Context) => {
         success: false,
         status: "failed",
         error: "Q&A processing failed",
-        message: qaToolExecution?.result ? 
-          (qaToolExecution.result as any).error || "Q&A processing failed" :
-          "Q&A processing failed"
+        message: qaToolExecution?.result
+          ? (qaToolExecution.result as any).error || "Q&A processing failed"
+          : "Q&A processing failed",
       })
     }
 
@@ -7390,7 +8269,7 @@ export const ProcessQAQuestionsApi = async (c: Context) => {
         success: true,
         status: "processing",
         message: "Q&A processing is currently running in background",
-        processingStartedAt: qaStepExecution.createdAt
+        processingStartedAt: qaStepExecution.createdAt,
       })
     }
 
@@ -7402,7 +8281,7 @@ export const ProcessQAQuestionsApi = async (c: Context) => {
       await db
         .update(workflowStepExecution)
         .set({
-          status: WorkflowStatus.PROCESSING
+          status: WorkflowStatus.PROCESSING,
         })
         .where(eq(workflowStepExecution.id, qaStepExecution.id))
 
@@ -7417,10 +8296,13 @@ export const ProcessQAQuestionsApi = async (c: Context) => {
             executionContext,
             execution,
             stepExecutions,
-            toolExecutions
+            toolExecutions,
           )
         } catch (backgroundError) {
-          Logger.error(backgroundError, `❌ Background Q&A processing failed for execution ${executionId}`)
+          Logger.error(
+            backgroundError,
+            `❌ Background Q&A processing failed for execution ${executionId}`,
+          )
         }
       })
 
@@ -7428,25 +8310,32 @@ export const ProcessQAQuestionsApi = async (c: Context) => {
         success: true,
         status: "processing",
         message: "Q&A processing started in background",
-        processingStartedAt: new Date().toISOString()
+        processingStartedAt: new Date().toISOString(),
       })
     }
 
     // Step is in draft status or other status - not ready for processing
-    Logger.info(`📝 Q&A step not ready for processing, status: ${qaStepExecution.status}`)
-    return c.json({
-      success: false,
-      status: qaStepExecution.status,
-      error: "Q&A step is not ready for processing",
-      message: `Q&A step status is '${qaStepExecution.status}'. It must be 'active' to start processing.`
-    }, 400)
-
+    Logger.info(
+      `📝 Q&A step not ready for processing, status: ${qaStepExecution.status}`,
+    )
+    return c.json(
+      {
+        success: false,
+        status: qaStepExecution.status,
+        error: "Q&A step is not ready for processing",
+        message: `Q&A step status is '${qaStepExecution.status}'. It must be 'active' to start processing.`,
+      },
+      400,
+    )
   } catch (error) {
     Logger.error(error, "Failed to handle Q&A processing request")
-    return c.json({
-      success: false,
-      error: "Failed to handle Q&A processing request",
-      message: error instanceof Error ? error.message : String(error)
-    }, 500)
+    return c.json(
+      {
+        success: false,
+        error: "Failed to handle Q&A processing request",
+        message: error instanceof Error ? error.message : String(error),
+      },
+      500,
+    )
   }
 }

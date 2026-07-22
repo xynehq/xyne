@@ -29,11 +29,7 @@ import { insertMessage, getChatMessagesWithAuth } from "@/db/message"
 import { type SelectChat, type SelectMessage } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger, getLoggerWithChild } from "@/logger"
-import {
-  ApiKeyScopes,
-  ChatSSEvents,
-  type MessageReqType,
-} from "@/shared/types"
+import { ApiKeyScopes, ChatSSEvents, type MessageReqType } from "@/shared/types"
 import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
 import { getErrorMessage } from "@/utils"
 import {
@@ -42,12 +38,9 @@ import {
 } from "@aws-sdk/client-bedrock-runtime"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
-import { streamSSE } from "hono/streaming" 
+import { streamSSE } from "hono/streaming"
 import { getTracer, type Tracer } from "@/tracer"
-import {
-  GetDocumentsByDocIds,
-  getAllDocumentsForAgent,
-} from "@/search/vespa"
+import { GetDocumentsByDocIds, getAllDocumentsForAgent } from "@/search/vespa"
 import {
   expandSheetIds,
   validateVespaIdInAgentIntegrations,
@@ -121,7 +114,6 @@ const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 const modelSupportsReasoning = (modelId: string | null | undefined) =>
   (getModelConfiguration(modelId || config.defaultBestModel)?.reasoning ??
     true) === true
-
 
 // Create mock agent from form data for testing
 const createMockAgentFromFormData = (
@@ -329,7 +321,6 @@ export const AgentMessageApiRagOff = async (c: Context) => {
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("AgentMessageApiRagOff")
 
-
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
   const { email, workspaceExternalId: workspaceId, via_apiKey } = getAuth(c)
@@ -425,7 +416,8 @@ export const AgentMessageApiRagOff = async (c: Context) => {
       agentPromptForLLM = JSON.stringify(agentForDb)
     }
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
-    const userRequestsReasoningAndEnabled = isReasoningEnabled && config.isReasoning
+    const userRequestsReasoningAndEnabled =
+      isReasoningEnabled && config.isReasoning
     if (!message) {
       throw new HTTPException(400, {
         message: "Message is required",
@@ -600,12 +592,13 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             chunksSpan.end()
             if (allChunks?.root?.children) {
               const startIndex = 0
-              const precomputedDbContext = await getPrecomputedDbContextIfNeeded(
-                allChunks.root.children as VespaSearchResults[],
-                message,
-                userMetadata.userId,
-                userMetadata.workspaceId,
-              )
+              const precomputedDbContext =
+                await getPrecomputedDbContextIfNeeded(
+                  allChunks.root.children as VespaSearchResults[],
+                  message,
+                  userMetadata.userId,
+                  userMetadata.workspaceId,
+                )
               fragments = await Promise.all(
                 allChunks.root.children.map(
                   async (child, idx) =>
@@ -1209,7 +1202,8 @@ export const AgentMessageApi = async (c: Context) => {
               // Array format: ["reasoning", "websearch"]
               isReasoningEnabled = config.capabilities.includes("reasoning")
               enableWebSearch = config.capabilities.includes("websearch")
-              isDeepResearchEnabled = config.capabilities.includes("deepResearch")
+              isDeepResearchEnabled =
+                config.capabilities.includes("deepResearch")
             } else if (typeof config.capabilities === "object") {
               // Object format: { reasoning: true, websearch: false }
               isReasoningEnabled = config.capabilities.reasoning === true
@@ -1258,8 +1252,7 @@ export const AgentMessageApi = async (c: Context) => {
         }
       }
     }
-    const resolvedConsumerModelId =
-      actualModelId ?? consumerSelectedModelId
+    const resolvedConsumerModelId = actualModelId ?? consumerSelectedModelId
     const consumerAnswerOrSearchModelId =
       resolvedConsumerModelId ||
       ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId
@@ -1327,7 +1320,8 @@ export const AgentMessageApi = async (c: Context) => {
       }
     }
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
-    const userRequestsReasoningAndEnabled = isReasoningEnabled && config.isReasoning
+    const userRequestsReasoningAndEnabled =
+      isReasoningEnabled && config.isReasoning
     if (!message) {
       throw new HTTPException(400, {
         message: "Message is required",
@@ -1626,7 +1620,8 @@ export const AgentMessageApi = async (c: Context) => {
               let citationMap: Record<number, number> = {}
               let thinking = ""
               let reasoning =
-                userRequestsReasoningAndEnabled && modelSupportsReasoning(actualModelId)
+                userRequestsReasoningAndEnabled &&
+                modelSupportsReasoning(actualModelId)
               const conversationSpan = streamSpan.startSpan(
                 "conversation_search",
               )
@@ -1873,7 +1868,8 @@ export const AgentMessageApi = async (c: Context) => {
               let citationMap: Record<number, number> = {}
               let thinking = ""
               let reasoning =
-                userRequestsReasoningAndEnabled && modelSupportsReasoning(consumerGivenContextModelId)
+                userRequestsReasoningAndEnabled &&
+                modelSupportsReasoning(consumerGivenContextModelId)
               const conversationSpan = streamSpan.startSpan(
                 "conversation_search",
               )
@@ -2186,7 +2182,8 @@ export const AgentMessageApi = async (c: Context) => {
                     json: false,
                     agentPrompt: agentPromptForLLM,
                     reasoning:
-                      userRequestsReasoningAndEnabled && modelSupportsReasoning(consumerAnswerOrSearchModelId),
+                      userRequestsReasoningAndEnabled &&
+                      modelSupportsReasoning(consumerAnswerOrSearchModelId),
                     messages: limitedMessages,
                     agentWithNoIntegrations: true,
                   },
@@ -2202,7 +2199,8 @@ export const AgentMessageApi = async (c: Context) => {
                       stream: true,
                       json: true,
                       reasoning:
-                        userRequestsReasoningAndEnabled && modelSupportsReasoning(consumerAnswerOrSearchModelId),
+                        userRequestsReasoningAndEnabled &&
+                        modelSupportsReasoning(consumerAnswerOrSearchModelId),
                       messages: limitedMessages,
                       agentPrompt: agentPromptForLLM,
                     },
@@ -2245,7 +2243,8 @@ export const AgentMessageApi = async (c: Context) => {
 
               let thinking = ""
               let reasoning =
-                userRequestsReasoningAndEnabled && modelSupportsReasoning(consumerAnswerOrSearchModelId)
+                userRequestsReasoningAndEnabled &&
+                modelSupportsReasoning(consumerAnswerOrSearchModelId)
               let buffer = ""
               const conversationSpan = streamSpan.startSpan(
                 "conversation_search",
@@ -2483,13 +2482,18 @@ export const AgentMessageApi = async (c: Context) => {
 
                   if (
                     (fileIds && fileIds.length > 0) ||
-                    (imageAttachmentFileIds && imageAttachmentFileIds.length > 0)
+                    (imageAttachmentFileIds &&
+                      imageAttachmentFileIds.length > 0)
                   ) {
                     loggerWithChild({ email: email }).info(
                       `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify(fileIds)}`,
                     )
-                    const allowedChunkCitations = fileIds.some((fileId) => fileId.startsWith("clf-")) || fileIds.some((fileId) => fileId.startsWith("attf_"))
-                    reasoning = userRequestsReasoningAndEnabled && modelSupportsReasoning(consumerGivenContextModelId)
+                    const allowedChunkCitations =
+                      fileIds.some((fileId) => fileId.startsWith("clf-")) ||
+                      fileIds.some((fileId) => fileId.startsWith("attf_"))
+                    reasoning =
+                      userRequestsReasoningAndEnabled &&
+                      modelSupportsReasoning(consumerGivenContextModelId)
                     iterator = UnderstandMessageAndAnswerForGivenContext(
                       email,
                       ctx,
@@ -2516,7 +2520,9 @@ export const AgentMessageApi = async (c: Context) => {
 
                 // If no iterator was set above (non-file-context scenario), use the regular flow with the new classification
                 if (!iterator) {
-                  reasoning = userRequestsReasoningAndEnabled && modelSupportsReasoning(consumerGivenContextModelId)
+                  reasoning =
+                    userRequestsReasoningAndEnabled &&
+                    modelSupportsReasoning(consumerGivenContextModelId)
                   iterator = UnderstandMessageAndAnswer(
                     email,
                     ctx,
@@ -2625,7 +2631,8 @@ export const AgentMessageApi = async (c: Context) => {
                 ragSpan.end()
               } else if (parsed.answer) {
                 answer = parsed.answer
-                assistantResponseModelId = (actualModelId as Models) || config.defaultBestModel
+                assistantResponseModelId =
+                  (actualModelId as Models) || config.defaultBestModel
               }
 
               if (answer || wasStreamClosedPrematurely) {
@@ -2977,7 +2984,8 @@ export const AgentMessageApi = async (c: Context) => {
             message,
             0.5,
             fileIds,
-            userRequestsReasoningAndEnabled && modelSupportsReasoning(consumerGivenContextModelId),
+            userRequestsReasoningAndEnabled &&
+              modelSupportsReasoning(consumerGivenContextModelId),
             understandSpan,
             [],
             imageAttachmentFileIds,

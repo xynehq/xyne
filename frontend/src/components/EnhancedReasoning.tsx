@@ -178,9 +178,14 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
                             <input
                               type="text"
                               value={customClarificationInput}
-                              onChange={(e) => setCustomClarificationInput(e.target.value)}
+                              onChange={(e) =>
+                                setCustomClarificationInput(e.target.value)
+                              }
                               onKeyDown={(e) => {
-                                if (e.key === "Enter" && customClarificationInput.trim()) {
+                                if (
+                                  e.key === "Enter" &&
+                                  customClarificationInput.trim()
+                                ) {
                                   onClarificationSelect?.(
                                     "custom",
                                     customClarificationInput.trim(),

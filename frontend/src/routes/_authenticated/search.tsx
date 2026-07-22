@@ -136,7 +136,9 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
   ) // State for debug info visibility, initialized from env var
   const [traceData, setTraceData] = useState<any | null>(null) // State for trace data
   const [previewCitation, setPreviewCitation] = useState<Citation | null>(null)
-  const [previewChunkIndex, setPreviewChunkIndex] = useState<number | null>(null)
+  const [previewChunkIndex, setPreviewChunkIndex] = useState<number | null>(
+    null,
+  )
   const [previewPageIndex, setPreviewPageIndex] = useState<number | null>(null)
   const { documentOperationsRef } = useDocumentOperations()
   const prefetchedChunkRef = useRef<{
@@ -347,15 +349,18 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
     }
   }
 
-  const handleSearch = async (newOffset = offset, tabOverride?: "all" | "kb") => {
+  const handleSearch = async (
+    newOffset = offset,
+    tabOverride?: "all" | "kb",
+  ) => {
     if (!activeQuery) return
     setAutocompleteResults([])
-    const effectiveTab =tabOverride ?? searchTab
-    
+    const effectiveTab = tabOverride ?? searchTab
+
     // Increment request ID to track this specific search request
     requestIdRef.current += 1
     const currentRequestId = requestIdRef.current
-    
+
     try {
       // TODO: figure out when lastUpdated changes and only
       // then make it true or when app,entity is not present
@@ -416,12 +421,12 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
 
       if (response.ok) {
         const data: SearchResponse = await response.json()
-        
+
         // Only update state if this is still the most recent request
         if (currentRequestId !== requestIdRef.current) {
           return
         }
-        
+
         const newResults = data.results ?? []
 
         if (newOffset > 0) {
@@ -559,11 +564,7 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
         .catch((err) => logger.error("Highlight failed", err))
       prefetchedChunkRef.current = null
     }
-  }, [
-    previewCitation,
-    previewChunkIndex,
-    documentOperationsRef,
-  ])
+  }, [previewCitation, previewChunkIndex, documentOperationsRef])
 
   const handleCloseCitationPreview = useCallback(() => {
     setPreviewCitation(null)
@@ -808,7 +809,6 @@ const searchParams = z
     lastUpdated: z.string().optional(),
     debug: z.boolean().optional(),
     embedded: z.coerce.boolean().optional(),
-
   })
   .refine((data) => (data.app && data.entity) || (!data.app && !data.entity), {
     message: "app and entity must be provided together",

@@ -7,6 +7,7 @@ import {
   getSdkConfigByWorkspaceExternalId,
   updateSdkConfig,
 } from "@/db/sdkConfig"
+import type { SpacesConfig } from "@/db/schema/sdkConfigs"
 import { eq, and } from "drizzle-orm"
 
 /**
@@ -24,10 +25,7 @@ export const SdkMeApi = async (c: Context) => {
   }
 
   const user = userRes[0]
-  const sdkConfig = await getSdkConfigByWorkspaceExternalId(
-    db,
-    workspaceId,
-  )
+  const sdkConfig = await getSdkConfigByWorkspaceExternalId(db, workspaceId)
 
   return c.json({
     user: {
@@ -41,6 +39,7 @@ export const SdkMeApi = async (c: Context) => {
           token_expiry_seconds: sdkConfig.tokenExpirySeconds,
           allowed_origins: sdkConfig.allowedOrigins,
           enabled: sdkConfig.enabled,
+          spaces_config: sdkConfig.spacesConfig,
         }
       : null,
   })
@@ -54,10 +53,7 @@ export const GetSdkConfigApi = async (c: Context) => {
   const payload = c.get("jwtPayload")
   const workspaceId = payload.workspaceId as string
 
-  const sdkConfig = await getSdkConfigByWorkspaceExternalId(
-    db,
-    workspaceId,
-  )
+  const sdkConfig = await getSdkConfigByWorkspaceExternalId(db, workspaceId)
 
   if (!sdkConfig) {
     throw new HTTPException(404, { message: "SDK config not found" })
@@ -67,12 +63,13 @@ export const GetSdkConfigApi = async (c: Context) => {
     token_expiry_seconds: sdkConfig.tokenExpirySeconds,
     allowed_origins: sdkConfig.allowedOrigins,
     enabled: sdkConfig.enabled,
+    spaces_config: sdkConfig.spacesConfig,
   })
 }
 
 /**
  * PUT /api/sdk/manage/config
- * Updates SDK configuration (allowed_origins, token_expiry_seconds).
+ * Updates SDK configuration (allowed_origins, token_expiry_seconds, spaces_config).
  */
 export const UpdateSdkConfigApi = async (c: Context) => {
   const payload = c.get("jwtPayload")
@@ -80,6 +77,7 @@ export const UpdateSdkConfigApi = async (c: Context) => {
   const body = c.req.valid("json" as never) as {
     allowed_origins?: string[]
     token_expiry_seconds?: number
+    spaces_config?: SpacesConfig
   }
 
   const updates: Parameters<typeof updateSdkConfig>[2] = {}
@@ -89,6 +87,9 @@ export const UpdateSdkConfigApi = async (c: Context) => {
   if (body.token_expiry_seconds !== undefined) {
     updates.tokenExpirySeconds = body.token_expiry_seconds
   }
+  if (body.spaces_config !== undefined) {
+    updates.spacesConfig = body.spaces_config
+  }
 
   const updated = await updateSdkConfig(db, workspaceId, updates)
 
@@ -96,9 +97,9 @@ export const UpdateSdkConfigApi = async (c: Context) => {
     token_expiry_seconds: updated.tokenExpirySeconds,
     allowed_origins: updated.allowedOrigins,
     enabled: updated.enabled,
+    spaces_config: updated.spacesConfig,
   })
 }
-
 
 /**
  * GET /api/sdk/manage/api-keys

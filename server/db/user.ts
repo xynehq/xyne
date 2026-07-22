@@ -243,14 +243,11 @@ export const getUserById = async (
   return parsedRes.data
 }
 
-export const getUserMetaData = async(
+export const getUserMetaData = async (
   trx: TxnOrClient,
-  userId: number
+  userId: number,
 ): Promise<UserMetadata> => {
-  const user = await getUserById(
-    trx,
-    userId
-  )
+  const user = await getUserById(trx, userId)
   return userMetadataSchema.parse(user)
 }
 
@@ -498,15 +495,15 @@ export const updateUserTimezone = async (
 
 export const getUserFromJWT = async (
   db: TxnOrClient,
-  jwtPayload: { sub: string; workspaceId: string }
+  jwtPayload: { sub: string; workspaceId: string },
 ): Promise<SelectUser> => {
   const email = jwtPayload.sub
   const userRes = await getUserByEmail(db, email)
-  
+
   if (!userRes?.length) {
     throw new NoUserFound({ message: `User with email ${email} not found.` })
   }
-  
+
   return userRes[0]
 }
 

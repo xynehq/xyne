@@ -119,7 +119,13 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
           <div
             key={action.id}
             onClick={() => {
-              if (action.id === "ai_agent" || action.id === "qna_agent" || action.id === "email" || action.id === "http_request" || action.id === "select_agents") {
+              if (
+                action.id === "ai_agent" ||
+                action.id === "qna_agent" ||
+                action.id === "email" ||
+                action.id === "http_request" ||
+                action.id === "select_agents"
+              ) {
                 // For AI Agent, Q&A Agent, Email, HTTP Request, and Select Agents, trigger custom event to open respective ConfigUI
                 onSelectAction(action.id)
                 onClose() // Close WhatHappensNextUI

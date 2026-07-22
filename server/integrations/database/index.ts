@@ -19,9 +19,7 @@ import { csvHeader, getColumnNames, rowsToCsvLines } from "./csvExport"
 
 /** Mime type for KB items that are database table schema (no row data). Triggers SQL generation + execute on client DB. */
 export const MIME_DATABASE_SCHEMA = "application/x-database-schema"
-import {
-  saveTableSyncState,
-} from "@/db/databaseSyncState"
+import { saveTableSyncState } from "@/db/databaseSyncState"
 import { db } from "@/db/client"
 import {
   getCollectionById,
@@ -138,7 +136,9 @@ export async function syncSingleTable(
   await client.connect()
   try {
     const tables = await client.listTables()
-    const table = tables.find((t) => t.name.toLowerCase() === tableName.toLowerCase())
+    const table = tables.find(
+      (t) => t.name.toLowerCase() === tableName.toLowerCase(),
+    )
     if (!table) throw new Error(`Table "${tableName}" not found in database`)
     if (isTableEmbed(config.tables, table.name)) {
       const pkColumns = await client.getPrimaryKeyColumns(table.name)
@@ -234,7 +234,11 @@ async function streamTableToCsvFile(
 
   stream.end()
   await finished(stream)
-  return { rowsSynced, lastPk: state.lastPk, lastUpdatedAt: state.lastUpdatedAt }
+  return {
+    rowsSynced,
+    lastPk: state.lastPk,
+    lastUpdatedAt: state.lastUpdatedAt,
+  }
 }
 
 async function syncTableToKb(
@@ -307,7 +311,12 @@ async function syncTableToKbAsSchema(
   const collection = await getCollectionById(db, collectionId)
   if (!collection) throw new Error("KB collection not found")
 
-  const existing = await getCollectionItemByPath(db, collectionId, "/", fileName)
+  const existing = await getCollectionItemByPath(
+    db,
+    collectionId,
+    "/",
+    fileName,
+  )
 
   const item = await db.transaction(async (tx) => {
     if (existing) {
@@ -417,7 +426,12 @@ async function syncTableToKbAsCsv(
   const collection = await getCollectionById(db, collectionId)
   if (!collection) throw new Error("KB collection not found")
 
-  const existing = await getCollectionItemByPath(db, collectionId, "/", fileName)
+  const existing = await getCollectionItemByPath(
+    db,
+    collectionId,
+    "/",
+    fileName,
+  )
 
   const item = await db.transaction(async (tx) => {
     if (existing) {

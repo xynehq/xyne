@@ -22,14 +22,7 @@ import {
   OnEdgesDelete,
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
-import {
-  Flow,
-  TemplateFlow,
-  Step,
-  UserDetail,
-  Tool,
-  AgentTool,
-} from "./Types"
+import { Flow, TemplateFlow, Step, UserDetail, Tool, AgentTool } from "./Types"
 import { api } from "../../api"
 
 import { AgentsSidebar } from "./AgentsSidebar"
@@ -157,10 +150,7 @@ import {
   FormDocumentIcon,
   JiraIcon,
 } from "./WorkflowIcons"
-import {
-  workflowExecutionsAPI,
-  workflowToolsAPI,
-} from "./api/ApiHandlers"
+import { workflowExecutionsAPI, workflowToolsAPI } from "./api/ApiHandlers"
 import WhatHappensNextUI from "./WhatHappensNextUI"
 import AIAgentConfigUI, { AIAgentConfig } from "./AIAgentConfigUI"
 import QAAgentConfigUI, { QAAgentConfig } from "./QAAgentConfigUI"
@@ -173,7 +163,11 @@ import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
 import { TemplateSelectionModal } from "./TemplateSelectionModal"
 import Snackbar from "../ui/Snackbar"
 import ConfirmationPopup from "../ui/ConfirmationPopup"
-import { SelectPublicAgent, UserMetadata, UserWorkflowRole } from "@/server/shared/types"
+import {
+  SelectPublicAgent,
+  UserMetadata,
+  UserWorkflowRole,
+} from "@/server/shared/types"
 
 // Custom Node Component
 const StepNode: React.FC<NodeProps> = ({
@@ -182,17 +176,22 @@ const StepNode: React.FC<NodeProps> = ({
   selected,
   id,
 }) => {
-  const { step, isActive, isCompleted, tools, hasNext, isTriggerSelector } = data as {
-    step: Step
-    isActive?: boolean
-    isCompleted?: boolean
-    tools?: Tool[]
-    hasNext?: boolean
-    isTriggerSelector?: boolean
-  }
+  const { step, isActive, isCompleted, tools, hasNext, isTriggerSelector } =
+    data as {
+      step: Step
+      isActive?: boolean
+      isCompleted?: boolean
+      tools?: Tool[]
+      hasNext?: boolean
+      isTriggerSelector?: boolean
+    }
 
   // Special rendering for "Select trigger from the sidebar" node
-  if (isTriggerSelector || step.name === "Select trigger from the sidebar" || step.type === "trigger_selector") {
+  if (
+    isTriggerSelector ||
+    step.name === "Select trigger from the sidebar" ||
+    step.type === "trigger_selector"
+  ) {
     return (
       <>
         <div
@@ -257,10 +256,11 @@ const StepNode: React.FC<NodeProps> = ({
       return (
         <>
           <div
-            className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${selected
-              ? "border-gray-800 dark:border-gray-300 shadow-lg"
-              : "border-gray-300 dark:border-gray-600"
-              }`}
+            className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
+              selected
+                ? "border-gray-800 dark:border-gray-300 shadow-lg"
+                : "border-gray-300 dark:border-gray-600"
+            }`}
             style={{
               width: "80px",
               height: "80px",
@@ -353,10 +353,11 @@ const StepNode: React.FC<NodeProps> = ({
     return (
       <>
         <div
-          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${selected
-            ? "border-gray-800 dark:border-gray-300 shadow-lg"
-            : "border-gray-300 dark:border-gray-600"
-            }`}
+          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
+            selected
+              ? "border-gray-800 dark:border-gray-300 shadow-lg"
+              : "border-gray-300 dark:border-gray-600"
+          }`}
           style={{
             width: "320px",
             minHeight: "122px",
@@ -395,12 +396,23 @@ const StepNode: React.FC<NodeProps> = ({
             >
               {(() => {
                 // First try to get name from workflow_tools[index].val.name
-                if (hasAIAgentTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.name) {
+                if (
+                  hasAIAgentTool &&
+                  tools?.[0]?.val &&
+                  typeof tools[0].val === "object" &&
+                  (tools[0].val as any)?.name
+                ) {
                   return (tools[0].val as any).name
                 }
 
                 // Try to get name from workflow_tools[index].value.name
-                if (hasAIAgentTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.name) {
+                if (
+                  hasAIAgentTool &&
+                  tools?.[0] &&
+                  (tools[0] as any)?.value &&
+                  typeof (tools[0] as any).value === "object" &&
+                  (tools[0] as any).value?.name
+                ) {
                   return (tools[0] as any).value.name
                 }
 
@@ -418,19 +430,32 @@ const StepNode: React.FC<NodeProps> = ({
             <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed text-left break-words overflow-hidden">
               {(() => {
                 // First try to get description from workflow_tools[index].val.description
-                if (hasAIAgentTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.description) {
+                if (
+                  hasAIAgentTool &&
+                  tools?.[0]?.val &&
+                  typeof tools[0].val === "object" &&
+                  (tools[0].val as any)?.description
+                ) {
                   return (tools[0].val as any).description
                 }
 
                 // Try to get description from workflow_tools[index].value.description
-                if (hasAIAgentTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.description) {
+                if (
+                  hasAIAgentTool &&
+                  tools?.[0] &&
+                  (tools[0] as any)?.value &&
+                  typeof (tools[0] as any).value === "object" &&
+                  (tools[0] as any).value?.description
+                ) {
                   return (tools[0] as any).value.description
                 }
 
                 // Fallback to existing logic
-                return step.description ||
+                return (
+                  step.description ||
                   aiConfig?.description ||
                   `AI agent to analyze and summarize documents using ${aiConfig?.model || "gpt-oss-120b"}.`
+                )
               })()}
             </p>
           </div>
@@ -504,11 +529,16 @@ const StepNode: React.FC<NodeProps> = ({
     // Get config from step or tool
     const qaConfig =
       (step as any).config || (hasQAAgentTool && tools?.[0]?.val) || {}
-    
+
     // Check if this is an existing agent or needs configuration
-    const isExistingAgent = qaConfig?.isExistingAgent || 
-      (hasQAAgentTool && tools?.[0]?.val && typeof tools?.[0]?.val === 'object' && (tools?.[0]?.val as any)?.isExistingAgent)
-    const isConfigured = isExistingAgent || 
+    const isExistingAgent =
+      qaConfig?.isExistingAgent ||
+      (hasQAAgentTool &&
+        tools?.[0]?.val &&
+        typeof tools?.[0]?.val === "object" &&
+        (tools?.[0]?.val as any)?.isExistingAgent)
+    const isConfigured =
+      isExistingAgent ||
       (qaConfig?.name && qaConfig?.name.trim() !== "") ||
       step.name ||
       step.description ||
@@ -519,10 +549,11 @@ const StepNode: React.FC<NodeProps> = ({
       return (
         <>
           <div
-            className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${selected
-              ? "border-gray-800 dark:border-gray-300 shadow-lg"
-              : "border-gray-300 dark:border-gray-600"
-              }`}
+            className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
+              selected
+                ? "border-gray-800 dark:border-gray-300 shadow-lg"
+                : "border-gray-300 dark:border-gray-600"
+            }`}
             style={{
               width: "80px",
               height: "80px",
@@ -615,10 +646,11 @@ const StepNode: React.FC<NodeProps> = ({
     return (
       <>
         <div
-          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${selected
-            ? "border-gray-800 dark:border-gray-300 shadow-lg"
-            : "border-gray-300 dark:border-gray-600"
-            }`}
+          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
+            selected
+              ? "border-gray-800 dark:border-gray-300 shadow-lg"
+              : "border-gray-300 dark:border-gray-600"
+          }`}
           style={{
             width: "320px",
             minHeight: "122px",
@@ -627,7 +659,9 @@ const StepNode: React.FC<NodeProps> = ({
           }}
           onClick={(e) => {
             // Don't stop propagation - let the event bubble up to the main node click handler
-            console.log('Q&A Node Clicked - allowing normal node click behavior')
+            console.log(
+              "Q&A Node Clicked - allowing normal node click behavior",
+            )
             // The normal node click handler (onNodeClick) will handle opening the agents sidebar for editing
           }}
         >
@@ -663,18 +697,33 @@ const StepNode: React.FC<NodeProps> = ({
               {(() => {
                 // Check if this is using an existing agent
                 if (isExistingAgent) {
-                  const agentName = qaConfig?.agentName || 
-                    (hasQAAgentTool && tools?.[0]?.val && typeof tools?.[0]?.val === 'object' && (tools?.[0]?.val as any)?.agentName)
+                  const agentName =
+                    qaConfig?.agentName ||
+                    (hasQAAgentTool &&
+                      tools?.[0]?.val &&
+                      typeof tools?.[0]?.val === "object" &&
+                      (tools?.[0]?.val as any)?.agentName)
                   return agentName ? `Q&A - ${agentName}` : "Q&A Agent"
                 }
 
                 // First try to get name from workflow_tools[index].val.name
-                if (hasQAAgentTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.name) {
+                if (
+                  hasQAAgentTool &&
+                  tools?.[0]?.val &&
+                  typeof tools[0].val === "object" &&
+                  (tools[0].val as any)?.name
+                ) {
                   return (tools[0].val as any).name
                 }
 
                 // Try to get name from workflow_tools[index].value.name
-                if (hasQAAgentTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.name) {
+                if (
+                  hasQAAgentTool &&
+                  tools?.[0] &&
+                  (tools[0] as any)?.value &&
+                  typeof (tools[0] as any).value === "object" &&
+                  (tools[0] as any).value?.name
+                ) {
                   return (tools[0] as any).value.name
                 }
 
@@ -693,25 +742,42 @@ const StepNode: React.FC<NodeProps> = ({
               {(() => {
                 // Check if this is using an existing agent
                 if (isExistingAgent) {
-                  const agentName = qaConfig?.agentName || 
-                    (hasQAAgentTool && tools?.[0]?.val && typeof tools?.[0]?.val === 'object' && (tools?.[0]?.val as any)?.agentName)
-                  return `Q&A agent processing Excel questions using ${agentName || 'selected agent'}.`
+                  const agentName =
+                    qaConfig?.agentName ||
+                    (hasQAAgentTool &&
+                      tools?.[0]?.val &&
+                      typeof tools?.[0]?.val === "object" &&
+                      (tools?.[0]?.val as any)?.agentName)
+                  return `Q&A agent processing Excel questions using ${agentName || "selected agent"}.`
                 }
 
                 // First try to get description from workflow_tools[index].val.description
-                if (hasQAAgentTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.description) {
+                if (
+                  hasQAAgentTool &&
+                  tools?.[0]?.val &&
+                  typeof tools[0].val === "object" &&
+                  (tools[0].val as any)?.description
+                ) {
                   return (tools[0].val as any).description
                 }
 
                 // Try to get description from workflow_tools[index].value.description
-                if (hasQAAgentTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.description) {
+                if (
+                  hasQAAgentTool &&
+                  tools?.[0] &&
+                  (tools[0] as any)?.value &&
+                  typeof (tools[0] as any).value === "object" &&
+                  (tools[0] as any).value?.description
+                ) {
                   return (tools[0] as any).value.description
                 }
 
                 // Fallback to existing logic
-                return step.description ||
+                return (
+                  step.description ||
                   qaConfig?.description ||
                   `Q&A agent to process Excel questions using ${qaConfig?.model || "default-model"}.`
+                )
               })()}
             </p>
           </div>
@@ -800,10 +866,11 @@ const StepNode: React.FC<NodeProps> = ({
       return (
         <>
           <div
-            className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${selected
-              ? "border-gray-800 dark:border-gray-300 shadow-lg"
-              : "border-gray-300 dark:border-gray-600"
-              }`}
+            className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
+              selected
+                ? "border-gray-800 dark:border-gray-300 shadow-lg"
+                : "border-gray-300 dark:border-gray-600"
+            }`}
             style={{
               width: "80px",
               height: "80px",
@@ -896,10 +963,11 @@ const StepNode: React.FC<NodeProps> = ({
     return (
       <>
         <div
-          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${selected
-            ? "border-gray-800 dark:border-gray-300 shadow-lg"
-            : "border-gray-300 dark:border-gray-600"
-            }`}
+          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
+            selected
+              ? "border-gray-800 dark:border-gray-300 shadow-lg"
+              : "border-gray-300 dark:border-gray-600"
+          }`}
           style={{
             width: "320px",
             minHeight: "122px",
@@ -938,12 +1006,23 @@ const StepNode: React.FC<NodeProps> = ({
             >
               {(() => {
                 // First try to get title from workflow_tools[index].val.title
-                if (hasEmailTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.title) {
+                if (
+                  hasEmailTool &&
+                  tools?.[0]?.val &&
+                  typeof tools[0].val === "object" &&
+                  (tools[0].val as any)?.title
+                ) {
                   return (tools[0].val as any).title
                 }
 
                 // Try to get title from workflow_tools[index].value.title
-                if (hasEmailTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.title) {
+                if (
+                  hasEmailTool &&
+                  tools?.[0] &&
+                  (tools[0] as any)?.value &&
+                  typeof (tools[0] as any).value === "object" &&
+                  (tools[0] as any).value?.title
+                ) {
                   return (tools[0] as any).value.title
                 }
 
@@ -961,19 +1040,30 @@ const StepNode: React.FC<NodeProps> = ({
             <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed text-left break-words overflow-hidden">
               {(() => {
                 // First try to get description from workflow_tools[index].val.description
-                if (hasEmailTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.description) {
+                if (
+                  hasEmailTool &&
+                  tools?.[0]?.val &&
+                  typeof tools[0].val === "object" &&
+                  (tools[0].val as any)?.description
+                ) {
                   return (tools[0].val as any).description
                 }
 
                 // Try to get description from workflow_tools[index].value.description
-                if (hasEmailTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.description) {
+                if (
+                  hasEmailTool &&
+                  tools?.[0] &&
+                  (tools[0] as any)?.value &&
+                  typeof (tools[0] as any).value === "object" &&
+                  (tools[0] as any).value?.description
+                ) {
                   return (tools[0] as any).value.description
                 }
 
                 // Always generate description from email addresses
-                return (emailAddresses && emailAddresses.length > 0
+                return emailAddresses && emailAddresses.length > 0
                   ? `Send emails to ${emailAddresses.join(", ")}`
-                  : "Send automated email notifications to specified recipients.")
+                  : "Send automated email notifications to specified recipients."
               })()}
             </p>
           </div>
@@ -1041,16 +1131,15 @@ const StepNode: React.FC<NodeProps> = ({
   }
 
   // Special rendering for HTTP Request nodes and steps with http_request tools
-  const hasHttpRequestTool = tools && tools.length > 0 && tools[0].type === "http_request"
+  const hasHttpRequestTool =
+    tools && tools.length > 0 && tools[0].type === "http_request"
   if (step.type === "http_request" || hasHttpRequestTool) {
     // Get config from step or tool
     const httpConfig =
-      (step as any).config || 
-      (hasHttpRequestTool && tools?.[0]?.val) || 
-      {}
-    const isConfigured = 
-      httpConfig?.url || 
-      step.name || 
+      (step as any).config || (hasHttpRequestTool && tools?.[0]?.val) || {}
+    const isConfigured =
+      httpConfig?.url ||
+      step.name ||
       step.description ||
       (hasHttpRequestTool && tools?.[0])
 
@@ -1060,8 +1149,8 @@ const StepNode: React.FC<NodeProps> = ({
         <>
           <div
             className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
-              selected 
-                ? "border-gray-800 dark:border-gray-300 shadow-lg" 
+              selected
+                ? "border-gray-800 dark:border-gray-300 shadow-lg"
                 : "border-gray-300 dark:border-gray-600"
             }`}
             style={{
@@ -1157,8 +1246,8 @@ const StepNode: React.FC<NodeProps> = ({
       <>
         <div
           className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
-            selected 
-              ? "border-gray-800 dark:border-gray-300 shadow-lg" 
+            selected
+              ? "border-gray-800 dark:border-gray-300 shadow-lg"
               : "border-gray-300 dark:border-gray-600"
           }`}
           style={{
@@ -1198,30 +1287,36 @@ const StepNode: React.FC<NodeProps> = ({
             >
               {(() => {
                 // First try to get title from workflow_tools[index]
-                const toolData = hasHttpRequestTool && tools?.[0] ? tools[0].val : null
-                if (toolData && typeof toolData === 'object' && (toolData as any)?.title) {
+                const toolData =
+                  hasHttpRequestTool && tools?.[0] ? tools[0].val : null
+                if (
+                  toolData &&
+                  typeof toolData === "object" &&
+                  (toolData as any)?.title
+                ) {
                   return (toolData as any).title
                 }
-                
+
                 // Then try step name
                 if (step.name && step.name.trim() !== "") {
                   return step.name
                 }
-                
+
                 // Then try step description
                 if (step.description && step.description.trim() !== "") {
                   return step.description
                 }
-                
+
                 // Default fallback with method and URL
-                const method = httpConfig?.method || 'GET'
+                const method = httpConfig?.method || "GET"
                 const url = httpConfig?.url
-                
-                if (url && url.trim() !== '') {
-                  const displayUrl = url.length > 25 ? `${url.substring(0, 25)}...` : url
+
+                if (url && url.trim() !== "") {
+                  const displayUrl =
+                    url.length > 25 ? `${url.substring(0, 25)}...` : url
                   return `${method} ${displayUrl}`
                 } else {
-                  return 'HTTP Request'
+                  return "HTTP Request"
                 }
               })()}
             </h3>
@@ -1231,16 +1326,17 @@ const StepNode: React.FC<NodeProps> = ({
           <div className="px-4 pb-4">
             <div className="text-sm text-gray-600 dark:text-gray-400">
               {(() => {
-                const method = httpConfig?.method || 'GET'
+                const method = httpConfig?.method || "GET"
                 const url = httpConfig?.url
-                
-                if (url && url.trim() !== '') {
+
+                if (url && url.trim() !== "") {
                   // Show method and URL if configured
-                  const displayUrl = url.length > 30 ? `${url.substring(0, 30)}...` : url
+                  const displayUrl =
+                    url.length > 30 ? `${url.substring(0, 30)}...` : url
                   return `${method} • ${displayUrl}`
                 } else {
                   // Show placeholder text for unconfigured node
-                  return 'Click to configure HTTP request'
+                  return "Click to configure HTTP request"
                 }
               })()}
             </div>
@@ -1309,14 +1405,15 @@ const StepNode: React.FC<NodeProps> = ({
   }
 
   // Special rendering for webhook nodes and steps with webhook tools
-  const hasWebhookTool = tools && tools.length > 0 && tools[0].type === "webhook"
+  const hasWebhookTool =
+    tools && tools.length > 0 && tools[0].type === "webhook"
   if (step.type === "webhook" || hasWebhookTool) {
     return (
       <>
         <div
           className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
-            selected 
-              ? "border-gray-800 dark:border-gray-300 shadow-lg" 
+            selected
+              ? "border-gray-800 dark:border-gray-300 shadow-lg"
               : "border-gray-300 dark:border-gray-600"
           }`}
           style={{
@@ -1356,15 +1453,26 @@ const StepNode: React.FC<NodeProps> = ({
             >
               {(() => {
                 // First try to get title from workflow_tools[index].val.title
-                if (hasWebhookTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.title) {
+                if (
+                  hasWebhookTool &&
+                  tools?.[0]?.val &&
+                  typeof tools[0].val === "object" &&
+                  (tools[0].val as any)?.title
+                ) {
                   return (tools[0].val as any).title
                 }
-                
+
                 // Try to get title from workflow_tools[index].value.title
-                if (hasWebhookTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.title) {
+                if (
+                  hasWebhookTool &&
+                  tools?.[0] &&
+                  (tools[0] as any)?.value &&
+                  typeof (tools[0] as any).value === "object" &&
+                  (tools[0] as any).value?.title
+                ) {
                   return (tools[0] as any).value.title
                 }
-                
+
                 // Fallback to "Webhook" title
                 return "Webhook"
               })()}
@@ -1377,15 +1485,26 @@ const StepNode: React.FC<NodeProps> = ({
             <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed text-left break-words overflow-hidden">
               {(() => {
                 // First try to get description from workflow_tools[index].val.description
-                if (hasWebhookTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.description) {
+                if (
+                  hasWebhookTool &&
+                  tools?.[0]?.val &&
+                  typeof tools[0].val === "object" &&
+                  (tools[0].val as any)?.description
+                ) {
                   return (tools[0].val as any).description
                 }
-                
+
                 // Try to get description from workflow_tools[index].value.description
-                if (hasWebhookTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.description) {
+                if (
+                  hasWebhookTool &&
+                  tools?.[0] &&
+                  (tools[0] as any)?.value &&
+                  typeof (tools[0] as any).value === "object" &&
+                  (tools[0] as any).value?.description
+                ) {
                   return (tools[0] as any).value.description
                 }
-                
+
                 // If step has description, use it next
                 if (step.description) {
                   return step.description
@@ -1397,13 +1516,21 @@ const StepNode: React.FC<NodeProps> = ({
                   {}
                 // Build description from webhook configuration
                 if (webhookConfig?.webhookUrl || webhookConfig?.path) {
-                  const method = webhookConfig?.httpMethod || 'POST'
-                  const url = webhookConfig?.webhookUrl || `${window.location.origin}/workflow/webhook${webhookConfig?.path || ''}`
-                  const auth = webhookConfig?.authentication === 'none' ? 'No authentication' : 
-                              webhookConfig?.authentication === 'basic' ? 'Basic authentication' :
-                              webhookConfig?.authentication === 'bearer' ? 'Bearer token authentication' :
-                              webhookConfig?.authentication === 'api_key' ? 'API key authentication' : 'No authentication'
-                  
+                  const method = webhookConfig?.httpMethod || "POST"
+                  const url =
+                    webhookConfig?.webhookUrl ||
+                    `${window.location.origin}/workflow/webhook${webhookConfig?.path || ""}`
+                  const auth =
+                    webhookConfig?.authentication === "none"
+                      ? "No authentication"
+                      : webhookConfig?.authentication === "basic"
+                        ? "Basic authentication"
+                        : webhookConfig?.authentication === "bearer"
+                          ? "Bearer token authentication"
+                          : webhookConfig?.authentication === "api_key"
+                            ? "API key authentication"
+                            : "No authentication"
+
                   return `${method} ${url} • ${auth}`
                 }
                 // Fallback description
@@ -1476,10 +1603,11 @@ const StepNode: React.FC<NodeProps> = ({
     return (
       <>
         <div
-          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${selected
-            ? "border-gray-800 dark:border-gray-300 shadow-lg"
-            : "border-gray-300 dark:border-gray-600"
-            }`}
+          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
+            selected
+              ? "border-gray-800 dark:border-gray-300 shadow-lg"
+              : "border-gray-300 dark:border-gray-600"
+          }`}
           style={{
             width: "320px",
             minHeight: "122px",
@@ -1518,20 +1646,36 @@ const StepNode: React.FC<NodeProps> = ({
             >
               {(() => {
                 // First try to get title from workflow_tools[index].val.title
-                if (hasFormTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.title) {
+                if (
+                  hasFormTool &&
+                  tools?.[0]?.val &&
+                  typeof tools[0].val === "object" &&
+                  (tools[0].val as any)?.title
+                ) {
                   return (tools[0].val as any).title
                 }
 
                 // Try to get title from workflow_tools[index].value.title
-                if (hasFormTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.title) {
+                if (
+                  hasFormTool &&
+                  tools?.[0] &&
+                  (tools[0] as any)?.value &&
+                  typeof (tools[0] as any).value === "object" &&
+                  (tools[0] as any).value?.title
+                ) {
                   return (tools[0] as any).value.title
                 }
 
                 // Fallback to existing logic
-                return step.name ||
+                return (
+                  step.name ||
                   (step as any).config?.title ||
-                  (hasFormTool && tools?.[0] && typeof tools[0].val === 'object' && tools[0].val?.title) ||
+                  (hasFormTool &&
+                    tools?.[0] &&
+                    typeof tools[0].val === "object" &&
+                    tools[0].val?.title) ||
                   "Form Submission"
+                )
               })()}
             </h3>
           </div>
@@ -1544,12 +1688,23 @@ const StepNode: React.FC<NodeProps> = ({
             <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed text-left break-words overflow-hidden">
               {(() => {
                 // First try to get description from workflow_tools[index].val.description
-                if (hasFormTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.description) {
+                if (
+                  hasFormTool &&
+                  tools?.[0]?.val &&
+                  typeof tools[0].val === "object" &&
+                  (tools[0].val as any)?.description
+                ) {
                   return (tools[0].val as any).description
                 }
 
                 // Try to get description from workflow_tools[index].value.description
-                if (hasFormTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.description) {
+                if (
+                  hasFormTool &&
+                  tools?.[0] &&
+                  (tools[0] as any)?.value &&
+                  typeof (tools[0] as any).value === "object" &&
+                  (tools[0] as any).value?.description
+                ) {
                   return (tools[0] as any).value.description
                 }
 
@@ -1560,9 +1715,7 @@ const StepNode: React.FC<NodeProps> = ({
 
                 // Get config from step or tool
                 const config =
-                  (step as any).config ||
-                  (hasFormTool && tools?.[0]?.val) ||
-                  {}
+                  (step as any).config || (hasFormTool && tools?.[0]?.val) || {}
 
                 // If user has configured the form, show form details
                 if (
@@ -1746,12 +1899,13 @@ const StepNode: React.FC<NodeProps> = ({
           position={Position.Top}
           id="top"
           isConnectable={isConnectable}
-          className={`w-3 h-3 border-2 border-white dark:border-gray-900 shadow-sm ${isCompleted
-            ? "bg-emerald-600"
-            : isActive
-              ? "bg-blue-600"
-              : "bg-gray-400 dark:bg-gray-500"
-            }`}
+          className={`w-3 h-3 border-2 border-white dark:border-gray-900 shadow-sm ${
+            isCompleted
+              ? "bg-emerald-600"
+              : isActive
+                ? "bg-blue-600"
+                : "bg-gray-400 dark:bg-gray-500"
+          }`}
         />
 
         <div className="flex items-center gap-2 mb-1">
@@ -1791,12 +1945,13 @@ const StepNode: React.FC<NodeProps> = ({
           position={Position.Bottom}
           id="bottom"
           isConnectable={isConnectable}
-          className={`w-3 h-3 border-2 border-white dark:border-gray-900 shadow-sm ${isCompleted
-            ? "bg-emerald-600"
-            : isActive
-              ? "bg-blue-600"
-              : "bg-gray-400 dark:bg-gray-500"
-            }`}
+          className={`w-3 h-3 border-2 border-white dark:border-gray-900 shadow-sm ${
+            isCompleted
+              ? "bg-emerald-600"
+              : isActive
+                ? "bg-blue-600"
+                : "bg-gray-400 dark:bg-gray-500"
+          }`}
         />
 
         {/* Add Next Step Button */}
@@ -1852,22 +2007,23 @@ const Header = ({
   hasUnsavedChanges = false,
   onConfirmRefresh,
 }: {
-  onBackToWorkflows?: () => void;
-  onRefreshWorkflows?: () => void;
-  workflowName?: string;
-  selectedTemplate?: WorkflowTemplate | null;
-  onWorkflowNameChange?: (newName: string) => void;
-  isEditable?: boolean;
-  onSaveChanges?: (isPublic: boolean) => void;
-  isSaveDisabled?: boolean;
-  hasUnsavedChanges?: boolean;
-  onConfirmRefresh?: (callback: () => void) => void;
+  onBackToWorkflows?: () => void
+  onRefreshWorkflows?: () => void
+  workflowName?: string
+  selectedTemplate?: WorkflowTemplate | null
+  onWorkflowNameChange?: (newName: string) => void
+  isEditable?: boolean
+  onSaveChanges?: (isPublic: boolean) => void
+  isSaveDisabled?: boolean
+  hasUnsavedChanges?: boolean
+  onConfirmRefresh?: (callback: () => void) => void
 }) => {
   const [isEditing, setIsEditing] = useState(false)
   const [editingName, setEditingName] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const currentName = workflowName || selectedTemplate?.name || "Untitled Workflow"
+  const currentName =
+    workflowName || selectedTemplate?.name || "Untitled Workflow"
 
   const handleClick = () => {
     if (!isEditable) return
@@ -1927,7 +2083,8 @@ const Header = ({
         </span>
         <span className="text-[#3B4145] dark:text-gray-300 text-sm font-medium leading-5">
           {" "}
-          / {isEditing ? (
+          /{" "}
+          {isEditing ? (
             <input
               ref={inputRef}
               type="text"
@@ -1941,9 +2098,10 @@ const Header = ({
             />
           ) : (
             <span
-              className={isEditable
-                ? "cursor-pointer hover:text-[#1a1d20] dark:hover:text-gray-100 transition-colors px-2 py-1 rounded hover:bg-gray-50 dark:hover:bg-gray-800"
-                : "text-[#3B4145] dark:text-gray-300"
+              className={
+                isEditable
+                  ? "cursor-pointer hover:text-[#1a1d20] dark:hover:text-gray-100 transition-colors px-2 py-1 rounded hover:bg-gray-50 dark:hover:bg-gray-800"
+                  : "text-[#3B4145] dark:text-gray-300"
               }
               onClick={isEditable ? handleClick : undefined}
               title={isEditable ? "Click to edit workflow name" : undefined}
@@ -1960,20 +2118,22 @@ const Header = ({
           <button
             onClick={() => onSaveChanges(false)}
             disabled={isSaveDisabled}
-            className={`px-6 py-2 text-sm font-medium rounded-full transition-all duration-200 ${isSaveDisabled
-              ? "bg-gray-900 dark:bg-gray-700 text-white opacity-50 cursor-not-allowed"
-              : "bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white opacity-100"
-              }`}
+            className={`px-6 py-2 text-sm font-medium rounded-full transition-all duration-200 ${
+              isSaveDisabled
+                ? "bg-gray-900 dark:bg-gray-700 text-white opacity-50 cursor-not-allowed"
+                : "bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white opacity-100"
+            }`}
           >
             Save as Private
           </button>
           <button
             onClick={() => onSaveChanges(true)}
             disabled={isSaveDisabled}
-            className={`px-6 py-2 text-sm font-medium rounded-full transition-all duration-200 ${isSaveDisabled
-              ? "bg-gray-900 dark:bg-gray-700 text-white opacity-50 cursor-not-allowed"
-              : "bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white opacity-100"
-              }`}
+            className={`px-6 py-2 text-sm font-medium rounded-full transition-all duration-200 ${
+              isSaveDisabled
+                ? "bg-gray-900 dark:bg-gray-700 text-white opacity-50 cursor-not-allowed"
+                : "bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white opacity-100"
+            }`}
           >
             Save as Public
           </button>
@@ -2062,8 +2222,9 @@ const ToolsSidebar = ({
 }) => {
   return (
     <div
-      className={`fixed top-[80px] right-0 h-[calc(100vh-80px)] bg-white border-l border-slate-200 flex flex-col overflow-hidden transition-all duration-300 ease-in-out z-40 ${isVisible ? "translate-x-0 w-[380px]" : "translate-x-full w-0"
-        }`}
+      className={`fixed top-[80px] right-0 h-[calc(100vh-80px)] bg-white border-l border-slate-200 flex flex-col overflow-hidden transition-all duration-300 ease-in-out z-40 ${
+        isVisible ? "translate-x-0 w-[380px]" : "translate-x-full w-0"
+      }`}
     >
       {/* Header */}
       <div className="px-6 pt-5 pb-4 border-b border-slate-200">
@@ -2161,10 +2322,11 @@ const ToolsSidebar = ({
                   <div className="flex gap-2">
                     {(tool as any).status && (
                       <span
-                        className={`text-xs px-2 py-1 rounded ${(tool as any).status === "completed"
-                          ? "bg-green-100 text-green-700"
-                          : "bg-gray-100 text-gray-600"
-                          }`}
+                        className={`text-xs px-2 py-1 rounded ${
+                          (tool as any).status === "completed"
+                            ? "bg-green-100 text-green-700"
+                            : "bg-gray-100 text-gray-600"
+                        }`}
                       >
                         {(tool as any).status}
                       </span>
@@ -2317,7 +2479,8 @@ const TriggersSidebar = ({
     {
       id: "jira",
       name: "Jira",
-      description: "Trigger workflow when Jira events occur (issue created, updated, etc.)",
+      description:
+        "Trigger workflow when Jira events occur (issue created, updated, etc.)",
       icon: <JiraIcon width={20} height={20} />,
       enabled: true,
     },
@@ -2383,8 +2546,9 @@ const TriggersSidebar = ({
 
   return (
     <div
-      className={`fixed top-[80px] right-0 h-[calc(100vh-80px)] bg-white dark:bg-gray-900 border-l border-slate-200 dark:border-gray-700 flex flex-col overflow-hidden z-40 ${isVisible ? "translate-x-0 w-[380px]" : "translate-x-full w-0"
-        }`}
+      className={`fixed top-[80px] right-0 h-[calc(100vh-80px)] bg-white dark:bg-gray-900 border-l border-slate-200 dark:border-gray-700 flex flex-col overflow-hidden z-40 ${
+        isVisible ? "translate-x-0 w-[380px]" : "translate-x-full w-0"
+      }`}
     >
       {/* Header */}
       <div className="px-6 pt-5 pb-4 border-b border-slate-200 dark:border-gray-700">
@@ -2566,8 +2730,6 @@ interface WorkflowBuilderProps {
   onWorkflowUpdate?: (updatedWorkflow: Flow | TemplateFlow) => void
 }
 
-
-
 // Internal component that uses ReactFlow hooks
 const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   flow,
@@ -2604,17 +2766,22 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [selectedFormNodeId, setSelectedFormNodeId] = useState<string | null>(
     null,
   )
-  const [selectedHttpRequestNodeId, setSelectedHttpRequestNodeId] = useState<string | null>(
-    null,
-  )
-  const [showExistingAgentConfigUI, setShowExistingAgentConfigUI] = useState(false)
-  const [selectedExistingAgentNodeId, setSelectedExistingAgentNodeId] = useState<string | null>(null)
-  const [selectedAgentForPreview, setSelectedAgentForPreview] = useState<SelectPublicAgent | null>(null)
-  const [existingAgentConfigMode, setExistingAgentConfigMode] = useState<"preview" | "view">("view")
+  const [selectedHttpRequestNodeId, setSelectedHttpRequestNodeId] = useState<
+    string | null
+  >(null)
+  const [showExistingAgentConfigUI, setShowExistingAgentConfigUI] =
+    useState(false)
+  const [selectedExistingAgentNodeId, setSelectedExistingAgentNodeId] =
+    useState<string | null>(null)
+  const [selectedAgentForPreview, setSelectedAgentForPreview] =
+    useState<SelectPublicAgent | null>(null)
+  const [existingAgentConfigMode, setExistingAgentConfigMode] = useState<
+    "preview" | "view"
+  >("view")
   const [showWebhookConfigUI, setShowWebhookConfigUI] = useState(false)
-  const [selectedWebhookNodeId, setSelectedWebhookNodeId] = useState<string | null>(
-    null,
-  )
+  const [selectedWebhookNodeId, setSelectedWebhookNodeId] = useState<
+    string | null
+  >(null)
   const [showJiraConfigUI, setShowJiraConfigUI] = useState(false)
   const [selectedJiraNodeId, setSelectedJiraNodeId] = useState<string | null>(
     null,
@@ -2622,29 +2789,30 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [jiraInitialConfig, setJiraInitialConfig] = useState<any>(undefined)
   const [jiraToolId, setJiraToolId] = useState<string | undefined>(undefined)
   const [showQAAgentConfigUI, setShowQAAgentConfigUI] = useState(false)
-  const [selectedQAAgentNodeId, setSelectedQAAgentNodeId] = useState<string | null>(
-    null,
-  )
+  const [selectedQAAgentNodeId, setSelectedQAAgentNodeId] = useState<
+    string | null
+  >(null)
   const [qaAgentSelectionMode, setQAAgentSelectionMode] = useState(false)
   const [zoomLevel, setZoomLevel] = useState(100)
   const [showToolsSidebar, setShowToolsSidebar] = useState(false)
-  const [selectedNodeTools] = useState<Tool[] | null>(
-    null,
-  )
+  const [selectedNodeTools] = useState<Tool[] | null>(null)
   const [selectedNodeInfo] = useState<any>(null)
   const [showResultModal, setShowResultModal] = useState(false)
   const [selectedResult, setSelectedResult] = useState<any>(null)
   const [showExecutionModal, setShowExecutionModal] = useState(false)
-  const [createdTemplate, setCreatedTemplate] = useState<WorkflowTemplate | null>(null)
-  const [showTemplateSelectionModal, setShowTemplateSelectionModal] = useState(false)
-  const [availableTemplates, setAvailableTemplates] = useState<WorkflowTemplate[]>([])
+  const [createdTemplate, setCreatedTemplate] =
+    useState<WorkflowTemplate | null>(null)
+  const [showTemplateSelectionModal, setShowTemplateSelectionModal] =
+    useState(false)
+  const [availableTemplates, setAvailableTemplates] = useState<
+    WorkflowTemplate[]
+  >([])
   const [templatesLoading, setTemplatesLoading] = useState(false)
   const [templatesError, setTemplatesError] = useState<string | null>(null)
-  const [localSelectedTemplate, setLocalSelectedTemplate] = useState<WorkflowTemplate | null>(null)
+  const [localSelectedTemplate, setLocalSelectedTemplate] =
+    useState<WorkflowTemplate | null>(null)
   // Template workflow state (for creating the initial workflow)
-  const [templateWorkflow] = useState<TemplateFlow | null>(
-    null,
-  )
+  const [templateWorkflow] = useState<TemplateFlow | null>(null)
   // Running workflow state (for real-time updates)
   const [, setIsPolling] = useState(false)
   const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(
@@ -2654,7 +2822,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [currentWorkflowName, setCurrentWorkflowName] = useState<string>("")
   // Snackbar state
   const [snackbarMessage, setSnackbarMessage] = useState<string>("")
-  const [snackbarType, setSnackbarType] = useState<'success' | 'error' | 'warning' | 'info'>('info')
+  const [snackbarType, setSnackbarType] = useState<
+    "success" | "error" | "warning" | "info"
+  >("info")
   const [showSnackbar, setShowSnackbar] = useState(false)
   // Save Changes button state
   const [isWorkflowSaved, setIsWorkflowSaved] = useState(false)
@@ -2662,7 +2832,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [lastSavedHash, setLastSavedHash] = useState<string>("")
   // Confirmation popup state
   const [showConfirmationPopup, setShowConfirmationPopup] = useState(false)
-  const [pendingRefreshCallback, setPendingRefreshCallback] = useState<(() => void) | null>(null)
+  const [pendingRefreshCallback, setPendingRefreshCallback] = useState<
+    (() => void) | null
+  >(null)
 
   // Empty initial state
   const initialNodes: Node[] = []
@@ -2671,43 +2843,59 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
 
   // Helper function to extract allowed file types from a root node
-  const extractAllowedFileTypesFromRootNode = (rootNode: Node | null): string[] => {
+  const extractAllowedFileTypesFromRootNode = (
+    rootNode: Node | null,
+  ): string[] => {
     console.log("Extracting allowed file types from root node:", rootNode)
-    
+
     // Your working implementation with safe navigation
     try {
       const tools = rootNode?.data?.tools
-      const fileTypes = tools && Array.isArray(tools) && tools.length > 0 ? tools[0]?.value?.fields?.[0]?.fileTypes : undefined
+      const fileTypes =
+        tools && Array.isArray(tools) && tools.length > 0
+          ? tools[0]?.value?.fields?.[0]?.fileTypes
+          : undefined
       if (fileTypes && Array.isArray(fileTypes) && fileTypes.length > 0) {
-        return fileTypes.filter(type => type && typeof type === 'string' && type.trim() !== '')
+        return fileTypes.filter(
+          (type) => type && typeof type === "string" && type.trim() !== "",
+        )
       }
     } catch (error) {
       console.warn("Error extracting file types:", error)
     }
-    
+
     return ["txt", "pdf", "docx", "doc", "xlsx", "xls"]
   }
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
 
   // Utility function to get tool ID from step ID
-  const getToolIdFromStepId = useCallback((stepId: string): string | undefined => {
-    const node = nodes.find((n) => n.id === stepId)
-    const tools = node?.data?.tools as Tool[] | undefined
-    return tools && tools.length > 0 ? tools[0]?.id : undefined
-  }, [nodes])
+  const getToolIdFromStepId = useCallback(
+    (stepId: string): string | undefined => {
+      const node = nodes.find((n) => n.id === stepId)
+      const tools = node?.data?.tools as Tool[] | undefined
+      return tools && tools.length > 0 ? tools[0]?.id : undefined
+    },
+    [nodes],
+  )
 
   // Helper function to show snackbar messages
-  const showSnackbarMessage = useCallback((message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info') => {
-    setSnackbarMessage(message)
-    setSnackbarType(type)
-    setShowSnackbar(true)
-  }, [])
+  const showSnackbarMessage = useCallback(
+    (
+      message: string,
+      type: "success" | "error" | "warning" | "info" = "info",
+    ) => {
+      setSnackbarMessage(message)
+      setSnackbarType(type)
+      setShowSnackbar(true)
+    },
+    [],
+  )
 
   // Helper function to create a hash of the current workflow state
   // Excludes position coordinates and UI state to prevent save button activation on node drag or UI interactions
   const createWorkflowHash = () => {
     const workflowState = {
-      nodes: nodes.map(node => ({
+      nodes: nodes.map((node) => ({
         id: node.id,
         type: node.type,
         // Exclude position from hash calculation
@@ -2715,14 +2903,14 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           step: node.data?.step,
           tools: node.data?.tools,
           // Exclude UI state properties like hasNext, isActive, isCompleted, anyNodeSelected
-        }
+        },
       })),
-      edges: edges.map(edge => ({
+      edges: edges.map((edge) => ({
         id: edge.id,
         source: edge.source,
         target: edge.target,
-        type: edge.type
-      }))
+        type: edge.type,
+      })),
     }
     return JSON.stringify(workflowState)
   }
@@ -2746,10 +2934,13 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
     // Final fallback
     return "Untitled Workflow"
-  }, [currentWorkflowName, selectedTemplate?.name, selectedTemplate, nodes.length])
+  }, [
+    currentWorkflowName,
+    selectedTemplate?.name,
+    selectedTemplate,
+    nodes.length,
+  ])
   const { fitView, zoomTo, getViewport } = useReactFlow()
-
-
 
   // Smart fit view to show entire workflow with proper padding
   const smartFitWorkflow = useCallback(() => {
@@ -2757,10 +2948,10 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       // Use fitView to show the entire workflow with extra bottom padding for + button
       fitView({
         padding: {
-          top: 0.1,    // 10% padding at top
+          top: 0.1, // 10% padding at top
           right: 0.15, // 15% padding on sides
           bottom: 0.5, // 50% padding at bottom to ensure + button is fully visible
-          left: 0.15   // 15% padding on sides
+          left: 0.15, // 15% padding on sides
         },
         includeHiddenNodes: false,
         minZoom: 0.4, // Balanced minimum zoom for better workflow visibility
@@ -2770,323 +2961,355 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     }, 150) // Small delay to ensure the node is fully rendered
   }, [fitView])
 
-  // helper function to handle agents selection from sidebar   
-  const handleOnAgentSelect = useCallback((agent: SelectPublicAgent) => {
-    if (qaAgentSelectionMode) {
-      // Handle Q&A Agent selection
-      handleQAAgentSelection(agent)
-      setQAAgentSelectionMode(false)
-    } else {
-      // Handle regular agent selection
-      setSelectedAgentForPreview(agent)
-      setExistingAgentConfigMode("preview")
-      setShowExistingAgentConfigUI(true)
-    }
-
-    // Close the agents sidebar
-    setShowAgentsSidebar(false)
-  }, [qaAgentSelectionMode])
-
-  const handleQAAgentSelection = useCallback((agent: SelectPublicAgent) => {
-    if (selectedNodeForNext) {
-      const targetNode = nodes.find((n) => n.id === selectedNodeForNext)
-      if (!targetNode) return
-
-      // Check if we're updating an existing Q&A node or creating a new one
-      const tools = targetNode.data?.tools as Tool[] | undefined
-      const isExistingQANode = tools && tools.length > 0 && tools[0].type === "qna_agent"
-      
-      if (isExistingQANode) {
-        // Update existing Q&A node with new agent selection
-        const qaAgentTool = {
-          id: tools[0].id || `tool-${selectedNodeForNext}`,
-          type: "qna_agent",
-          val: {
-            agentId: agent.externalId,
-            agentName: agent.name,
-            isExistingAgent: true,
-          },
-          value: {
-            agentId: agent.externalId,
-            agentName: agent.name,
-            isExistingAgent: true,
-          },
-          config: {
-            agentId: agent.externalId,
-            name: agent.name,
-            description: `Q&A agent using ${agent.name}`,
-            isExistingAgent: true,
-          },
-        }
-
-        // Update the existing node
-        setNodes((prevNodes) =>
-          prevNodes.map((node) =>
-            node.id === selectedNodeForNext
-              ? {
-                  ...node,
-                  data: {
-                    ...node.data,
-                    step: {
-                      ...(node.data.step as any),
-                      name: `Q&A - ${agent.name}`,
-                      description: `Q&A agent using ${agent.name}`,
-                      config: {
-                        ...(node.data.step as any)?.config,
-                        agentId: agent.externalId,
-                        agentName: agent.name,
-                        isExistingAgent: true,
-                      },
-                    },
-                    tools: [qaAgentTool],
-                  },
-                  selected: false,
-                }
-              : { ...node, selected: false }
-          )
-        )
-        
-        // Reset state for existing node update
-        setSelectedNodeForNext(null)
+  // helper function to handle agents selection from sidebar
+  const handleOnAgentSelect = useCallback(
+    (agent: SelectPublicAgent) => {
+      if (qaAgentSelectionMode) {
+        // Handle Q&A Agent selection
+        handleQAAgentSelection(agent)
+        setQAAgentSelectionMode(false)
       } else {
-        // Create new Q&A Agent node using the selected agent
-        const newNodeId = `qa-agent-${nodeCounter}`
-
-        // Create the tool object for Q&A Agent using the selected agent
-        const qaAgentTool = {
-          id: `tool-${newNodeId}`,
-          type: "qna_agent",
-          val: {
-            agentId: agent.externalId,
-            agentName: agent.name,
-            isExistingAgent: true,
-          },
-          value: {
-            agentId: agent.externalId,
-            agentName: agent.name,
-            isExistingAgent: true,
-          },
-          config: {
-            agentId: agent.externalId,
-            name: agent.name,
-            description: `Q&A agent using ${agent.name}`,
-            isExistingAgent: true,
-          },
-        }
-
-        // Create new node positioned below the source node
-        const newNode = {
-          id: newNodeId,
-          type: "stepNode",
-          position: {
-            x: 400, // Consistent X position for perfect straight line alignment
-            y: targetNode.position.y + 250, // Increased consistent vertical spacing for straight lines
-          },
-          data: {
-            step: {
-              id: newNodeId,
-              name: `Q&A - ${agent.name}`,
-              description: `Q&A agent using ${agent.name}`,
-              type: "qna_agent",
-              status: "pending",
-              contents: [],
-              config: {
-                agentId: agent.externalId,
-                agentName: agent.name,
-                isExistingAgent: true,
-              },
-            },
-            tools: [qaAgentTool],
-            isActive: false,
-            isCompleted: false,
-            hasNext: true, // Show + button on new step
-          },
-          draggable: true,
-          selected: true, // Select the newly created node
-        }
-
-        // Create edge connecting source to new node
-        const newEdge = {
-          id: `${selectedNodeForNext}-${newNodeId}`,
-          source: selectedNodeForNext,
-          target: newNodeId,
-          type: "smoothstep",
-          animated: false,
-          style: {
-            stroke: "#D1D5DB",
-            strokeWidth: 2,
-            strokeLinecap: "round",
-            strokeLinejoin: "round",
-          },
-          pathOptions: {
-            borderRadius: 20,
-            offset: 20,
-          },
-          markerEnd: {
-            type: "arrowclosed" as const,
-            color: "#D1D5DB",
-          },
-          sourceHandle: "bottom",
-          targetHandle: "top",
-        } as any
-
-        // Update nodes and edges
-        setNodes((prevNodes) => [...prevNodes, newNode])
-        setEdges((prevEdges) => [...prevEdges, newEdge])
-        setNodeCounter((prev) => prev + 1)
-
-        // Remove hasNext from source node since it now has a next step
-        setNodes((prevNodes) =>
-          prevNodes.map((node) =>
-            node.id === selectedNodeForNext
-              ? {
-                ...node,
-                data: {
-                  ...node.data,
-                  hasNext: false,
-                },
-                selected: false, // Deselect source node
-              }
-              : node.id === newNodeId
-                ? node // Keep new node selected
-                : { ...node, selected: false }, // Deselect all other nodes
-          ),
-        )
-
-        // Reset state
-        setSelectedNodeForNext(null)
-
-        // Reset zoom and auto-fit workflow after creating node
-        setZoomLevel(100)
-        setTimeout(() => {
-          smartFitWorkflow()
-        }, 50)
+        // Handle regular agent selection
+        setSelectedAgentForPreview(agent)
+        setExistingAgentConfigMode("preview")
+        setShowExistingAgentConfigUI(true)
       }
-    }
-  }, [selectedNodeForNext, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, smartFitWorkflow])
 
-  const handleSaveExistingAgentToCanvas = useCallback((agent: SelectPublicAgent) => {
-    if (selectedNodeForNext) {
-      const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
-      if (sourceNode) {
-        const newNodeId = `agent-${nodeCounter}`
+      // Close the agents sidebar
+      setShowAgentsSidebar(false)
+    },
+    [qaAgentSelectionMode],
+  )
 
+  const handleQAAgentSelection = useCallback(
+    (agent: SelectPublicAgent) => {
+      if (selectedNodeForNext) {
+        const targetNode = nodes.find((n) => n.id === selectedNodeForNext)
+        if (!targetNode) return
 
-        const agentTool = {
-          id: `tool-${newNodeId}`,
-          type: "ai_agent",
-          val: {
-            agentId: agent.externalId,
-            name: agent.name,
-            description: agent.description,
-            model: agent.model,
-            isExistingAgent: true,
-          },
-          value: {
-            agentId: agent.externalId,
-            name: agent.name,
-            description: agent.description,
-            model: agent.model,
-            isExistingAgent: true,
-          },
-          config: {
-            agentId: agent.externalId,
-            name: agent.name,
-            description: agent.description,
-            model: agent.model,
-            isExistingAgent: true,
+        // Check if we're updating an existing Q&A node or creating a new one
+        const tools = targetNode.data?.tools as Tool[] | undefined
+        const isExistingQANode =
+          tools && tools.length > 0 && tools[0].type === "qna_agent"
+
+        if (isExistingQANode) {
+          // Update existing Q&A node with new agent selection
+          const qaAgentTool = {
+            id: tools[0].id || `tool-${selectedNodeForNext}`,
+            type: "qna_agent",
+            val: {
+              agentId: agent.externalId,
+              agentName: agent.name,
+              isExistingAgent: true,
+            },
+            value: {
+              agentId: agent.externalId,
+              agentName: agent.name,
+              isExistingAgent: true,
+            },
+            config: {
+              agentId: agent.externalId,
+              name: agent.name,
+              description: `Q&A agent using ${agent.name}`,
+              isExistingAgent: true,
+            },
           }
-        }
 
-        const newNode = {
-          id: newNodeId,
-          type: "stepNode",
-          position: {
-            x: 400,
-            y: sourceNode.position.y + 250,
-          },
-          data: {
-            step: {
-              id: newNodeId,
+          // Update the existing node
+          setNodes((prevNodes) =>
+            prevNodes.map((node) =>
+              node.id === selectedNodeForNext
+                ? {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      step: {
+                        ...(node.data.step as any),
+                        name: `Q&A - ${agent.name}`,
+                        description: `Q&A agent using ${agent.name}`,
+                        config: {
+                          ...(node.data.step as any)?.config,
+                          agentId: agent.externalId,
+                          agentName: agent.name,
+                          isExistingAgent: true,
+                        },
+                      },
+                      tools: [qaAgentTool],
+                    },
+                    selected: false,
+                  }
+                : { ...node, selected: false },
+            ),
+          )
+
+          // Reset state for existing node update
+          setSelectedNodeForNext(null)
+        } else {
+          // Create new Q&A Agent node using the selected agent
+          const newNodeId = `qa-agent-${nodeCounter}`
+
+          // Create the tool object for Q&A Agent using the selected agent
+          const qaAgentTool = {
+            id: `tool-${newNodeId}`,
+            type: "qna_agent",
+            val: {
+              agentId: agent.externalId,
+              agentName: agent.name,
+              isExistingAgent: true,
+            },
+            value: {
+              agentId: agent.externalId,
+              agentName: agent.name,
+              isExistingAgent: true,
+            },
+            config: {
+              agentId: agent.externalId,
+              name: agent.name,
+              description: `Q&A agent using ${agent.name}`,
+              isExistingAgent: true,
+            },
+          }
+
+          // Create new node positioned below the source node
+          const newNode = {
+            id: newNodeId,
+            type: "stepNode",
+            position: {
+              x: 400, // Consistent X position for perfect straight line alignment
+              y: targetNode.position.y + 250, // Increased consistent vertical spacing for straight lines
+            },
+            data: {
+              step: {
+                id: newNodeId,
+                name: `Q&A - ${agent.name}`,
+                description: `Q&A agent using ${agent.name}`,
+                type: "qna_agent",
+                status: "pending",
+                contents: [],
+                config: {
+                  agentId: agent.externalId,
+                  agentName: agent.name,
+                  isExistingAgent: true,
+                },
+              },
+              tools: [qaAgentTool],
+              isActive: false,
+              isCompleted: false,
+              hasNext: true, // Show + button on new step
+            },
+            draggable: true,
+            selected: true, // Select the newly created node
+          }
+
+          // Create edge connecting source to new node
+          const newEdge = {
+            id: `${selectedNodeForNext}-${newNodeId}`,
+            source: selectedNodeForNext,
+            target: newNodeId,
+            type: "smoothstep",
+            animated: false,
+            style: {
+              stroke: "#D1D5DB",
+              strokeWidth: 2,
+              strokeLinecap: "round",
+              strokeLinejoin: "round",
+            },
+            pathOptions: {
+              borderRadius: 20,
+              offset: 20,
+            },
+            markerEnd: {
+              type: "arrowclosed" as const,
+              color: "#D1D5DB",
+            },
+            sourceHandle: "bottom",
+            targetHandle: "top",
+          } as any
+
+          // Update nodes and edges
+          setNodes((prevNodes) => [...prevNodes, newNode])
+          setEdges((prevEdges) => [...prevEdges, newEdge])
+          setNodeCounter((prev) => prev + 1)
+
+          // Remove hasNext from source node since it now has a next step
+          setNodes((prevNodes) =>
+            prevNodes.map(
+              (node) =>
+                node.id === selectedNodeForNext
+                  ? {
+                      ...node,
+                      data: {
+                        ...node.data,
+                        hasNext: false,
+                      },
+                      selected: false, // Deselect source node
+                    }
+                  : node.id === newNodeId
+                    ? node // Keep new node selected
+                    : { ...node, selected: false }, // Deselect all other nodes
+            ),
+          )
+
+          // Reset state
+          setSelectedNodeForNext(null)
+
+          // Reset zoom and auto-fit workflow after creating node
+          setZoomLevel(100)
+          setTimeout(() => {
+            smartFitWorkflow()
+          }, 50)
+        }
+      }
+    },
+    [
+      selectedNodeForNext,
+      nodes,
+      setNodes,
+      setEdges,
+      nodeCounter,
+      setNodeCounter,
+      smartFitWorkflow,
+    ],
+  )
+
+  const handleSaveExistingAgentToCanvas = useCallback(
+    (agent: SelectPublicAgent) => {
+      if (selectedNodeForNext) {
+        const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
+        if (sourceNode) {
+          const newNodeId = `agent-${nodeCounter}`
+
+          const agentTool = {
+            id: `tool-${newNodeId}`,
+            type: "ai_agent",
+            val: {
+              agentId: agent.externalId,
               name: agent.name,
               description: agent.description,
-              type: "ai_agent",
-              status: "pending",
-              contents: [],
-              agentId: agent.externalId,
+              model: agent.model,
+              isExistingAgent: true,
             },
-            tools: [agentTool],
-            isActive: false,
-            isCompleted: false,
-            hasNext: true,
-          },
-          draggable: true,
-          selected: true,
+            value: {
+              agentId: agent.externalId,
+              name: agent.name,
+              description: agent.description,
+              model: agent.model,
+              isExistingAgent: true,
+            },
+            config: {
+              agentId: agent.externalId,
+              name: agent.name,
+              description: agent.description,
+              model: agent.model,
+              isExistingAgent: true,
+            },
+          }
+
+          const newNode = {
+            id: newNodeId,
+            type: "stepNode",
+            position: {
+              x: 400,
+              y: sourceNode.position.y + 250,
+            },
+            data: {
+              step: {
+                id: newNodeId,
+                name: agent.name,
+                description: agent.description,
+                type: "ai_agent",
+                status: "pending",
+                contents: [],
+                agentId: agent.externalId,
+              },
+              tools: [agentTool],
+              isActive: false,
+              isCompleted: false,
+              hasNext: true,
+            },
+            draggable: true,
+            selected: true,
+          }
+
+          const newEdge = {
+            id: `${selectedNodeForNext}-${newNodeId}`,
+            source: selectedNodeForNext,
+            target: newNodeId,
+            type: "smoothstep",
+            animated: false,
+            style: {
+              stroke: "#D1D5DB",
+              strokeWidth: 2,
+              strokeLinecap: "round",
+              strokeLinejoin: "round",
+            },
+            markerEnd: {
+              type: "arrowclosed",
+              color: "#D1D5DB",
+            },
+            sourceHandle: "bottom",
+            targetHandle: "top",
+          } as any
+
+          // Update workflow state
+          setNodes((prevNodes) => [...prevNodes, newNode])
+          setEdges((prevEdges) => [...prevEdges, newEdge])
+          setNodeCounter((prev) => prev + 1)
+
+          // Remove hasNext from source node and manage selections
+          setNodes((prevNodes) =>
+            prevNodes.map((node) =>
+              node.id === selectedNodeForNext
+                ? {
+                    ...node,
+                    data: { ...node.data, hasNext: false },
+                    selected: false,
+                  }
+                : node.id === newNodeId
+                  ? node
+                  : { ...node, selected: false },
+            ),
+          )
+
+          // Close the preview sidebar
+          setShowExistingAgentConfigUI(false)
+          setSelectedAgentForPreview(null)
+          setSelectedNodeForNext(null)
+
+          // Smart fit
+          setTimeout(() => {
+            smartFitWorkflow()
+          }, 50)
         }
-
-        const newEdge = {
-          id: `${selectedNodeForNext}-${newNodeId}`,
-          source: selectedNodeForNext,
-          target: newNodeId,
-          type: "smoothstep",
-          animated: false,
-          style: {
-            stroke: "#D1D5DB",
-            strokeWidth: 2,
-            strokeLinecap: "round",
-            strokeLinejoin: "round",
-          },
-          markerEnd: {
-            type: "arrowclosed",
-            color: "#D1D5DB",
-          },
-          sourceHandle: "bottom",
-          targetHandle: "top",
-        } as any
-
-        // Update workflow state
-        setNodes((prevNodes) => [...prevNodes, newNode])
-        setEdges((prevEdges) => [...prevEdges, newEdge])
-        setNodeCounter((prev) => prev + 1)
-
-        // Remove hasNext from source node and manage selections
-        setNodes((prevNodes) =>
-          prevNodes.map((node) =>
-            node.id === selectedNodeForNext
-              ? {
-                ...node,
-                data: { ...node.data, hasNext: false },
-                selected: false,
-              }
-              : node.id === newNodeId
-                ? node
-                : { ...node, selected: false },
-          ),
-        )
-        
-        // Close the preview sidebar
-        setShowExistingAgentConfigUI(false)
-        setSelectedAgentForPreview(null)
-        setSelectedNodeForNext(null)
-
-        // Smart fit
-        setTimeout(() => {
-          smartFitWorkflow()
-        }, 50)
       }
-    }
-  }, [selectedNodeForNext, nodes, nodeCounter, setNodes, setEdges, setNodeCounter, smartFitWorkflow])
+    },
+    [
+      selectedNodeForNext,
+      nodes,
+      nodeCounter,
+      setNodes,
+      setEdges,
+      setNodeCounter,
+      smartFitWorkflow,
+    ],
+  )
 
   // Watch for nodes changes and smart fit the entire workflow
   const previousRealNodeCount = useRef(0)
   useEffect(() => {
     // Check if we have real workflow nodes (exclude trigger selector placeholder)
-    const realNodes = nodes.filter(node => {
+    const realNodes = nodes.filter((node) => {
       const nodeData = node.data as any
-      return nodeData?.step?.type !== "trigger_selector" && !nodeData?.isTriggerSelector
+      return (
+        nodeData?.step?.type !== "trigger_selector" &&
+        !nodeData?.isTriggerSelector
+      )
     })
 
-    if (realNodes.length > previousRealNodeCount.current && realNodes.length > 0) {
+    if (
+      realNodes.length > previousRealNodeCount.current &&
+      realNodes.length > 0
+    ) {
       // Smart fit the entire workflow to keep everything visible for real nodes
       smartFitWorkflow()
     }
@@ -3109,86 +3332,90 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         : templateToUse.steps
 
       // Sort steps by step_order or creation order before creating nodes
-      const sortedSteps = stepsData ? [...stepsData].sort((a, b) => {
-        // First try to sort by step_order in metadata
-        const orderA = a.metadata?.step_order ?? 999
-        const orderB = b.metadata?.step_order ?? 999
-        if (orderA !== orderB) {
-          return orderA - orderB
-        }
-        // Fallback to sorting by nextStepIds relationships
-        // If step A's nextStepIds contains step B's id, A should come first
-        if (a.nextStepIds?.includes(b.id)) return -1
-        if (b.nextStepIds?.includes(a.id)) return 1
-        // Final fallback to creation time
-        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      }) : []
+      const sortedSteps = stepsData
+        ? [...stepsData].sort((a, b) => {
+            // First try to sort by step_order in metadata
+            const orderA = a.metadata?.step_order ?? 999
+            const orderB = b.metadata?.step_order ?? 999
+            if (orderA !== orderB) {
+              return orderA - orderB
+            }
+            // Fallback to sorting by nextStepIds relationships
+            // If step A's nextStepIds contains step B's id, A should come first
+            if (a.nextStepIds?.includes(b.id)) return -1
+            if (b.nextStepIds?.includes(a.id)) return 1
+            // Final fallback to creation time
+            return (
+              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+            )
+          })
+        : []
 
       // Create nodes from steps in top-down layout
-      const templateNodes: Node[] = sortedSteps.map((step: any, index: number) => {
-        // Find associated tools for this step
-        let stepTools = []
-        let toolExecutions: any[] = []
+      const templateNodes: Node[] = sortedSteps.map(
+        (step: any, index: number) => {
+          // Find associated tools for this step
+          let stepTools = []
+          let toolExecutions: any[] = []
 
+          if (isExecution) {
+            // For executions, get tool executions from toolExecIds
+            toolExecutions =
+              templateToUse.toolExecutions?.filter((toolExec) =>
+                step.toolExecIds?.includes(toolExec.id),
+              ) || []
 
-        if (isExecution) {
-          // For executions, get tool executions from toolExecIds
-          toolExecutions =
-            templateToUse.toolExecutions?.filter((toolExec) =>
-              step.toolExecIds?.includes(toolExec.id),
-            ) || []
+            // Create tool info from executions
+            stepTools = toolExecutions.map((toolExec) => ({
+              id: toolExec.id,
+              type: "execution_tool",
+              config: toolExec.result || {},
+              toolExecutionId: toolExec.id,
+              status: toolExec.status,
+              result: toolExec.result,
+            }))
+          } else {
+            // For templates, use workflow_tools
+            stepTools =
+              templateToUse.workflow_tools?.filter((tool) =>
+                step.toolIds?.includes(tool.id),
+              ) || []
+          }
 
-          // Create tool info from executions
-          stepTools = toolExecutions.map((toolExec) => ({
-            id: toolExec.id,
-            type: "execution_tool",
-            config: toolExec.result || {},
-            toolExecutionId: toolExec.id,
-            status: toolExec.status,
-            result: toolExec.result,
-          }))
-        } else {
-          // For templates, use workflow_tools
-          stepTools =
-            templateToUse.workflow_tools?.filter((tool) =>
-              step.toolIds?.includes(tool.id),
-            ) || []
-        }
+          // Check if this is the last step (no nextStepIds or empty nextStepIds)
+          const isLastStep = !step.nextStepIds || step.nextStepIds.length === 0
+          const hasNextFlag = isLastStep
 
-
-        // Check if this is the last step (no nextStepIds or empty nextStepIds)
-        const isLastStep = !step.nextStepIds || step.nextStepIds.length === 0
-        const hasNextFlag = isLastStep
-
-        return {
-          id: step.id,
-          type: "stepNode",
-          position: {
-            x: 400, // Consistent X position for perfect vertical straight line alignment
-            y: 100 + index * 250, // Increased spacing for better visual separation while maintaining straight lines
-          },
-          data: {
-            step: {
-              id: step.id,
-              name: step.name,
-              status: isExecution ? step.status : "pending",
-              description:
-                step.description || step.metadata?.automated_description,
-              type: step.type,
-              contents: [],
-              metadata: step.metadata,
-              config: step.metadata, // Use metadata as config for trigger nodes (jira, webhook, etc.)
-              isExecution,
-              toolExecutions: isExecution ? toolExecutions : undefined,
+          return {
+            id: step.id,
+            type: "stepNode",
+            position: {
+              x: 400, // Consistent X position for perfect vertical straight line alignment
+              y: 100 + index * 250, // Increased spacing for better visual separation while maintaining straight lines
             },
-            tools: stepTools,
-            isActive: isExecution && step.status === "running",
-            isCompleted: isExecution && step.status === "completed",
-            hasNext: hasNextFlag, // Show plus button on last step
-          },
-          draggable: true,
-        }
-      })
+            data: {
+              step: {
+                id: step.id,
+                name: step.name,
+                status: isExecution ? step.status : "pending",
+                description:
+                  step.description || step.metadata?.automated_description,
+                type: step.type,
+                contents: [],
+                metadata: step.metadata,
+                config: step.metadata, // Use metadata as config for trigger nodes (jira, webhook, etc.)
+                isExecution,
+                toolExecutions: isExecution ? toolExecutions : undefined,
+              },
+              tools: stepTools,
+              isActive: isExecution && step.status === "running",
+              isCompleted: isExecution && step.status === "completed",
+              hasNext: hasNextFlag, // Show plus button on last step
+            },
+            draggable: true,
+          }
+        },
+      )
 
       // Create edges from nextStepIds
       const templateEdges: Edge[] = []
@@ -3253,7 +3480,15 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         fitView({ padding: 0.2 })
       }, 50)
     }
-  }, [selectedTemplate, localSelectedTemplate, setNodes, setEdges, fitView, currentWorkflowName, setCurrentWorkflowName])
+  }, [
+    selectedTemplate,
+    localSelectedTemplate,
+    setNodes,
+    setEdges,
+    fitView,
+    currentWorkflowName,
+    setCurrentWorkflowName,
+  ])
 
   // Monitor workflow changes to enable/disable Save Changes button
   useEffect(() => {
@@ -3261,16 +3496,18 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       const currentHash = createWorkflowHash()
 
       // Check if we have a valid trigger node (not just the trigger selector)
-      const hasValidTrigger = nodes.some(node => {
+      const hasValidTrigger = nodes.some((node) => {
         const nodeData = node.data as any
-        return nodeData?.step?.type &&
-               nodeData.step.type !== "trigger_selector" &&
-               (nodeData.step.type === "form_submission" ||
-                nodeData.step.type === "manual" ||
-                nodeData.step.type === "schedule" ||
-                nodeData.step.type === "app_event" ||
-                nodeData.step.type === "webhook" ||
-                nodeData.step.type === "jira")
+        return (
+          nodeData?.step?.type &&
+          nodeData.step.type !== "trigger_selector" &&
+          (nodeData.step.type === "form_submission" ||
+            nodeData.step.type === "manual" ||
+            nodeData.step.type === "schedule" ||
+            nodeData.step.type === "app_event" ||
+            nodeData.step.type === "webhook" ||
+            nodeData.step.type === "jira")
+        )
       })
 
       if (lastSavedHash === "" && hasValidTrigger) {
@@ -3348,7 +3585,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowAIAgentConfigUI(false)
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
-setShowWebhookConfigUI(false)
+      setShowWebhookConfigUI(false)
       setShowHttpRequestConfigUI(false)
       setShowJiraConfigUI(false)
       setSelectedNodeForNext(null)
@@ -3369,14 +3606,13 @@ setShowWebhookConfigUI(false)
           setShowOnFormSubmissionUI(true)
           break
 
-
         case "email":
           // Open Email config sidebar
           setSelectedEmailNodeId(node.id)
           setShowEmailConfigUI(true)
           break
 
-case "http_request":
+        case "http_request":
           // Open HTTP Request config sidebar
           setSelectedHttpRequestNodeId(node.id)
           setShowHttpRequestConfigUI(true)
@@ -3401,7 +3637,8 @@ case "http_request":
             setJiraToolId(jiraTool.id)
 
             // Fetch from backend to ensure we have latest data
-            workflowToolsAPI.getTool(jiraTool.id)
+            workflowToolsAPI
+              .getTool(jiraTool.id)
               .then((toolData) => {
                 setJiraInitialConfig({
                   ...toolData.config,
@@ -3431,7 +3668,7 @@ case "http_request":
           if (isExistingAgent) {
             // ✅ Open in "view" mode (no Save button)
             setSelectedExistingAgentNodeId(node.id)
-            setExistingAgentConfigMode("view")  // ✅ Set mode
+            setExistingAgentConfigMode("view") // ✅ Set mode
             setShowExistingAgentConfigUI(true)
           } else {
             setSelectedAgentNodeId(node.id)
@@ -3443,15 +3680,22 @@ case "http_request":
           // Check if this is an existing agent or workflow agent
           const qaTools = node.data?.tools as Tool[] | undefined
           const isExistingQAAgent = qaTools?.[0]?.config?.isExistingAgent
-          const hasQAAgentTool = qaTools && qaTools.length > 0 && qaTools[0].type === "qna_agent"
-          
-          // Check if Q&A agent is configured (has an agent assigned)
-          const qaConfig = (node.data?.step as any)?.config || (hasQAAgentTool && qaTools?.[0]?.val) || {}
-          const isQAConfigured = isExistingQAAgent || 
-            (qaConfig?.agentId && qaConfig?.agentName) ||
-            (hasQAAgentTool && qaTools?.[0]?.val && typeof qaTools?.[0]?.val === 'object' && (qaTools?.[0]?.val as any)?.agentId)
+          const hasQAAgentTool =
+            qaTools && qaTools.length > 0 && qaTools[0].type === "qna_agent"
 
-          
+          // Check if Q&A agent is configured (has an agent assigned)
+          const qaConfig =
+            (node.data?.step as any)?.config ||
+            (hasQAAgentTool && qaTools?.[0]?.val) ||
+            {}
+          const isQAConfigured =
+            isExistingQAAgent ||
+            (qaConfig?.agentId && qaConfig?.agentName) ||
+            (hasQAAgentTool &&
+              qaTools?.[0]?.val &&
+              typeof qaTools?.[0]?.val === "object" &&
+              (qaTools?.[0]?.val as any)?.agentId)
+
           if (isExistingQAAgent && isQAConfigured) {
             // ✅ Open in "view" mode (no Save button) - same as AI agents
             setSelectedExistingAgentNodeId(node.id)
@@ -3469,8 +3713,6 @@ case "http_request":
           }
           break
 
-
-
         default:
           if (onStepClick) {
             onStepClick(step)
@@ -3487,7 +3729,7 @@ case "http_request":
       showEmailConfigUI,
       selectedEmailNodeId,
       showOnFormSubmissionUI,
-      selectedFormNodeId
+      selectedFormNodeId,
     ],
   )
 
@@ -3543,18 +3785,22 @@ case "http_request":
     try {
       const response = await api.workflow.templates.$get()
       if (!response.ok) {
-        throw new Error(`Failed to fetch templates: ${response.status} ${response.statusText}`)
+        throw new Error(
+          `Failed to fetch templates: ${response.status} ${response.statusText}`,
+        )
       }
 
       const result = await response.json()
       if (result.success && result.data) {
         setAvailableTemplates(result.data)
       } else {
-        throw new Error('Invalid response format')
+        throw new Error("Invalid response format")
       }
     } catch (error) {
-      console.error('Error fetching templates:', error)
-      setTemplatesError(error instanceof Error ? error.message : 'Failed to fetch templates')
+      console.error("Error fetching templates:", error)
+      setTemplatesError(
+        error instanceof Error ? error.message : "Failed to fetch templates",
+      )
       setAvailableTemplates([])
     } finally {
       setTemplatesLoading(false)
@@ -3668,8 +3914,8 @@ case "http_request":
       setShowAIAgentConfigUI(false)
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
-      setShowAgentsSidebar(false)              // ✅ ADD THIS
-      setQAAgentSelectionMode(false)           // ✅ Reset QA selection mode to prevent stale state
+      setShowAgentsSidebar(false) // ✅ ADD THIS
+      setQAAgentSelectionMode(false) // ✅ Reset QA selection mode to prevent stale state
       setShowExistingAgentConfigUI(false)
       setShowWebhookConfigUI(false)
       setShowHttpRequestConfigUI(false)
@@ -3677,8 +3923,6 @@ case "http_request":
       // Open What Happens Next sidebar
       setSelectedNodeForNext(nodeId)
       setShowWhatHappensNextUI(true)
-
-
     }
 
     const handleOpenTriggersSidebar = (event: CustomEvent) => {
@@ -3691,7 +3935,7 @@ case "http_request":
 
       setShowWebhookConfigUI(false)
       setShowHttpRequestConfigUI(false)
-      
+
       // Open Triggers sidebar
       setShowTriggersSidebar(true)
     }
@@ -3705,7 +3949,6 @@ case "http_request":
       "openTriggersSidebar" as any,
       handleOpenTriggersSidebar,
     )
-
 
     return () => {
       window.removeEventListener(
@@ -3723,13 +3966,13 @@ case "http_request":
   useEffect(() => {
     const anySelected = selectedNodes.length > 0
     setNodes((prevNodes) =>
-      prevNodes.map(node => ({
+      prevNodes.map((node) => ({
         ...node,
         data: {
           ...node.data,
-          anyNodeSelected: anySelected
-        }
-      }))
+          anyNodeSelected: anySelected,
+        },
+      })),
     )
   }, [selectedNodes, setNodes])
 
@@ -3767,9 +4010,9 @@ case "http_request":
                     isCompleted: true,
                     step: node.data.step
                       ? {
-                        ...node.data.step,
-                        status: "completed",
-                      }
+                          ...node.data.step,
+                          status: "completed",
+                        }
                       : node.data.step,
                   },
                 })),
@@ -3788,9 +4031,9 @@ case "http_request":
                   isCompleted: false,
                   step: node.data.step
                     ? {
-                      ...node.data.step,
-                      status: "failed",
-                    }
+                        ...node.data.step,
+                        status: "failed",
+                      }
                     : node.data.step,
                 },
               })),
@@ -3808,9 +4051,9 @@ case "http_request":
                   isCompleted: false,
                   step: node.data.step
                     ? {
-                      ...node.data.step,
-                      status: "running",
-                    }
+                        ...node.data.step,
+                        status: "running",
+                      }
                     : node.data.step,
                 },
               })),
@@ -3855,78 +4098,103 @@ case "http_request":
     }
   }, [pollingInterval])
 
-  const executeWorkflow = useCallback(async (file?: File) => {
-    if (file) {
-      try {
-        // Check if we have a valid template (prioritize createdTemplate over selectedTemplate)
-        const currentTemplate = createdTemplate || selectedTemplate
-        const templateId = currentTemplate?.id
-        if (!templateId || templateId === "custom") {
-          throw new Error("Cannot execute workflow with file: No valid template ID available. Please save the workflow as a template first.")
-        }
-
-        // Create form data matching the curl command format
-        const formData: Record<string, any> = {
-          name: `${currentTemplate?.name || "Workflow"} - ${new Date().toLocaleString()}`,
-          description: `Execution of ${currentTemplate?.name || "workflow"} with file: ${file.name}`,
-          file_description: `Test document: ${file.name}`,
-        }
-
-        const executionData = {
-          name: formData.name,
-          description: formData.description,
-          file: file,
-          formData: formData,
-        }
-
-        const response = await workflowExecutionsAPI.executeTemplate(
-          templateId,
-          executionData,
-        )
-
-        // Handle response similar to execution modal
-        if (response.error || response.status === "error") {
-          console.error("Execution failed:", response.error || response.message)
-          throw new Error(response.error || response.message || "Execution failed")
-        } else {
-          // Extract execution ID from response.data.execution.id
-          const executionId = response.data?.execution?.id
-
-          if (executionId) {
-            // Start polling for completion with the execution ID
-            startPolling(executionId)
-          } else {
-            console.warn("No execution ID found in response")
+  const executeWorkflow = useCallback(
+    async (file?: File) => {
+      if (file) {
+        try {
+          // Check if we have a valid template (prioritize createdTemplate over selectedTemplate)
+          const currentTemplate = createdTemplate || selectedTemplate
+          const templateId = currentTemplate?.id
+          if (!templateId || templateId === "custom") {
+            throw new Error(
+              "Cannot execute workflow with file: No valid template ID available. Please save the workflow as a template first.",
+            )
           }
+
+          // Create form data matching the curl command format
+          const formData: Record<string, any> = {
+            name: `${currentTemplate?.name || "Workflow"} - ${new Date().toLocaleString()}`,
+            description: `Execution of ${currentTemplate?.name || "workflow"} with file: ${file.name}`,
+            file_description: `Test document: ${file.name}`,
+          }
+
+          const executionData = {
+            name: formData.name,
+            description: formData.description,
+            file: file,
+            formData: formData,
+          }
+
+          const response = await workflowExecutionsAPI.executeTemplate(
+            templateId,
+            executionData,
+          )
+
+          // Handle response similar to execution modal
+          if (response.error || response.status === "error") {
+            console.error(
+              "Execution failed:",
+              response.error || response.message,
+            )
+            throw new Error(
+              response.error || response.message || "Execution failed",
+            )
+          } else {
+            // Extract execution ID from response.data.execution.id
+            const executionId = response.data?.execution?.id
+
+            if (executionId) {
+              // Start polling for completion with the execution ID
+              startPolling(executionId)
+            } else {
+              console.warn("No execution ID found in response")
+            }
+          }
+
+          return response
+        } catch (error) {
+          console.error("Execution error:", error)
+          throw error
+        }
+      } else {
+        // Check if we have nodes to create a workflow
+        if (nodes.length === 0) {
+          throw new Error(
+            "Cannot execute workflow: No workflow steps defined. Please add at least one step to your workflow.",
+          )
         }
 
-        return response
-      } catch (error) {
-        console.error("Execution error:", error)
-        throw error
-      }
-    } else {
-      // Check if we have nodes to create a workflow
-      if (nodes.length === 0) {
-        throw new Error("Cannot execute workflow: No workflow steps defined. Please add at least one step to your workflow.")
-      }
+        // Check if we already have a saved template
+        const currentTemplate = createdTemplate || selectedTemplate
 
-      // Check if we already have a saved template
-      const currentTemplate = createdTemplate || selectedTemplate
+        if (
+          currentTemplate &&
+          currentTemplate.id &&
+          currentTemplate.id !== "pending-creation"
+        ) {
+          // We have a valid saved template, open the execution modal directly
+          setShowExecutionModal(true)
+          return
+        }
 
-      if (currentTemplate && currentTemplate.id && currentTemplate.id !== 'pending-creation') {
-        // We have a valid saved template, open the execution modal directly
-        setShowExecutionModal(true)
-        return
+        // If no saved template exists, show snackbar message instead of throwing error
+        showSnackbarMessage(
+          "Cannot execute workflow: No saved template found. Please save the workflow first using the 'Save Changes' button.",
+          "warning",
+        )
       }
-
-      // If no saved template exists, show snackbar message instead of throwing error
-      showSnackbarMessage(
-        "Cannot execute workflow: No saved template found. Please save the workflow first using the 'Save Changes' button.",
-        'warning'
-      )
-    }
-  }, [nodes, edges, templateWorkflow, selectedTemplate, createdTemplate, startPolling, getWorkflowName, showSnackbarMessage])
+    },
+    [
+      nodes,
+      edges,
+      templateWorkflow,
+      selectedTemplate,
+      createdTemplate,
+      startPolling,
+      getWorkflowName,
+      showSnackbarMessage,
+    ],
+  )
 
   const handleTriggerClick = useCallback(
     (triggerId: string) => {
@@ -3942,12 +4210,12 @@ case "http_request":
         setTimeout(() => {
           zoomTo(1)
         }, 50)
-} else if (triggerId === "webhook") {
+      } else if (triggerId === "webhook") {
         // Close TriggersSidebar with slide-out animation when WebhookConfigurationUI opens
         setShowTriggersSidebar(false)
         setSelectedWebhookNodeId("pending") // Temporary ID to indicate we're in creation mode
         setShowWebhookConfigUI(true)
-} else if (triggerId === "jira") {
+      } else if (triggerId === "jira") {
         // Close TriggersSidebar with slide-out animation when JiraConfigurationUI opens
         setShowTriggersSidebar(false)
         setSelectedJiraNodeId("pending") // Temporary ID to indicate we're in creation mode
@@ -3964,55 +4232,57 @@ case "http_request":
     [zoomTo],
   )
 
-
-  const handleWhatHappensNextAction = useCallback(async (actionId: string) => {
-    if (actionId === "ai_agent") {
-      // When AI Agent is selected from WhatHappensNextUI, keep it visible in background
-      if (selectedNodeForNext) {
-        // Keep selectedNodeForNext for later node creation on save
-        setSelectedAgentNodeId("pending") // Temporary ID to indicate we're in creation mode
-        setShowAIAgentConfigUI(true)
-        // Note: Keep WhatHappensNextUI visible in background (z-40)
-        // Don't close WhatHappensNextUI - let it stay visible behind the node sidebar
+  const handleWhatHappensNextAction = useCallback(
+    async (actionId: string) => {
+      if (actionId === "ai_agent") {
+        // When AI Agent is selected from WhatHappensNextUI, keep it visible in background
+        if (selectedNodeForNext) {
+          // Keep selectedNodeForNext for later node creation on save
+          setSelectedAgentNodeId("pending") // Temporary ID to indicate we're in creation mode
+          setShowAIAgentConfigUI(true)
+          // Note: Keep WhatHappensNextUI visible in background (z-40)
+          // Don't close WhatHappensNextUI - let it stay visible behind the node sidebar
+        }
+      } else if (actionId === "qna_agent") {
+        // When Q&A Agent is selected, show the agents sidebar for Q&A agent selection
+        if (selectedNodeForNext) {
+          setShowAgentsSidebar(true)
+          // Set a flag to indicate this is for Q&A agent selection
+          setQAAgentSelectionMode(true)
+          // Close the WhatHappensNextUI since we're opening the agents sidebar
+          setShowWhatHappensNextUI(false)
+        }
+      } else if (actionId === "email") {
+        // When Email is selected from WhatHappensNextUI, keep it visible in background
+        if (selectedNodeForNext) {
+          // Keep selectedNodeForNext for later node creation on save
+          setSelectedEmailNodeId("pending") // Temporary ID to indicate we're in creation mode
+          setShowEmailConfigUI(true)
+          // Note: Keep WhatHappensNextUI visible in background (z-40)
+          // Don't close WhatHappensNextUI - let it stay visible behind the node sidebar
+        }
+      } else if (actionId === "http_request") {
+        // When HTTP Request is selected from WhatHappensNextUI, keep it visible in background
+        if (selectedNodeForNext) {
+          // Keep selectedNodeForNext for later node creation on save
+          setSelectedHttpRequestNodeId("pending") // Temporary ID to indicate we're in creation mode
+          setShowHttpRequestConfigUI(true)
+          // Note: Keep WhatHappensNextUI visible in background (z-40)
+          // Don't close WhatHappensNextUI - let it stay visible behind the node sidebar
+        }
+      } else if (actionId === "select_agents") {
+        // When Select Agents is selected, show the agents sidebar for regular agent selection
+        if (selectedNodeForNext) {
+          setQAAgentSelectionMode(false)
+          setShowAgentsSidebar(true)
+          // Do NOT set QAAgentSelectionMode - this creates regular agent nodes, not Q&A nodes
+          // Close the WhatHappensNextUI since we're opening a different sidebar
+          setShowWhatHappensNextUI(false)
+        }
       }
-    } else if (actionId === "qna_agent") {
-      // When Q&A Agent is selected, show the agents sidebar for Q&A agent selection
-      if (selectedNodeForNext) {
-        setShowAgentsSidebar(true)
-        // Set a flag to indicate this is for Q&A agent selection
-        setQAAgentSelectionMode(true)
-        // Close the WhatHappensNextUI since we're opening the agents sidebar
-        setShowWhatHappensNextUI(false)
-      }
-    } else if (actionId === "email") {
-      // When Email is selected from WhatHappensNextUI, keep it visible in background
-      if (selectedNodeForNext) {
-        // Keep selectedNodeForNext for later node creation on save
-        setSelectedEmailNodeId("pending") // Temporary ID to indicate we're in creation mode
-        setShowEmailConfigUI(true)
-        // Note: Keep WhatHappensNextUI visible in background (z-40)
-        // Don't close WhatHappensNextUI - let it stay visible behind the node sidebar
-      }
-    } else if (actionId === "http_request") {
-      // When HTTP Request is selected from WhatHappensNextUI, keep it visible in background
-      if (selectedNodeForNext) {
-        // Keep selectedNodeForNext for later node creation on save
-        setSelectedHttpRequestNodeId("pending") // Temporary ID to indicate we're in creation mode
-        setShowHttpRequestConfigUI(true)
-        // Note: Keep WhatHappensNextUI visible in background (z-40)
-        // Don't close WhatHappensNextUI - let it stay visible behind the node sidebar
-      }
-    } else if (actionId === "select_agents") {
-      // When Select Agents is selected, show the agents sidebar for regular agent selection
-      if (selectedNodeForNext) {
-        setQAAgentSelectionMode(false)
-        setShowAgentsSidebar(true)
-        // Do NOT set QAAgentSelectionMode - this creates regular agent nodes, not Q&A nodes
-        // Close the WhatHappensNextUI since we're opening a different sidebar
-        setShowWhatHappensNextUI(false)
-      }
-    }
-  }, [selectedNodeForNext])
+    },
+    [selectedNodeForNext],
+  )
 
   const handleAIAgentConfigBack = useCallback(() => {
     setShowAIAgentConfigUI(false)
@@ -4028,7 +4298,7 @@ case "http_request":
       setSelectedNodeForNext(null)
       // Clear all node selections when sidebar closes
       setNodes((prevNodes) =>
-        prevNodes.map(node => ({ ...node, selected: false }))
+        prevNodes.map((node) => ({ ...node, selected: false })),
       )
       setSelectedNodes([])
     }
@@ -4048,7 +4318,7 @@ case "http_request":
       setSelectedNodeForNext(null)
       // Clear all node selections when sidebar closes
       setNodes((prevNodes) =>
-        prevNodes.map(node => ({ ...node, selected: false }))
+        prevNodes.map((node) => ({ ...node, selected: false })),
       )
       setSelectedNodes([])
     }
@@ -4145,19 +4415,20 @@ case "http_request":
 
           // Remove hasNext from source node since it now has a next step
           setNodes((prevNodes) =>
-            prevNodes.map((node) =>
-              node.id === selectedNodeForNext
-                ? {
-                  ...node,
-                  data: {
-                    ...node.data,
-                    hasNext: false,
-                  },
-                  selected: false, // Deselect source node
-                }
-                : node.id === newNodeId
-                  ? node // Keep new node selected
-                  : { ...node, selected: false }, // Deselect all other nodes
+            prevNodes.map(
+              (node) =>
+                node.id === selectedNodeForNext
+                  ? {
+                      ...node,
+                      data: {
+                        ...node.data,
+                        hasNext: false,
+                      },
+                      selected: false, // Deselect source node
+                    }
+                  : node.id === newNodeId
+                    ? node // Keep new node selected
+                    : { ...node, selected: false }, // Deselect all other nodes
             ),
           )
         }
@@ -4184,21 +4455,23 @@ case "http_request":
           nds.map((node) =>
             node.id === selectedAgentNodeId
               ? {
-                ...node,
-                data: {
-                  ...node.data,
-                  step: {
-                    ...(node.data.step || {}),
-                    name: agentConfig.name,
-                    config: {
-                      ...agentConfig,
-                      description: formattedDescription,
+                  ...node,
+                  data: {
+                    ...node.data,
+                    step: {
+                      ...(node.data.step || {}),
+                      name: agentConfig.name,
+                      config: {
+                        ...agentConfig,
+                        description: formattedDescription,
+                      },
                     },
+                    tools: [aiAgentTool],
+                    hasNext: !edges.some(
+                      (edge) => edge.source === selectedAgentNodeId,
+                    ),
                   },
-                  tools: [aiAgentTool],
-                  hasNext: !edges.some(edge => edge.source === selectedAgentNodeId),
-                },
-              }
+                }
               : node,
           ),
         )
@@ -4214,7 +4487,17 @@ case "http_request":
       setSelectedAgentNodeId(null)
       setSelectedNodeForNext(null)
     },
-    [selectedAgentNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, smartFitWorkflow],
+    [
+      selectedAgentNodeId,
+      selectedNodeForNext,
+      edges,
+      nodes,
+      setNodes,
+      setEdges,
+      nodeCounter,
+      setNodeCounter,
+      smartFitWorkflow,
+    ],
   )
 
   const handleQAAgentConfigSave = useCallback(
@@ -4303,19 +4586,20 @@ case "http_request":
 
           // Remove hasNext from source node since it now has a next step
           setNodes((prevNodes) =>
-            prevNodes.map((node) =>
-              node.id === selectedNodeForNext
-                ? {
-                  ...node,
-                  data: {
-                    ...node.data,
-                    hasNext: false,
-                  },
-                  selected: false, // Deselect source node
-                }
-                : node.id === newNodeId
-                  ? node // Keep new node selected
-                  : { ...node, selected: false }, // Deselect all other nodes
+            prevNodes.map(
+              (node) =>
+                node.id === selectedNodeForNext
+                  ? {
+                      ...node,
+                      data: {
+                        ...node.data,
+                        hasNext: false,
+                      },
+                      selected: false, // Deselect source node
+                    }
+                  : node.id === newNodeId
+                    ? node // Keep new node selected
+                    : { ...node, selected: false }, // Deselect all other nodes
             ),
           )
         }
@@ -4339,21 +4623,23 @@ case "http_request":
           nds.map((node) =>
             node.id === selectedQAAgentNodeId
               ? {
-                ...node,
-                data: {
-                  ...node.data,
-                  step: {
-                    ...(node.data.step || {}),
-                    name: agentConfig.name,
-                    config: {
-                      ...agentConfig,
-                      description: formattedDescription,
+                  ...node,
+                  data: {
+                    ...node.data,
+                    step: {
+                      ...(node.data.step || {}),
+                      name: agentConfig.name,
+                      config: {
+                        ...agentConfig,
+                        description: formattedDescription,
+                      },
                     },
+                    tools: [qaAgentTool],
+                    hasNext: !edges.some(
+                      (edge) => edge.source === selectedQAAgentNodeId,
+                    ),
                   },
-                  tools: [qaAgentTool],
-                  hasNext: !edges.some(edge => edge.source === selectedQAAgentNodeId),
-                },
-              }
+                }
               : node,
           ),
         )
@@ -4369,7 +4655,17 @@ case "http_request":
       setSelectedQAAgentNodeId(null)
       setSelectedNodeForNext(null)
     },
-    [selectedQAAgentNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, smartFitWorkflow],
+    [
+      selectedQAAgentNodeId,
+      selectedNodeForNext,
+      edges,
+      nodes,
+      setNodes,
+      setEdges,
+      nodeCounter,
+      setNodeCounter,
+      smartFitWorkflow,
+    ],
   )
 
   const handleEmailConfigBack = useCallback(() => {
@@ -4386,7 +4682,7 @@ case "http_request":
       setSelectedNodeForNext(null)
       // Clear all node selections when sidebar closes
       setNodes((prevNodes) =>
-        prevNodes.map(node => ({ ...node, selected: false }))
+        prevNodes.map((node) => ({ ...node, selected: false })),
       )
       setSelectedNodes([])
     }
@@ -4475,19 +4771,20 @@ case "http_request":
 
           // Remove hasNext from source node since it now has a next step
           setNodes((prevNodes) =>
-            prevNodes.map((node) =>
-              node.id === selectedNodeForNext
-                ? {
-                  ...node,
-                  data: {
-                    ...node.data,
-                    hasNext: false,
-                  },
-                  selected: false, // Deselect source node
-                }
-                : node.id === newNodeId
-                  ? node // Keep new node selected
-                  : { ...node, selected: false }, // Deselect all other nodes
+            prevNodes.map(
+              (node) =>
+                node.id === selectedNodeForNext
+                  ? {
+                      ...node,
+                      data: {
+                        ...node.data,
+                        hasNext: false,
+                      },
+                      selected: false, // Deselect source node
+                    }
+                  : node.id === newNodeId
+                    ? node // Keep new node selected
+                    : { ...node, selected: false }, // Deselect all other nodes
             ),
           )
         }
@@ -4510,21 +4807,23 @@ case "http_request":
           nds.map((node) =>
             node.id === selectedEmailNodeId
               ? {
-                ...node,
-                data: {
-                  ...node.data,
-                  step: {
-                    ...(node.data.step || {}),
-                    name: "Email",
-                    config: {
-                      sendingFrom: emailConfig.sendingFrom,
-                      emailAddresses: emailConfig.emailAddresses,
+                  ...node,
+                  data: {
+                    ...node.data,
+                    step: {
+                      ...(node.data.step || {}),
+                      name: "Email",
+                      config: {
+                        sendingFrom: emailConfig.sendingFrom,
+                        emailAddresses: emailConfig.emailAddresses,
+                      },
                     },
+                    tools: [emailTool],
+                    hasNext: !edges.some(
+                      (edge) => edge.source === selectedEmailNodeId,
+                    ),
                   },
-                  tools: [emailTool],
-                  hasNext: !edges.some(edge => edge.source === selectedEmailNodeId),
-                },
-              }
+                }
               : node,
           ),
         )
@@ -4540,12 +4839,22 @@ case "http_request":
       setSelectedEmailNodeId(null)
       setSelectedNodeForNext(null)
     },
-    [selectedEmailNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, smartFitWorkflow],
+    [
+      selectedEmailNodeId,
+      selectedNodeForNext,
+      edges,
+      nodes,
+      setNodes,
+      setEdges,
+      nodeCounter,
+      setNodeCounter,
+      smartFitWorkflow,
+    ],
   )
 
   const handleHttpRequestConfigBack = useCallback(() => {
     setShowHttpRequestConfigUI(false)
-    
+
     // If we're in creation mode (pending), go back to the "What Happens Next" menu
     if (selectedHttpRequestNodeId === "pending" && selectedNodeForNext) {
       // Ensure WhatHappensNextUI is visible when we go back
@@ -4556,8 +4865,8 @@ case "http_request":
       setSelectedHttpRequestNodeId(null)
       setSelectedNodeForNext(null)
       // Clear all node selections when sidebar closes
-      setNodes((prevNodes) => 
-        prevNodes.map(node => ({ ...node, selected: false }))
+      setNodes((prevNodes) =>
+        prevNodes.map((node) => ({ ...node, selected: false })),
       )
       setSelectedNodes([])
     }
@@ -4570,7 +4879,7 @@ case "http_request":
         const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
         if (sourceNode) {
           const newNodeId = `http-request-${nodeCounter}`
-          
+
           // Create the tool object for HTTP Request
           const httpTool = {
             id: `tool-${newNodeId}`,
@@ -4591,7 +4900,8 @@ case "http_request":
             data: {
               step: {
                 id: newNodeId,
-                name: httpConfig.title || `${httpConfig.method} ${httpConfig.url}`,
+                name:
+                  httpConfig.title || `${httpConfig.method} ${httpConfig.url}`,
                 type: "http_request",
                 status: "pending",
                 contents: [],
@@ -4638,23 +4948,27 @@ case "http_request":
 
           // Remove hasNext from source node since it now has a next step
           setNodes((prevNodes) =>
-            prevNodes.map((node) =>
-              node.id === selectedNodeForNext
-                ? {
-                    ...node,
-                    data: {
-                      ...node.data,
-                      hasNext: false,
-                    },
-                    selected: false, // Deselect source node
-                  }
-                : node.id === newNodeId
-                  ? node // Keep new node selected
-                  : { ...node, selected: false }, // Deselect all other nodes
+            prevNodes.map(
+              (node) =>
+                node.id === selectedNodeForNext
+                  ? {
+                      ...node,
+                      data: {
+                        ...node.data,
+                        hasNext: false,
+                      },
+                      selected: false, // Deselect source node
+                    }
+                  : node.id === newNodeId
+                    ? node // Keep new node selected
+                    : { ...node, selected: false }, // Deselect all other nodes
             ),
           )
         }
-      } else if (selectedHttpRequestNodeId && selectedHttpRequestNodeId !== "pending") {
+      } else if (
+        selectedHttpRequestNodeId &&
+        selectedHttpRequestNodeId !== "pending"
+      ) {
         // Update existing HTTP Request node with the configuration
         const httpTool = {
           id: getToolIdFromStepId(selectedHttpRequestNodeId),
@@ -4673,11 +4987,15 @@ case "http_request":
                     ...node.data,
                     step: {
                       ...(node.data.step || {}),
-                      name: httpConfig.title || `${httpConfig.method} ${httpConfig.url}`,
+                      name:
+                        httpConfig.title ||
+                        `${httpConfig.method} ${httpConfig.url}`,
                       config: httpConfig,
                     },
                     tools: [httpTool],
-                    hasNext: !edges.some(edge => edge.source === selectedHttpRequestNodeId),
+                    hasNext: !edges.some(
+                      (edge) => edge.source === selectedHttpRequestNodeId,
+                    ),
                   },
                 }
               : node,
@@ -4695,7 +5013,18 @@ case "http_request":
       setSelectedHttpRequestNodeId(null)
       setSelectedNodeForNext(null)
     },
-    [selectedHttpRequestNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, smartFitWorkflow, getToolIdFromStepId],
+    [
+      selectedHttpRequestNodeId,
+      selectedNodeForNext,
+      edges,
+      nodes,
+      setNodes,
+      setEdges,
+      nodeCounter,
+      setNodeCounter,
+      smartFitWorkflow,
+      getToolIdFromStepId,
+    ],
   )
 
   const handleOnFormSubmissionBack = useCallback(() => {
@@ -4714,7 +5043,7 @@ case "http_request":
       setSelectedFormNodeId(null)
       // Clear all node selections when sidebar closes
       setNodes((prevNodes) =>
-        prevNodes.map(node => ({ ...node, selected: false }))
+        prevNodes.map((node) => ({ ...node, selected: false })),
       )
       setSelectedNodes([])
     }
@@ -4722,7 +5051,7 @@ case "http_request":
 
   const handleWebhookConfigBack = useCallback(() => {
     setShowWebhookConfigUI(false)
-    
+
     // If we're in creation mode (pending), go back to triggers sidebar
     if (selectedWebhookNodeId === "pending") {
       setShowTriggersSidebar(true)
@@ -4735,8 +5064,8 @@ case "http_request":
       // If we're editing an existing node, just close the sidebar
       setSelectedWebhookNodeId(null)
       // Clear all node selections when sidebar closes
-      setNodes((prevNodes) => 
-        prevNodes.map(node => ({ ...node, selected: false }))
+      setNodes((prevNodes) =>
+        prevNodes.map((node) => ({ ...node, selected: false })),
       )
       setSelectedNodes([])
     }
@@ -4789,7 +5118,6 @@ case "http_request":
         setNodes([formNode])
         setNodeCounter(2)
         setSelectedNodes([formNode]) // Update selectedNodes for the anyNodeSelected flag
-
       } else if (selectedFormNodeId && selectedFormNodeId !== "pending") {
         // Update existing form submission node
         const formTool = {
@@ -4808,18 +5136,20 @@ case "http_request":
           nds.map((node) =>
             node.id === selectedFormNodeId
               ? {
-                ...node,
-                data: {
-                  ...node.data,
-                  step: {
-                    ...(node.data.step || {}),
-                    name: formConfig.title || "Form Submission",
-                    config: formConfig,
+                  ...node,
+                  data: {
+                    ...node.data,
+                    step: {
+                      ...(node.data.step || {}),
+                      name: formConfig.title || "Form Submission",
+                      config: formConfig,
+                    },
+                    tools: [formTool],
+                    hasNext: !edges.some(
+                      (edge) => edge.source === selectedFormNodeId,
+                    ),
                   },
-                  tools: [formTool],
-                  hasNext: !edges.some(edge => edge.source === selectedFormNodeId),
-                },
-              }
+                }
               : node,
           ),
         )
@@ -4833,10 +5163,17 @@ case "http_request":
         smartFitWorkflow()
       }, 50)
     },
-    [selectedFormNodeId, setNodes, setNodeCounter, setSelectedNodes, smartFitWorkflow, edges],
+    [
+      selectedFormNodeId,
+      setNodes,
+      setNodeCounter,
+      setSelectedNodes,
+      smartFitWorkflow,
+      edges,
+    ],
   )
 
-const handleWebhookConfigSave = useCallback(
+  const handleWebhookConfigSave = useCallback(
     async (webhookConfig: WebhookConfig) => {
       try {
         let savedWebhookData: any
@@ -4860,7 +5197,7 @@ const handleWebhookConfigSave = useCallback(
 
           // Create new webhook node when saving configuration
           const newNodeId = "webhook-trigger"
-          
+
           // Create the tool object for Webhook with backend response
           const webhookTool = {
             id: savedWebhookData?.id || `tool-${newNodeId}`,
@@ -4898,8 +5235,10 @@ const handleWebhookConfigSave = useCallback(
           setNodes([webhookNode])
           setNodeCounter(2)
           setSelectedNodes([webhookNode]) // Update selectedNodes for the anyNodeSelected flag
-
-        } else if (selectedWebhookNodeId && selectedWebhookNodeId !== "pending") {
+        } else if (
+          selectedWebhookNodeId &&
+          selectedWebhookNodeId !== "pending"
+        ) {
           // Update existing webhook - call API to update workflow_tool table
           const toolId = getToolIdFromStepId(selectedWebhookNodeId)
 
@@ -4907,17 +5246,20 @@ const handleWebhookConfigSave = useCallback(
             throw new Error("Tool ID not found for webhook node")
           }
 
-          savedWebhookData = await workflowToolsAPI.updateWebhookConfig(toolId, {
-            webhookUrl: webhookConfig.webhookUrl,
-            httpMethod: webhookConfig.httpMethod,
-            path: webhookConfig.path,
-            authentication: webhookConfig.authentication,
-            selectedCredential: webhookConfig.selectedCredential,
-            responseMode: webhookConfig.responseMode,
-            headers: webhookConfig.headers,
-            queryParams: webhookConfig.queryParams,
-            options: webhookConfig.options,
-          })
+          savedWebhookData = await workflowToolsAPI.updateWebhookConfig(
+            toolId,
+            {
+              webhookUrl: webhookConfig.webhookUrl,
+              httpMethod: webhookConfig.httpMethod,
+              path: webhookConfig.path,
+              authentication: webhookConfig.authentication,
+              selectedCredential: webhookConfig.selectedCredential,
+              responseMode: webhookConfig.responseMode,
+              headers: webhookConfig.headers,
+              queryParams: webhookConfig.queryParams,
+              options: webhookConfig.options,
+            },
+          )
 
           console.log("Webhook updated in backend:", savedWebhookData)
 
@@ -4943,7 +5285,9 @@ const handleWebhookConfigSave = useCallback(
                         config: savedWebhookData?.config || webhookConfig,
                       },
                       tools: [webhookTool],
-                      hasNext: !edges.some(edge => edge.source === selectedWebhookNodeId),
+                      hasNext: !edges.some(
+                        (edge) => edge.source === selectedWebhookNodeId,
+                      ),
                     },
                   }
                 : node,
@@ -4957,14 +5301,21 @@ const handleWebhookConfigSave = useCallback(
         setTimeout(() => {
           zoomTo(1)
         }, 50)
-
       } catch (error) {
         console.error("Failed to save webhook configuration:", error)
         // Show error message to user
         alert("Failed to save webhook configuration. Please try again.")
       }
     },
-    [selectedWebhookNodeId, setNodes, setNodeCounter, setSelectedNodes, zoomTo, edges, getToolIdFromStepId],
+    [
+      selectedWebhookNodeId,
+      setNodes,
+      setNodeCounter,
+      setSelectedNodes,
+      zoomTo,
+      edges,
+      getToolIdFromStepId,
+    ],
   )
 
   const handleJiraConfigBack = useCallback(() => {
@@ -4984,7 +5335,7 @@ const handleWebhookConfigSave = useCallback(
       setSelectedJiraNodeId(null)
       // Clear all node selections when sidebar closes
       setNodes((prevNodes) =>
-        prevNodes.map(node => ({ ...node, selected: false }))
+        prevNodes.map((node) => ({ ...node, selected: false })),
       )
       setSelectedNodes([])
     }
@@ -5066,7 +5417,6 @@ const handleWebhookConfigSave = useCallback(
           setNodes([jiraNode])
           setNodeCounter(2)
           setSelectedNodes([jiraNode]) // Update selectedNodes for the anyNodeSelected flag
-
         } else if (selectedJiraNodeId && selectedJiraNodeId !== "pending") {
           // Update existing Jira trigger - call API to update workflow_tool table
           const toolId = getToolIdFromStepId(selectedJiraNodeId)
@@ -5120,7 +5470,9 @@ const handleWebhookConfigSave = useCallback(
                         config: sanitizedConfig,
                       },
                       tools: [jiraTool],
-                      hasNext: !edges.some(edge => edge.source === selectedJiraNodeId),
+                      hasNext: !edges.some(
+                        (edge) => edge.source === selectedJiraNodeId,
+                      ),
                     },
                   }
                 : node,
@@ -5137,10 +5489,22 @@ const handleWebhookConfigSave = useCallback(
         }, 50)
       } catch (error) {
         console.error("Failed to save Jira configuration:", error)
-        showSnackbarMessage("Failed to save Jira configuration. Please try again.", "error")
+        showSnackbarMessage(
+          "Failed to save Jira configuration. Please try again.",
+          "error",
+        )
       }
     },
-    [selectedJiraNodeId, setNodes, setNodeCounter, setSelectedNodes, smartFitWorkflow, edges, getToolIdFromStepId, showSnackbarMessage],
+    [
+      selectedJiraNodeId,
+      setNodes,
+      setNodeCounter,
+      setSelectedNodes,
+      smartFitWorkflow,
+      edges,
+      getToolIdFromStepId,
+      showSnackbarMessage,
+    ],
   )
 
   const handleResultClick = useCallback((result: any) => {
@@ -5153,50 +5517,57 @@ const handleWebhookConfigSave = useCallback(
     setSelectedResult(null)
   }, [])
 
-  const handleTemplateSelect = useCallback(async (template: any) => {
-    // Find the full template data from availableTemplates
-    const fullTemplate = availableTemplates.find(t => t.id === template.id)
-    if (fullTemplate) {
-      try {
-        // Fetch detailed template data including steps and tools
-        const response = await api.workflow.templates[fullTemplate.id].$get()
-        if (response.ok) {
-          const result = await response.json()
-          if (result.success && result.data) {
-            // Set the detailed template which will trigger the useEffect to create nodes
-            setLocalSelectedTemplate(result.data)
+  const handleTemplateSelect = useCallback(
+    async (template: any) => {
+      // Find the full template data from availableTemplates
+      const fullTemplate = availableTemplates.find((t) => t.id === template.id)
+      if (fullTemplate) {
+        try {
+          // Fetch detailed template data including steps and tools
+          const response = await api.workflow.templates[fullTemplate.id].$get()
+          if (response.ok) {
+            const result = await response.json()
+            if (result.success && result.data) {
+              // Set the detailed template which will trigger the useEffect to create nodes
+              setLocalSelectedTemplate(result.data)
+            } else {
+              console.error("Failed to get detailed template data")
+              setLocalSelectedTemplate(fullTemplate)
+            }
           } else {
-            console.error('Failed to get detailed template data')
+            console.error("Failed to fetch detailed template")
             setLocalSelectedTemplate(fullTemplate)
           }
-        } else {
-          console.error('Failed to fetch detailed template')
+        } catch (error) {
+          console.error("Error fetching detailed template:", error)
           setLocalSelectedTemplate(fullTemplate)
         }
-      } catch (error) {
-        console.error('Error fetching detailed template:', error)
-        setLocalSelectedTemplate(fullTemplate)
+
+        // Also trigger a custom event that the parent component can listen to (optional)
+        const event = new CustomEvent("templateSelected", {
+          detail: fullTemplate,
+        })
+        window.dispatchEvent(event)
       }
 
-      // Also trigger a custom event that the parent component can listen to (optional)
-      const event = new CustomEvent('templateSelected', { detail: fullTemplate })
-      window.dispatchEvent(event)
-    }
-
-    setShowTemplateSelectionModal(false)
-  }, [availableTemplates])
+      setShowTemplateSelectionModal(false)
+    },
+    [availableTemplates],
+  )
 
   const handleTemplateModalClose = useCallback(() => {
     setShowTemplateSelectionModal(false)
   }, [])
 
-
   // Handler for workflow name change
-  const handleWorkflowNameChange = useCallback((newName: string) => {
-    setCurrentWorkflowName(newName)
-    // Here you could also update the selectedTemplate if needed
-    // or make an API call to save the name change
-  }, [currentWorkflowName])
+  const handleWorkflowNameChange = useCallback(
+    (newName: string) => {
+      setCurrentWorkflowName(newName)
+      // Here you could also update the selectedTemplate if needed
+      // or make an API call to save the name change
+    },
+    [currentWorkflowName],
+  )
 
   // Handler for refresh confirmation
   const handleConfirmRefresh = useCallback((callback: () => void) => {
@@ -5210,15 +5581,16 @@ const handleWebhookConfigSave = useCallback(
       // Only show warning if in builder mode with unsaved changes
       if (builder && hasWorkflowChanged) {
         event.preventDefault()
-        event.returnValue = 'You have unsaved changes. Are you sure you want to leave?'
-        return 'You have unsaved changes. Are you sure you want to leave?'
+        event.returnValue =
+          "You have unsaved changes. Are you sure you want to leave?"
+        return "You have unsaved changes. Are you sure you want to leave?"
       }
     }
 
     // Handler for keyboard refresh events (Cmd+R, Cmd+Shift+R)
     const handleKeyDown = (event: KeyboardEvent) => {
       // Check for Cmd+R or Cmd+Shift+R (Mac) or Ctrl+R, Ctrl+Shift+R (Windows/Linux)
-      const isRefreshKey = event.key === 'r' || event.key === 'R'
+      const isRefreshKey = event.key === "r" || event.key === "R"
       const isModifierPressed = event.metaKey || event.ctrlKey // Cmd on Mac, Ctrl on Windows/Linux
 
       if (isRefreshKey && isModifierPressed && builder && hasWorkflowChanged) {
@@ -5235,119 +5607,146 @@ const handleWebhookConfigSave = useCallback(
     }
 
     // Add event listeners
-    window.addEventListener('beforeunload', handleBeforeUnload)
-    window.addEventListener('keydown', handleKeyDown, true) // Use capture phase for better control
+    window.addEventListener("beforeunload", handleBeforeUnload)
+    window.addEventListener("keydown", handleKeyDown, true) // Use capture phase for better control
 
     // Cleanup event listeners
     return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload)
-      window.removeEventListener('keydown', handleKeyDown, true)
+      window.removeEventListener("beforeunload", handleBeforeUnload)
+      window.removeEventListener("keydown", handleKeyDown, true)
     }
   }, [builder, hasWorkflowChanged, handleConfirmRefresh])
 
   // Handler for save changes button
-  const handleSaveChanges = useCallback(async (isPublic: boolean) => {
-    try {
-      // Check if we have nodes to create a workflow
-      if (nodes.length === 0 || (nodes.length === 1 && (nodes[0].data as any)?.step?.type === "trigger_selector")) {
-        throw new Error("Cannot save workflow: No workflow steps defined. Please add at least one step to your workflow.")
-      }
-
-      // Create the workflow state payload that will be sent to the complex template API
-      // Use the centralized name resolution function to ensure consistency
-      const derivedName = getWorkflowName()
-
-      const workflowData = {
-        name: derivedName,
-        description: selectedTemplate?.description || "Workflow created from builder",
-        isPublic,
-        version: "1.0.0",
-        config: {
-          ai_model: "gemini-1.5-pro",
-          max_file_size: "10MB",
-          auto_execution: false,
-          schema_version: "1.0",
-          allowed_file_types: ["pdf", "docx", "txt"],
-          supports_file_upload: true,
-        },
-        nodes: nodes.map(node => ({
-          id: node.id,
-          type: node.type,
-          position: node.position,
-          data: {
-            step: node.data?.step,
-            tools: node.data?.tools,
-            isActive: node.data?.isActive,
-            isCompleted: node.data?.isCompleted,
-            hasNext: node.data?.hasNext,
-          }
-        })),
-        edges: edges.map(edge => ({
-          id: edge.id,
-          source: edge.source,
-          target: edge.target,
-          type: edge.type,
-          sourceHandle: edge.sourceHandle,
-          targetHandle: edge.targetHandle,
-          style: edge.style,
-          markerEnd: edge.markerEnd,
-        })),
-        metadata: {
-          nodeCount: nodes.length,
-          edgeCount: edges.length,
-          createdAt: new Date().toISOString(),
-          workflowType: templateWorkflow ? 'template-based' : 'user-created'
+  const handleSaveChanges = useCallback(
+    async (isPublic: boolean) => {
+      try {
+        // Check if we have nodes to create a workflow
+        if (
+          nodes.length === 0 ||
+          (nodes.length === 1 &&
+            (nodes[0].data as any)?.step?.type === "trigger_selector")
+        ) {
+          throw new Error(
+            "Cannot save workflow: No workflow steps defined. Please add at least one step to your workflow.",
+          )
         }
+
+        // Create the workflow state payload that will be sent to the complex template API
+        // Use the centralized name resolution function to ensure consistency
+        const derivedName = getWorkflowName()
+
+        const workflowData = {
+          name: derivedName,
+          description:
+            selectedTemplate?.description || "Workflow created from builder",
+          isPublic,
+          version: "1.0.0",
+          config: {
+            ai_model: "gemini-1.5-pro",
+            max_file_size: "10MB",
+            auto_execution: false,
+            schema_version: "1.0",
+            allowed_file_types: ["pdf", "docx", "txt"],
+            supports_file_upload: true,
+          },
+          nodes: nodes.map((node) => ({
+            id: node.id,
+            type: node.type,
+            position: node.position,
+            data: {
+              step: node.data?.step,
+              tools: node.data?.tools,
+              isActive: node.data?.isActive,
+              isCompleted: node.data?.isCompleted,
+              hasNext: node.data?.hasNext,
+            },
+          })),
+          edges: edges.map((edge) => ({
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            type: edge.type,
+            sourceHandle: edge.sourceHandle,
+            targetHandle: edge.targetHandle,
+            style: edge.style,
+            markerEnd: edge.markerEnd,
+          })),
+          metadata: {
+            nodeCount: nodes.length,
+            edgeCount: edges.length,
+            createdAt: new Date().toISOString(),
+            workflowType: templateWorkflow ? "template-based" : "user-created",
+          },
+        }
+
+        // Create the workflow template via complex.post API
+        const createResponse = await api.workflow.templates.complex.$post({
+          json: workflowData,
+        })
+
+        if (!createResponse.ok) {
+          const errorText = await createResponse.text()
+          throw new Error(
+            `Failed to create workflow template: ${createResponse.status} ${createResponse.statusText}. ${errorText.substring(0, 200)}`,
+          )
+        }
+
+        const createResult = await createResponse.json()
+
+        if (!createResult.success || !createResult.data) {
+          throw new Error(
+            "Failed to create workflow template: Invalid response format",
+          )
+        }
+
+        // Extract the created template ID
+        const createdTemplateId = createResult.data.id
+
+        // Update the created template state for future use
+        const newCreatedTemplate = {
+          id: createdTemplateId,
+          name: workflowData.name,
+          description: workflowData.description,
+          version: workflowData.version,
+          status: "active",
+          config: workflowData.config,
+          rootWorkflowStepTemplateId: "",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        } as any
+
+        setCreatedTemplate(newCreatedTemplate)
+
+        // Mark workflow as saved and update hash
+        const currentHash = createWorkflowHash()
+        setLastSavedHash(currentHash)
+        setIsWorkflowSaved(true)
+        setHasWorkflowChanged(false)
+
+        // Show success snackbar
+        showSnackbarMessage(
+          "Workflow saved successfully! You can now execute it.",
+          "success",
+        )
+      } catch (error) {
+        console.error("Failed to save workflow:", error)
+        showSnackbarMessage(
+          `Failed to save workflow: ${error instanceof Error ? error.message : "Unknown error"}`,
+          "error",
+        )
       }
-
-      // Create the workflow template via complex.post API
-      const createResponse = await api.workflow.templates.complex.$post({
-        json: workflowData,
-      })
-
-      if (!createResponse.ok) {
-        const errorText = await createResponse.text()
-        throw new Error(`Failed to create workflow template: ${createResponse.status} ${createResponse.statusText}. ${errorText.substring(0, 200)}`)
-      }
-
-      const createResult = await createResponse.json()
-
-      if (!createResult.success || !createResult.data) {
-        throw new Error("Failed to create workflow template: Invalid response format")
-      }
-
-      // Extract the created template ID
-      const createdTemplateId = createResult.data.id
-
-      // Update the created template state for future use
-      const newCreatedTemplate = {
-        id: createdTemplateId,
-        name: workflowData.name,
-        description: workflowData.description,
-        version: workflowData.version,
-        status: 'active',
-        config: workflowData.config,
-        rootWorkflowStepTemplateId: '',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      } as any
-
-      setCreatedTemplate(newCreatedTemplate)
-
-      // Mark workflow as saved and update hash
-      const currentHash = createWorkflowHash()
-      setLastSavedHash(currentHash)
-      setIsWorkflowSaved(true)
-      setHasWorkflowChanged(false)
-
-      // Show success snackbar
-      showSnackbarMessage("Workflow saved successfully! You can now execute it.", 'success')
-
-    } catch (error) {
-      console.error("Failed to save workflow:", error)
-      showSnackbarMessage(`Failed to save workflow: ${error instanceof Error ? error.message : "Unknown error"}`, 'error')
-    }
-  }, [nodes, edges, templateWorkflow, selectedTemplate, getWorkflowName, setCreatedTemplate, showSnackbarMessage])
+    },
+    [
+      nodes,
+      edges,
+      templateWorkflow,
+      selectedTemplate,
+      getWorkflowName,
+      setCreatedTemplate,
+      showSnackbarMessage,
+    ],
+  )
 
   // Use the centralized workflow name function for display consistency
 
@@ -5362,7 +5761,9 @@ const handleWebhookConfigSave = useCallback(
         onWorkflowNameChange={handleWorkflowNameChange}
         isEditable={builder}
         onSaveChanges={handleSaveChanges}
-        isSaveDisabled={!hasWorkflowChanged || (isWorkflowSaved && !hasWorkflowChanged)}
+        isSaveDisabled={
+          !hasWorkflowChanged || (isWorkflowSaved && !hasWorkflowChanged)
+        }
         hasUnsavedChanges={builder && hasWorkflowChanged}
         onConfirmRefresh={handleConfirmRefresh}
       />
@@ -5390,27 +5791,26 @@ const handleWebhookConfigSave = useCallback(
             snapToGrid={true}
             snapGrid={[20, 20]}
             defaultEdgeOptions={{
-              type: 'smoothstep',
+              type: "smoothstep",
               style: {
                 strokeWidth: 2,
-                stroke: '#D1D5DB',
-                strokeLinecap: 'round',
-                strokeLinejoin: 'round'
+                stroke: "#D1D5DB",
+                strokeLinecap: "round",
+                strokeLinejoin: "round",
               },
               markerEnd: {
-                type: 'arrowclosed',
-                color: '#D1D5DB'
+                type: "arrowclosed",
+                color: "#D1D5DB",
               },
             }}
             connectionLineStyle={{
               strokeWidth: 2,
-              stroke: '#D1D5DB',
-              strokeLinecap: 'round',
-              strokeLinejoin: 'round',
+              stroke: "#D1D5DB",
+              strokeLinecap: "round",
+              strokeLinejoin: "round",
             }}
             proOptions={{ hideAttribution: true }}
           >
-
             {/* Empty Canvas Content */}
             {showEmptyCanvas && !isLoadingTemplate && (
               <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[5] text-center">
@@ -5446,12 +5846,20 @@ const handleWebhookConfigSave = useCallback(
                       await executeWorkflow()
                     } catch (error) {
                       console.error("Failed to execute workflow:", error)
-                      showSnackbarMessage(`Failed to execute workflow: ${error instanceof Error ? error.message : "Unknown error"}`, 'error')
+                      showSnackbarMessage(
+                        `Failed to execute workflow: ${error instanceof Error ? error.message : "Unknown error"}`,
+                        "error",
+                      )
                     }
                   }}
                   zoomLevel={zoomLevel}
                   onZoomChange={handleZoomChange}
-                  disabled={nodes.length === 0 || (nodes.length === 1 && (nodes[0].data as any)?.isTriggerSelector) || (builder && !isWorkflowSaved)}
+                  disabled={
+                    nodes.length === 0 ||
+                    (nodes.length === 1 &&
+                      (nodes[0].data as any)?.isTriggerSelector) ||
+                    (builder && !isWorkflowSaved)
+                  }
                 />
               </Panel>
             )}
@@ -5483,7 +5891,7 @@ const handleWebhookConfigSave = useCallback(
                 setShowTriggersSidebar(false)
                 // Clear all node selections when sidebar closes
                 setNodes((prevNodes) =>
-                  prevNodes.map(node => ({ ...node, selected: false }))
+                  prevNodes.map((node) => ({ ...node, selected: false })),
                 )
                 setSelectedNodes([])
               }}
@@ -5499,7 +5907,7 @@ const handleWebhookConfigSave = useCallback(
             // Only clear it when AI Agent/Email config is actually cancelled
             // Clear all node selections when sidebar closes
             setNodes((prevNodes) =>
-              prevNodes.map(node => ({ ...node, selected: false }))
+              prevNodes.map((node) => ({ ...node, selected: false })),
             )
             setSelectedNodes([])
           }}
@@ -5517,70 +5925,88 @@ const handleWebhookConfigSave = useCallback(
         />
 
         {/* AI Agent Config Sidebar */}
-        {!showEmailConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && !showJiraConfigUI && !showQAAgentConfigUI && (
-          <AIAgentConfigUI
-            isVisible={showAIAgentConfigUI}
-            onBack={handleAIAgentConfigBack}
-            onClose={() => {
-              setShowAIAgentConfigUI(false)
-              setSelectedAgentNodeId(null)
-              setSelectedNodeForNext(null)
-              setNodes((prevNodes) =>
-                prevNodes.map(node => ({ ...node, selected: false }))
-              )
-              setSelectedNodes([])
-            }}
-            onSave={handleAIAgentConfigSave}
-            showBackButton={selectedAgentNodeId === "pending"}
-            builder={builder}
-            toolData={
-              selectedAgentNodeId
-                ? (() => {
-                  const node = nodes.find((n) => n.id === selectedAgentNodeId)
-                  const tools = node?.data?.tools as Tool[] | undefined
-                  return tools && tools.length > 0 ? tools[0] : undefined
-                })()
-                : undefined
-            }
-            toolId={selectedAgentNodeId ? getToolIdFromStepId(selectedAgentNodeId) : undefined}
-            stepData={
-              selectedAgentNodeId
-                ? (() => {
-                  const node = nodes.find((n) => n.id === selectedAgentNodeId)
-                  return node?.data?.step
-                })()
-                : undefined
-            }
-          />
-        )}
-        {!showAIAgentConfigUI && !showEmailConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && !showQAAgentConfigUI && (
-          <ExistingAgentConfigUI
-            isVisible={showExistingAgentConfigUI}
-            mode={existingAgentConfigMode}
-            onClose={() => {
-              setShowExistingAgentConfigUI(false)
-              setSelectedExistingAgentNodeId(null)
-              setSelectedAgentForPreview(null)  
-              setNodes((prevNodes) =>
-                prevNodes.map(node => ({ ...node, selected: false }))
-              )
-              setSelectedNodes([])
-            }}
-            agentData={selectedAgentForPreview || undefined}  
-            onSave={handleSaveExistingAgentToCanvas} 
-            toolData={
-              selectedExistingAgentNodeId
-                ? (() => {
-                  const node = nodes.find((n) => n.id ===
-                    selectedExistingAgentNodeId)
-                  const tools = node?.data?.tools as Tool[] | undefined
-                  return tools && tools.length > 0 ? tools[0] as
-                    AgentTool : undefined
-                })()
-                : undefined
-            }
-          />
-        )}
+        {!showEmailConfigUI &&
+          !showOnFormSubmissionUI &&
+          !showAgentsSidebar &&
+          !showJiraConfigUI &&
+          !showQAAgentConfigUI && (
+            <AIAgentConfigUI
+              isVisible={showAIAgentConfigUI}
+              onBack={handleAIAgentConfigBack}
+              onClose={() => {
+                setShowAIAgentConfigUI(false)
+                setSelectedAgentNodeId(null)
+                setSelectedNodeForNext(null)
+                setNodes((prevNodes) =>
+                  prevNodes.map((node) => ({ ...node, selected: false })),
+                )
+                setSelectedNodes([])
+              }}
+              onSave={handleAIAgentConfigSave}
+              showBackButton={selectedAgentNodeId === "pending"}
+              builder={builder}
+              toolData={
+                selectedAgentNodeId
+                  ? (() => {
+                      const node = nodes.find(
+                        (n) => n.id === selectedAgentNodeId,
+                      )
+                      const tools = node?.data?.tools as Tool[] | undefined
+                      return tools && tools.length > 0 ? tools[0] : undefined
+                    })()
+                  : undefined
+              }
+              toolId={
+                selectedAgentNodeId
+                  ? getToolIdFromStepId(selectedAgentNodeId)
+                  : undefined
+              }
+              stepData={
+                selectedAgentNodeId
+                  ? (() => {
+                      const node = nodes.find(
+                        (n) => n.id === selectedAgentNodeId,
+                      )
+                      return node?.data?.step
+                    })()
+                  : undefined
+              }
+            />
+          )}
+        {!showAIAgentConfigUI &&
+          !showEmailConfigUI &&
+          !showOnFormSubmissionUI &&
+          !showAgentsSidebar &&
+          !showQAAgentConfigUI && (
+            <ExistingAgentConfigUI
+              isVisible={showExistingAgentConfigUI}
+              mode={existingAgentConfigMode}
+              onClose={() => {
+                setShowExistingAgentConfigUI(false)
+                setSelectedExistingAgentNodeId(null)
+                setSelectedAgentForPreview(null)
+                setNodes((prevNodes) =>
+                  prevNodes.map((node) => ({ ...node, selected: false })),
+                )
+                setSelectedNodes([])
+              }}
+              agentData={selectedAgentForPreview || undefined}
+              onSave={handleSaveExistingAgentToCanvas}
+              toolData={
+                selectedExistingAgentNodeId
+                  ? (() => {
+                      const node = nodes.find(
+                        (n) => n.id === selectedExistingAgentNodeId,
+                      )
+                      const tools = node?.data?.tools as Tool[] | undefined
+                      return tools && tools.length > 0
+                        ? (tools[0] as AgentTool)
+                        : undefined
+                    })()
+                  : undefined
+              }
+            />
+          )}
         {/* Agents Sidebar */}
         {!showWhatHappensNextUI &&
           !showAIAgentConfigUI &&
@@ -5597,7 +6023,7 @@ const handleWebhookConfigSave = useCallback(
                 setShowAgentsSidebar(false)
                 setQAAgentSelectionMode(false)
                 setNodes((prevNodes) =>
-                  prevNodes.map(node => ({ ...node, selected: false }))
+                  prevNodes.map((node) => ({ ...node, selected: false })),
                 )
                 setSelectedNodes([])
               }}
@@ -5606,118 +6032,154 @@ const handleWebhookConfigSave = useCallback(
           )}
 
         {/* Email Config Sidebar */}
-        {!showAIAgentConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && !showJiraConfigUI && !showQAAgentConfigUI && (
-          <EmailConfigUI
-            isVisible={showEmailConfigUI}
-            onBack={handleEmailConfigBack}
-            onClose={() => {
-              setShowEmailConfigUI(false)
-              setSelectedEmailNodeId(null)
-              setSelectedNodeForNext(null)
-              setNodes((prevNodes) =>
-                prevNodes.map(node => ({ ...node, selected: false }))
-              )
-              setSelectedNodes([])
-            }}
-            onSave={handleEmailConfigSave}
-            showBackButton={selectedEmailNodeId === "pending"}
-            builder={builder}
-            toolData={
-              selectedEmailNodeId
-                ? (() => {
-                  const node = nodes.find((n) => n.id === selectedEmailNodeId)
-                  const tools = node?.data?.tools as Tool[] | undefined
-                  return tools && tools.length > 0 ? tools[0] : undefined
-                })()
-                : undefined
-            }
-            toolId={selectedEmailNodeId ? getToolIdFromStepId(selectedEmailNodeId) : undefined}
-            stepData={
-              selectedEmailNodeId
-                ? (() => {
-                  const node = nodes.find((n) => n.id === selectedEmailNodeId)
-                  return node?.data?.step
-                })()
-                : undefined
-            }
-          />
-        )}
+        {!showAIAgentConfigUI &&
+          !showOnFormSubmissionUI &&
+          !showAgentsSidebar &&
+          !showJiraConfigUI &&
+          !showQAAgentConfigUI && (
+            <EmailConfigUI
+              isVisible={showEmailConfigUI}
+              onBack={handleEmailConfigBack}
+              onClose={() => {
+                setShowEmailConfigUI(false)
+                setSelectedEmailNodeId(null)
+                setSelectedNodeForNext(null)
+                setNodes((prevNodes) =>
+                  prevNodes.map((node) => ({ ...node, selected: false })),
+                )
+                setSelectedNodes([])
+              }}
+              onSave={handleEmailConfigSave}
+              showBackButton={selectedEmailNodeId === "pending"}
+              builder={builder}
+              toolData={
+                selectedEmailNodeId
+                  ? (() => {
+                      const node = nodes.find(
+                        (n) => n.id === selectedEmailNodeId,
+                      )
+                      const tools = node?.data?.tools as Tool[] | undefined
+                      return tools && tools.length > 0 ? tools[0] : undefined
+                    })()
+                  : undefined
+              }
+              toolId={
+                selectedEmailNodeId
+                  ? getToolIdFromStepId(selectedEmailNodeId)
+                  : undefined
+              }
+              stepData={
+                selectedEmailNodeId
+                  ? (() => {
+                      const node = nodes.find(
+                        (n) => n.id === selectedEmailNodeId,
+                      )
+                      return node?.data?.step
+                    })()
+                  : undefined
+              }
+            />
+          )}
 
         {/* Q&A Agent Config Sidebar */}
-        {!showAIAgentConfigUI && !showEmailConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && !showJiraConfigUI && (
-          <QAAgentConfigUI
-            isVisible={showQAAgentConfigUI}
-            onBack={handleQAAgentConfigBack}
-            onClose={() => {
-              setShowQAAgentConfigUI(false)
-              setSelectedQAAgentNodeId(null)
-              setSelectedNodeForNext(null)
-              setNodes((prevNodes) =>
-                prevNodes.map(node => ({ ...node, selected: false }))
-              )
-              setSelectedNodes([])
-            }}
-            onSave={handleQAAgentConfigSave}
-            showBackButton={selectedQAAgentNodeId === "pending"}
-            builder={builder}
-            toolData={
-              selectedQAAgentNodeId
-                ? (() => {
-                  const node = nodes.find((n) => n.id === selectedQAAgentNodeId)
-                  const tools = node?.data?.tools as Tool[] | undefined
-                  return tools && tools.length > 0 ? tools[0] : undefined
-                })()
-                : undefined
-            }
-            toolId={selectedQAAgentNodeId ? getToolIdFromStepId(selectedQAAgentNodeId) : undefined}
-            stepData={
-              selectedQAAgentNodeId
-                ? (() => {
-                  const node = nodes.find((n) => n.id === selectedQAAgentNodeId)
-                  return node?.data?.step
-                })()
-                : undefined
-            }
-          />
-        )}
+        {!showAIAgentConfigUI &&
+          !showEmailConfigUI &&
+          !showOnFormSubmissionUI &&
+          !showAgentsSidebar &&
+          !showJiraConfigUI && (
+            <QAAgentConfigUI
+              isVisible={showQAAgentConfigUI}
+              onBack={handleQAAgentConfigBack}
+              onClose={() => {
+                setShowQAAgentConfigUI(false)
+                setSelectedQAAgentNodeId(null)
+                setSelectedNodeForNext(null)
+                setNodes((prevNodes) =>
+                  prevNodes.map((node) => ({ ...node, selected: false })),
+                )
+                setSelectedNodes([])
+              }}
+              onSave={handleQAAgentConfigSave}
+              showBackButton={selectedQAAgentNodeId === "pending"}
+              builder={builder}
+              toolData={
+                selectedQAAgentNodeId
+                  ? (() => {
+                      const node = nodes.find(
+                        (n) => n.id === selectedQAAgentNodeId,
+                      )
+                      const tools = node?.data?.tools as Tool[] | undefined
+                      return tools && tools.length > 0 ? tools[0] : undefined
+                    })()
+                  : undefined
+              }
+              toolId={
+                selectedQAAgentNodeId
+                  ? getToolIdFromStepId(selectedQAAgentNodeId)
+                  : undefined
+              }
+              stepData={
+                selectedQAAgentNodeId
+                  ? (() => {
+                      const node = nodes.find(
+                        (n) => n.id === selectedQAAgentNodeId,
+                      )
+                      return node?.data?.step
+                    })()
+                  : undefined
+              }
+            />
+          )}
 
         {/* HTTP Request Config Sidebar */}
-        {!showAIAgentConfigUI && !showEmailConfigUI && !showOnFormSubmissionUI && !showWebhookConfigUI && !showQAAgentConfigUI && (
-          <HttpRequestConfigUI
-            isVisible={showHttpRequestConfigUI}
-            onBack={handleHttpRequestConfigBack}
-            onClose={() => {
-              setShowHttpRequestConfigUI(false)
-              setSelectedHttpRequestNodeId(null)
-              setSelectedNodeForNext(null)
-              setNodes((prevNodes) => 
-                prevNodes.map(node => ({ ...node, selected: false }))
-              )
-              setSelectedNodes([])
-            }}
-            onSave={handleHttpRequestConfigSave}
-            showBackButton={selectedHttpRequestNodeId === "pending"}
-            builder={builder}
-            toolData={
-              selectedHttpRequestNodeId
-                ? (() => {
-                    const node = nodes.find((n) => n.id === selectedHttpRequestNodeId)
-                    const tools = node?.data?.tools as Tool[] | undefined
-                    return tools && tools.length > 0 ? tools[0] : undefined
-                  })()
-                : undefined
-            }
-            toolId={selectedHttpRequestNodeId ? getToolIdFromStepId(selectedHttpRequestNodeId) : undefined}
-            stepData={
-              selectedHttpRequestNodeId
-                ? (() => {
-                    const node = nodes.find((n) => n.id === selectedHttpRequestNodeId)
-                    return node?.data?.step
-                  })()
-                : undefined
-            }
-          />
-        )}
+        {!showAIAgentConfigUI &&
+          !showEmailConfigUI &&
+          !showOnFormSubmissionUI &&
+          !showWebhookConfigUI &&
+          !showQAAgentConfigUI && (
+            <HttpRequestConfigUI
+              isVisible={showHttpRequestConfigUI}
+              onBack={handleHttpRequestConfigBack}
+              onClose={() => {
+                setShowHttpRequestConfigUI(false)
+                setSelectedHttpRequestNodeId(null)
+                setSelectedNodeForNext(null)
+                setNodes((prevNodes) =>
+                  prevNodes.map((node) => ({ ...node, selected: false })),
+                )
+                setSelectedNodes([])
+              }}
+              onSave={handleHttpRequestConfigSave}
+              showBackButton={selectedHttpRequestNodeId === "pending"}
+              builder={builder}
+              toolData={
+                selectedHttpRequestNodeId
+                  ? (() => {
+                      const node = nodes.find(
+                        (n) => n.id === selectedHttpRequestNodeId,
+                      )
+                      const tools = node?.data?.tools as Tool[] | undefined
+                      return tools && tools.length > 0 ? tools[0] : undefined
+                    })()
+                  : undefined
+              }
+              toolId={
+                selectedHttpRequestNodeId
+                  ? getToolIdFromStepId(selectedHttpRequestNodeId)
+                  : undefined
+              }
+              stepData={
+                selectedHttpRequestNodeId
+                  ? (() => {
+                      const node = nodes.find(
+                        (n) => n.id === selectedHttpRequestNodeId,
+                      )
+                      return node?.data?.step
+                    })()
+                  : undefined
+              }
+            />
+          )}
 
         {/* On Form Submission Config Sidebar */}
         <OnFormSubmissionUI
@@ -5727,7 +6189,7 @@ const handleWebhookConfigSave = useCallback(
             setShowOnFormSubmissionUI(false)
             setSelectedFormNodeId(null)
             setNodes((prevNodes) =>
-              prevNodes.map(node => ({ ...node, selected: false }))
+              prevNodes.map((node) => ({ ...node, selected: false })),
             )
             setSelectedNodes([])
             // If we were in pending mode (creating new trigger), show empty canvas again
@@ -5741,21 +6203,25 @@ const handleWebhookConfigSave = useCallback(
           initialConfig={
             selectedFormNodeId
               ? (
-                nodes.find((n) => n.id === selectedFormNodeId)?.data
-                  ?.step as any
-              )?.config
+                  nodes.find((n) => n.id === selectedFormNodeId)?.data
+                    ?.step as any
+                )?.config
               : undefined
           }
           toolData={
             selectedFormNodeId
               ? (() => {
-                const node = nodes.find((n) => n.id === selectedFormNodeId)
-                const tools = node?.data?.tools as Tool[] | undefined
-                return tools && tools.length > 0 ? tools[0] : undefined
-              })()
+                  const node = nodes.find((n) => n.id === selectedFormNodeId)
+                  const tools = node?.data?.tools as Tool[] | undefined
+                  return tools && tools.length > 0 ? tools[0] : undefined
+                })()
               : undefined
           }
-          toolId={selectedFormNodeId ? getToolIdFromStepId(selectedFormNodeId) : undefined}
+          toolId={
+            selectedFormNodeId
+              ? getToolIdFromStepId(selectedFormNodeId)
+              : undefined
+          }
         />
 
         {/* Webhook Configuration Sidebar */}
@@ -5766,7 +6232,7 @@ const handleWebhookConfigSave = useCallback(
             setShowWebhookConfigUI(false)
             setSelectedWebhookNodeId(null)
             setNodes((prevNodes) =>
-              prevNodes.map(node => ({ ...node, selected: false }))
+              prevNodes.map((node) => ({ ...node, selected: false })),
             )
             setSelectedNodes([])
             // If we were in pending mode (creating new trigger), show empty canvas again
@@ -5794,7 +6260,11 @@ const handleWebhookConfigSave = useCallback(
                 })()
               : undefined
           }
-          toolId={selectedWebhookNodeId ? getToolIdFromStepId(selectedWebhookNodeId) : undefined}
+          toolId={
+            selectedWebhookNodeId
+              ? getToolIdFromStepId(selectedWebhookNodeId)
+              : undefined
+          }
         />
 
         {/* Jira Configuration Sidebar */}
@@ -5807,7 +6277,7 @@ const handleWebhookConfigSave = useCallback(
             setJiraInitialConfig(undefined)
             setJiraToolId(undefined)
             setNodes((prevNodes) =>
-              prevNodes.map(node => ({ ...node, selected: false }))
+              prevNodes.map((node) => ({ ...node, selected: false })),
             )
             setSelectedNodes([])
             // If we were in pending mode (creating new trigger), show empty canvas again
@@ -5829,44 +6299,54 @@ const handleWebhookConfigSave = useCallback(
       />
 
       {/* Workflow Execution Modal */}
-      {showExecutionModal && (createdTemplate || selectedTemplate) && (() => {
-        const template = createdTemplate || selectedTemplate
-        const templateId = template?.id !== 'pending-creation' ? template?.id : undefined
+      {showExecutionModal &&
+        (createdTemplate || selectedTemplate) &&
+        (() => {
+          const template = createdTemplate || selectedTemplate
+          const templateId =
+            template?.id !== "pending-creation" ? template?.id : undefined
 
-        return (
-          <WorkflowExecutionModal
-            isOpen={showExecutionModal}
-            onClose={() => {
-              setShowExecutionModal(false)
-              // Keep createdTemplate state so it can be reused for future executions
-            }}
-            workflowName={template?.name || "Custom Workflow"}
-            workflowDescription={template?.description || "User-created workflow"}
-            templateId={templateId}
-            allowedFileTypes={extractAllowedFileTypesFromRootNode(
-              nodes.find(node => 
-                (node.type === 'form' || node.type === 'stepNode') && node.data
-              ) || null
-            )}
-            workflowData={{
-              name: template?.name || "Custom Workflow",
-              description: template?.description || "User-created workflow",
-              nodes: nodes,
-              edges: edges,
-              metadata: template
-            }}
-            onViewExecution={onViewExecution}
-          />
-        )
-      })()}
+          return (
+            <WorkflowExecutionModal
+              isOpen={showExecutionModal}
+              onClose={() => {
+                setShowExecutionModal(false)
+                // Keep createdTemplate state so it can be reused for future executions
+              }}
+              workflowName={template?.name || "Custom Workflow"}
+              workflowDescription={
+                template?.description || "User-created workflow"
+              }
+              templateId={templateId}
+              allowedFileTypes={extractAllowedFileTypesFromRootNode(
+                nodes.find(
+                  (node) =>
+                    (node.type === "form" || node.type === "stepNode") &&
+                    node.data,
+                ) || null,
+              )}
+              workflowData={{
+                name: template?.name || "Custom Workflow",
+                description: template?.description || "User-created workflow",
+                nodes: nodes,
+                edges: edges,
+                metadata: template,
+              }}
+              onViewExecution={onViewExecution}
+            />
+          )
+        })()}
 
       {/* Template Selection Modal */}
       <TemplateSelectionModal
         isOpen={showTemplateSelectionModal}
         onClose={handleTemplateModalClose}
         templates={availableTemplates
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) // Sort by newest first
-          .map(template => ({
+          .sort(
+            (a, b) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+          ) // Sort by newest first
+          .map((template) => ({
             id: template.id,
             name: template.name,
             description: template.description,
@@ -5908,7 +6388,6 @@ const handleWebhookConfigSave = useCallback(
           setPendingRefreshCallback(null)
         }}
       />
-
     </div>
   )
 }

@@ -137,7 +137,9 @@ export const GetAgentDocumentContentApi = async (c: Context) => {
       throw error
     }
 
-    throw new HTTPException(500, { message: "Failed to get agent document content" })
+    throw new HTTPException(500, {
+      message: "Failed to get agent document content",
+    })
   }
 }
 
@@ -188,7 +190,10 @@ export const ListAgentDocumentsApi = async (c: Context) => {
     })
   } catch (error) {
     loggerWithChild().error(
-      { error: getErrorMessage(error), chatExternalId: c.req.query().chatExternalId },
+      {
+        error: getErrorMessage(error),
+        chatExternalId: c.req.query().chatExternalId,
+      },
       "Failed to list agent documents",
     )
 

@@ -1,6 +1,6 @@
 /**
  * Deep Document Agent System Prompt
- * 
+ *
  * This prompt guides the agent to intelligently explore documents
  * using a 3-phase structured exploration strategy with enforced coverage.
  */

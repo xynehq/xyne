@@ -1,4 +1,4 @@
-import React from 'react'
+import React from "react"
 
 export interface ConfirmationPopupProps {
   isVisible: boolean
@@ -17,7 +17,7 @@ export const ConfirmationPopup: React.FC<ConfirmationPopupProps> = ({
   confirmText,
   cancelText,
   onConfirm,
-  onCancel
+  onCancel,
 }) => {
   if (!isVisible) return null
 
@@ -28,12 +28,12 @@ export const ConfirmationPopup: React.FC<ConfirmationPopupProps> = ({
         <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-3">
           {title}
         </h2>
-        
+
         {/* Message */}
         <p className="text-gray-600 dark:text-gray-400 text-base leading-relaxed mb-8">
           {message}
         </p>
-        
+
         {/* Action Buttons */}
         <div className="flex gap-3">
           {/* Refresh Button */}
@@ -43,7 +43,7 @@ export const ConfirmationPopup: React.FC<ConfirmationPopupProps> = ({
           >
             {confirmText}
           </button>
-          
+
           {/* Cancel Button */}
           <button
             onClick={onCancel}

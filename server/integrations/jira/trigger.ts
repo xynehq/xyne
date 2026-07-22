@@ -3,9 +3,13 @@
  * Handles webhook registration and event processing
  */
 
-import type { JiraCredentials, JiraWebhookEvent as WebhookEventType, JiraTriggerConfig } from './types'
-import { JiraClient } from './client'
-import { sanitizeWebhookName } from './utils'
+import type {
+  JiraCredentials,
+  JiraWebhookEvent as WebhookEventType,
+  JiraTriggerConfig,
+} from "./types"
+import { JiraClient } from "./client"
+import { sanitizeWebhookName } from "./utils"
 
 export class JiraTrigger {
   private client: JiraClient
@@ -26,7 +30,7 @@ export class JiraTrigger {
       const existingWebhookId = await this.client.webhookExists(
         this.config.webhookUrl,
         this.config.events,
-        { exact: true }
+        { exact: true },
       )
 
       if (existingWebhookId) {
@@ -48,7 +52,7 @@ export class JiraTrigger {
         events: this.config.events,
         filters: this.config.filters?.jqlFilter
           ? {
-              'issue-related-events-section': this.config.filters.jqlFilter,
+              "issue-related-events-section": this.config.filters.jqlFilter,
             }
           : {},
         excludeBody: false,
@@ -153,7 +157,7 @@ export class JiraTrigger {
   static validateWebhook(
     payload: any,
     signature?: string,
-    secret?: string
+    secret?: string,
   ): boolean {
     // If no signature is provided, skip validation
     if (!signature || !secret) {

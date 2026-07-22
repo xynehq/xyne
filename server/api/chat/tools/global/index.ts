@@ -250,7 +250,12 @@ interface UnifiedSearchOptions {
   workspaceId?: number | null
 }
 
-export async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{ fragments: MinimalAgentFragment[]; rawDocuments: ToolRawDocument[] }> {
+export async function executeVespaSearch(
+  options: UnifiedSearchOptions,
+): Promise<{
+  fragments: MinimalAgentFragment[]
+  rawDocuments: ToolRawDocument[]
+}> {
   const {
     email,
     query,
@@ -362,11 +367,14 @@ export async function executeVespaSearch(options: UnifiedSearchOptions): Promise
     )
   }
 
-  const rawDocuments = await formatSearchToolResponseAsRawDocuments(searchResults, { email })
+  const rawDocuments = await formatSearchToolResponseAsRawDocuments(
+    searchResults,
+    { email },
+  )
 
   const fragments = await formatSearchToolResponse(searchResults, {
     query,
-    app: Array.isArray(app) ? app.join(", ") : app ?? undefined,
+    app: Array.isArray(app) ? app.join(", ") : (app ?? undefined),
     timeRange:
       fromTimestamp && toTimestamp
         ? { startTime: fromTimestamp, endTime: toTimestamp }
@@ -398,8 +406,7 @@ function buildCollectionSelectionsFromIds(
   if (collectionIds?.length) selection.collectionIds = collectionIds
   if (collectionFolderIds?.length)
     selection.collectionFolderIds = collectionFolderIds
-  if (collectionFileIds?.length)
-    selection.collectionFileIds = collectionFileIds
+  if (collectionFileIds?.length) selection.collectionFileIds = collectionFileIds
 
   return [selection]
 }

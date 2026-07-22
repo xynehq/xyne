@@ -22,9 +22,9 @@ interface CustomBadgeProps {
 }
 enum IntegrationObjectType {
   FILE = "file",
-  FOLDER = "folder", 
+  FOLDER = "folder",
   INTEGRATION = "integration",
-  COLLECTION = "cl"
+  COLLECTION = "cl",
 }
 
 const CustomBadge: React.FC<CustomBadgeProps> = ({ text, icon }) => {
@@ -130,7 +130,7 @@ const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
   }, [agent, integrationItem, integrationApps])
 
   useEffect(() => {
-    let isCancelled=false
+    let isCancelled = false
     setIntegrationItem([])
     setIntegrationApps([])
     const fetchAgent = async () => {
@@ -140,8 +140,8 @@ const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
         ].$get({
           param: { agentExternalId: agent.externalId },
         })
-        if(isCancelled){
-          return;
+        if (isCancelled) {
+          return
         }
         if (!isCancelled && response.ok) {
           const data = await response.json()
@@ -152,7 +152,7 @@ const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
             const CollectionItems: CollectionItem[] = Object.values(
               groups,
             ).flat() as CollectionItem[]
-          
+
             const updatedItems = await Promise.all(
               CollectionItems.map(async (item) => {
                 if (item.type === "collection") {
@@ -178,33 +178,29 @@ const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
                 return item
               }),
             )
-          
 
             setIntegrationItem(updatedItems)
-          
-          }
-          else{
+          } else {
             setIntegrationItem([])
           }
           if (data.integrationItems) {
             const { collection, ...rest } = data?.integrationItems
             const integrationApps = Object.keys(rest)
             setIntegrationApps(integrationApps)
-          }
-          else{
+          } else {
             setIntegrationApps([])
           }
         }
       } catch (err) {
-        if(!isCancelled){
-        console.error("couldn't fetchAgent", err)
+        if (!isCancelled) {
+          console.error("couldn't fetchAgent", err)
         }
       }
     }
     fetchAgent()
-    return (()=>{
-      isCancelled=true
-    })
+    return () => {
+      isCancelled = true
+    }
   }, [agent.externalId])
 
   return (

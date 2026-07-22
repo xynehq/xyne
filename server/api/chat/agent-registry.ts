@@ -11,10 +11,7 @@
  */
 
 import type { Tool } from "@juspay-xyne-jaf/jaf"
-import type {
-  AgentCapability,
-  AgentRunContext,
-} from "./agent-schemas"
+import type { AgentCapability, AgentRunContext } from "./agent-schemas"
 import type { AgentBrief } from "./tool-schemas"
 import type { UserConnectorState } from "./resource-access"
 import { Apps } from "@xyne/vespa-ts/types"
@@ -158,7 +155,9 @@ export function registerInternalAgent(config: InternalAgentConfig): void {
  * Get the configuration for an internal agent by ID.
  * Returns null if not found (i.e., not an internal agent).
  */
-export function getInternalAgentConfig(agentId: string): InternalAgentConfig | null {
+export function getInternalAgentConfig(
+  agentId: string,
+): InternalAgentConfig | null {
   return INTERNAL_AGENTS[agentId] ?? null
 }
 
@@ -189,11 +188,11 @@ export function getAllInternalAgentCapabilities(): AgentCapability[] {
  */
 export function formatInternalAgentsForPrompt(): string {
   const agents = Object.values(INTERNAL_AGENTS)
-  
+
   if (agents.length === 0) {
     return "No internal agents available."
   }
-  
+
   const agentDescriptions = agents.map((agent) => {
     const inputFormat = getAgentInputFormat(agent.id)
     return `- agentId: ${agent.id}
@@ -202,7 +201,7 @@ export function formatInternalAgentsForPrompt(): string {
   description: ${agent.description}
   input_format: ${inputFormat}`
   })
-  
+
   return agentDescriptions.join("\n\n")
 }
 
@@ -212,7 +211,7 @@ export function formatInternalAgentsForPrompt(): string {
 function getAgentInputFormat(agentId: string): string {
   switch (agentId) {
     case "deep_document_agent":
-      return 'JSON { userQuery: string, docId: string, startingOffsets?: number[] }'
+      return "JSON { userQuery: string, docId: string, startingOffsets?: number[] }"
     default:
       return "string (agent-specific query)"
   }
@@ -334,7 +333,6 @@ registerInternalAgent({
   },
 })
 
-
 // ============================================================================
 // Deep Document Agent utilities and types
 // ============================================================================
@@ -370,10 +368,12 @@ export function parseDeepDocumentDelegationPayload(
         : undefined
     const fields = documentMemory.get(docId ?? "")?.vespaHit?.fields
     const totalChunks =
-      fields && "chunks_summary" in fields && Array.isArray(fields.chunks_summary)
+      fields &&
+      "chunks_summary" in fields &&
+      Array.isArray(fields.chunks_summary)
         ? fields.chunks_summary.length
         : 10 // default to 10 chunks
-      const startingOffsets = Array.isArray(parsed.startingOffsets)
+    const startingOffsets = Array.isArray(parsed.startingOffsets)
       ? parsed.startingOffsets
           .map((value) => Number(value))
           .filter((value) => Number.isFinite(value) && value >= 0)
@@ -386,7 +386,9 @@ export function parseDeepDocumentDelegationPayload(
       docId,
       totalChunks,
       startingOffsets:
-        startingOffsets && startingOffsets.length > 0 ? startingOffsets : undefined,
+        startingOffsets && startingOffsets.length > 0
+          ? startingOffsets
+          : undefined,
     }
   } catch {
     return fallback

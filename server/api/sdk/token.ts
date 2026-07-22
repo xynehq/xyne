@@ -14,10 +14,7 @@ export const IssueSdkTokenApi = async (c: Context) => {
 
   try {
     // Look up SDK config for this workspace
-    const sdkConfig = await getSdkConfigByWorkspaceExternalId(
-      db,
-      workspaceId,
-    )
+    const sdkConfig = await getSdkConfigByWorkspaceExternalId(db, workspaceId)
 
     if (!sdkConfig || !sdkConfig.enabled) {
       throw new HTTPException(404, {
@@ -26,10 +23,7 @@ export const IssueSdkTokenApi = async (c: Context) => {
     }
 
     // Build access_tags: only granular permission tags + user:<id>
-    const accessTags = [
-      `user:${external_user_id}`,
-      ...(tags as string[]),
-    ]
+    const accessTags = [`user:${external_user_id}`, ...(tags as string[])]
 
     // Remove duplicates
     const uniqueTags = [...new Set(accessTags)]

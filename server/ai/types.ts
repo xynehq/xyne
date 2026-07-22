@@ -60,6 +60,7 @@ export enum GoogleAIModels {
 
 export enum LiteLLMModels {
   // Non Free Models
+  Claude_Sonnet_4_5 = "anthropic/claude-sonnet-4.5",
   Claude_Sonnet_4_6 = "claude-sonnet-4-6",
   Claude_Opus_4_6 = "claude-opus-4-6",
   Claude_Haiku_4_5 = "vertex_ai/claude-haiku-4-5@20251001",
@@ -71,7 +72,7 @@ export enum LiteLLMModels {
   KIMI_LATEST = "kimi-latest",
   PRIVATE_LARGE = "private-large",
   GLM_PRIVATE = "glm-private",
-  
+
   // glm
   GLM_LATEST = "glm-latest",
   GLM_FLASH = "glm-flash-experimental",
@@ -199,6 +200,7 @@ export enum Models {
   // Vertex_Gemini_1_5_Pro_002 = VertexAIModels.Gemini_1_5_Pro_002,
   // Vertex_Gemini_1_5_Pro_Exp_0827 = VertexAIModels.Gemini_1_5_Pro_Exp_0827,
   // GLM_4_5 = LiteLLMModels.GLM_4_5, // GLM 4.5
+  LiteLLM_Claude_Sonnet_4_5 = LiteLLMModels.Claude_Sonnet_4_5,
   LiteLLM_Claude_Sonnet_4_6 = LiteLLMModels.Claude_Sonnet_4_6,
   LiteLLM_Claude_Opus_4_6 = LiteLLMModels.Claude_Opus_4_6,
   LiteLLM_Claude_Haiku_4_5 = LiteLLMModels.Claude_Haiku_4_5,
@@ -331,6 +333,7 @@ export enum ModelDisplayNames {
   // VERTEX_GEMINI_1_5_PRO_002 = "Gemini 1.5 Pro 002",
   // VERTEX_GEMINI_1_5_PRO_EXP_0827 = "Gemini 1.5 Pro Exp 0827",
   // LITELLM_GLM_4_5 = "GLM 4.5", // GLM 4.5
+  LITELLM_CLAUDE_SONNET_4_5 = "Claude Sonnet 4.5",
   LITELLM_CLAUDE_SONNET_4_6 = "Claude Sonnet 4.6",
   LITELLM_CLAUDE_OPUS_4_6 = "Claude Opus 4.6",
   // LITELLM_GEMINI_3_PRO = "Gemini 3 Pro",

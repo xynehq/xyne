@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "xyne.fullname" . }}-vespa
+  labels:
+    {{- include "xyne.labels" . | nindent 4 }}
+    {{- include "xyne.vespa.selectorLabels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "xyne.fullname" . }}-vespa
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "xyne.vespa.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "xyne.vespa.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        runAsUser: 1000
+        fsGroup: 1000
+      initContainers:
+        - name: init-vespa
+          image: "{{ .Values.vespa.image }}:{{ .Values.vespa.tag }}"
+          command:
+            - bash
+            - -c
+            - |
+              mkdir -p /opt/vespa/var/zookeeper/conf /opt/vespa/var/zookeeper/version-2
+              mkdir -p /opt/vespa/var/crash /opt/vespa/var/db /opt/vespa/var/jdisc_container
+              mkdir -p /opt/vespa/var/run /opt/vespa/var/tmp /opt/vespa/var/vespa
+              echo "0" > /opt/vespa/var/zookeeper/myid
+              chown -R 1000:1000 /opt/vespa/var
+              chmod -R 755 /opt/vespa/var
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: data
+              mountPath: /opt/vespa/var
+      containers:
+        - name: vespa
+          image: "{{ .Values.vespa.image }}:{{ .Values.vespa.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: feed
+              containerPort: {{ .Values.vespa.port }}
+            - name: query
+              containerPort: {{ .Values.vespa.queryPort }}
+            - name: config
+              containerPort: {{ .Values.vespa.configPort }}
+          env:
+            - name: VESPA_CONFIGSERVERS
+              value: "{{ include "xyne.fullname" . }}-vespa-0.{{ include "xyne.fullname" . }}-vespa.{{ .Release.Namespace }}.svc.cluster.local"
+            - name: VESPA_ALLOW_WRITE_AS_USER
+              value: "true"
+            - name: VESPA_CONFIGSERVER_JVMARGS
+              value: {{ .Values.vespa.jvm.configServer | quote }}
+            - name: VESPA_CONFIGPROXY_JVMARGS
+              value: {{ .Values.vespa.jvm.configProxy | quote }}
+          volumeMounts:
+            - name: data
+              mountPath: /opt/vespa/var
+          startupProbe:
+            httpGet:
+              path: /state/v1/health
+              port: config
+            initialDelaySeconds: 30
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /state/v1/health
+              port: config
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /state/v1/health
+              port: config
+            initialDelaySeconds: 300
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.vespa.resources | nindent 12 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- if .Values.vespa.storage.storageClass }}
+        storageClassName: {{ .Values.vespa.storage.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.vespa.storage.size }}

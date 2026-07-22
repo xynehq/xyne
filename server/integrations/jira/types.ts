@@ -15,7 +15,7 @@ export interface JiraWebhook {
   url: string
   events: string[]
   filters?: {
-    'issue-related-events-section'?: string
+    "issue-related-events-section"?: string
   }
   excludeBody?: boolean
 }
@@ -58,7 +58,7 @@ export interface JiraIssue {
 // Atlassian Document Format (ADF)
 export interface JiraDocument {
   version: number
-  type: 'doc'
+  type: "doc"
   content: JiraDocumentNode[]
 }
 
@@ -122,7 +122,7 @@ export interface JiraWebhookEventPayload {
 }
 
 // Action types
-export type JiraAction = 'issue_create' | 'issue_update'
+export type JiraAction = "issue_create" | "issue_update"
 
 export interface JiraIssueCreateInput {
   projectKey: string
@@ -150,13 +150,13 @@ export interface JiraIssueUpdateInput {
 }
 
 export const JIRA_WEBHOOK_EVENTS = [
-  'jira:issue_created',
-  'jira:issue_updated',
-  'project_created',
-  'project_updated',
+  "jira:issue_created",
+  "jira:issue_updated",
+  "project_created",
+  "project_updated",
 ] as const
 
-export type JiraWebhookEvent = typeof JIRA_WEBHOOK_EVENTS[number]
+export type JiraWebhookEvent = (typeof JIRA_WEBHOOK_EVENTS)[number]
 
 // Webhook trigger configuration
 export interface JiraTriggerConfig {

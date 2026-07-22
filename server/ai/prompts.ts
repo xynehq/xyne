@@ -486,10 +486,13 @@ for a user interacting with ${agentName ? `the "${agentName}" agent` : "a worksp
 ### Context of the user talking to you
 ${userContext}`
 
-  const agentAwareSection = agentName && agentScopesText ? `
+  const agentAwareSection =
+    agentName && agentScopesText
+      ? `
 ### Data this agent can access
 The "${agentName}"${agentDescription ? ` (${agentDescription})` : ""} agent can ONLY use:
-${agentScopesText}` : `
+${agentScopesText}`
+      : `
 ### System Context
 This is a workplace data search system with access to:
 - Files (documents, spreadsheets, presentations)
@@ -508,7 +511,9 @@ This is a workplace data search system with access to:
   - Bad: "Search Slack and Google Drive for documents about Redis scaling issues in payments."
   - Good: "Slack / Drive docs on Redis scaling issues in payments".`
 
-  const constraints = agentName && agentScopesText ? `
+  const constraints =
+    agentName && agentScopesText
+      ? `
 Constraints:
 - At most **one** follow-up can be a pure "find more documentation / guide" type.
 - At least **one** follow-up must be about **clarifying or deepening understanding** 
@@ -520,7 +525,8 @@ Constraints:
 Hard rules:
 - Do NOT ask for data or actions that clearly cannot be satisfied by the scopes.
 - Do NOT invent new domains (e.g., "customer support tickets") if the conversation and scopes never mentioned them.
-- Do NOT ask meta questions such as "What would you like to search for next?" or "Should I look for more docs?". Each question must itself be a concrete, runnable search query.` : `
+- Do NOT ask meta questions such as "What would you like to search for next?" or "Should I look for more docs?". Each question must itself be a concrete, runnable search query.`
+      : `
 **Guidelines for Follow-up Questions:**
 1. **Natural User Questions**: Generate questions that sound like natural user queries, using phrases like "what", "show me", "find", etc.
 2. **No Meta Questions**: Do NOT ask users what they want to search for. Instead, suggest specific things they could search for.
@@ -529,7 +535,9 @@ Hard rules:
 5. **Diverse Angles**: Cover different data types or search approaches related to the conversation topic. Avoid three variations of the same thing.
 6. **Temporal Awareness**: Include time-based queries when relevant (recent, past, upcoming).`
 
-  const examples = agentName && agentScopesText ? `
+  const examples =
+    agentName && agentScopesText
+      ? `
 Good follow-ups (adapt to the actual topic):
 - "Redis / Bloom filter config in high-volume services"
 - "Slack threads on Redis cache bottlenecks in payments"
@@ -540,7 +548,8 @@ Bad follow-ups (avoid):
 - Long, multi-clause questions with lots of detail.
 - Questions about tools/data this agent doesn't have (e.g., emails if not in scope).
 - Very generic things like "Show everything related to payments".
-- Meta questions like "What do you want to search for next?" or "Should I look for more docs?".` : `
+- Meta questions like "What do you want to search for next?" or "Should I look for more docs?".`
+      : `
 **Question Categories to Generate:**
 - Related people searches: "docs John shared recently about X"
 - Temporal searches: "latest project updates on X this week"
@@ -1798,7 +1807,6 @@ REMEMBER:
 - Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 - If there is even one email, format and return them as specified.`
 
-
 // Temporal Direction Prompt
 // This prompt is used to handle temporal-related queries and provide structured responses based on the retrieved context and user information in JSON format.
 export const temporalDirectionJsonPrompt = (
@@ -2648,7 +2656,6 @@ Wrap the output in <indexes> tags as shown below:
 Now, return the array of indexes for the best matching and semantically related documents.
   `
 }
-
 
 export const duckdbSqlGeneratorPrompt = (
   query: string,

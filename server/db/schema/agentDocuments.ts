@@ -27,7 +27,9 @@ export const agentDocuments = pgTable(
     chatId: integer("chat_id")
       .notNull()
       .references(() => chats.id, { onDelete: "cascade" }),
-    messageId: integer("message_id").references(() => messages.id, { onDelete: "set null" }),
+    messageId: integer("message_id").references(() => messages.id, {
+      onDelete: "set null",
+    }),
     agentId: text("agent_id").notNull(),
     agentName: text("agent_name").notNull(),
     content: text("content").notNull(),
@@ -40,10 +42,12 @@ export const agentDocuments = pgTable(
   },
   (table) => ({
     agentDocChatIdIndex: index("agent_doc_chat_id_index").on(table.chatId),
-    agentDocMessageIdIndex: index("agent_doc_message_id_index").on(table.messageId),
-    agentDocExternalIdIndex: uniqueIndex("agent_doc_external_id_unique_index").on(
-      table.externalId,
+    agentDocMessageIdIndex: index("agent_doc_message_id_index").on(
+      table.messageId,
     ),
+    agentDocExternalIdIndex: uniqueIndex(
+      "agent_doc_external_id_unique_index",
+    ).on(table.externalId),
     agentDocAgentIdIndex: index("agent_doc_agent_id_index").on(table.agentId),
   }),
 )
@@ -58,11 +62,17 @@ export const agentCitationReferenceSchema = z.object({
   chunkContent: z.string().optional(),
 })
 
-export type AgentCitationReference = z.infer<typeof agentCitationReferenceSchema>
+export type AgentCitationReference = z.infer<
+  typeof agentCitationReferenceSchema
+>
 
 // Insert schema
 export const insertAgentDocumentSchema = createInsertSchema(agentDocuments, {
-  citations: z.array(agentCitationReferenceSchema).nullable().optional().default([]),
+  citations: z
+    .array(agentCitationReferenceSchema)
+    .nullable()
+    .optional()
+    .default([]),
 }).omit({
   id: true,
   createdAt: true,
@@ -72,7 +82,11 @@ export type InsertAgentDocument = z.infer<typeof insertAgentDocumentSchema>
 
 // Select schema
 export const selectAgentDocumentSchema = createSelectSchema(agentDocuments, {
-  citations: z.array(agentCitationReferenceSchema).nullable().optional().default([]),
+  citations: z
+    .array(agentCitationReferenceSchema)
+    .nullable()
+    .optional()
+    .default([]),
 })
 
 export type SelectAgentDocument = z.infer<typeof selectAgentDocumentSchema>
@@ -84,4 +98,6 @@ export const selectPublicAgentDocumentSchema = selectAgentDocumentSchema.omit({
   messageId: true,
 })
 
-export type SelectPublicAgentDocument = z.infer<typeof selectPublicAgentDocumentSchema>
+export type SelectPublicAgentDocument = z.infer<
+  typeof selectPublicAgentDocumentSchema
+>

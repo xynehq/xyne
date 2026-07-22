@@ -26,7 +26,9 @@ const driveSearchToolSchema = z.object({
   filetype: z
     .array(z.nativeEnum(DriveEntity))
     .describe(
-      `Optional Drive file-type enum values. Valid values are ${Object.values(DriveEntity)
+      `Optional Drive file-type enum values. Valid values are ${Object.values(
+        DriveEntity,
+      )
         .map((e) => `'${e}'`)
         .join(", ")}.`,
     )

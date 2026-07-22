@@ -109,7 +109,13 @@ export const getChatMessagesWithAuth = async (
   const messagesArr = await trx
     .select()
     .from(messages)
-    .where(and(eq(messages.chatExternalId, chatId), eq(messages.email, email), eq(messages.isSummary, false)))
+    .where(
+      and(
+        eq(messages.chatExternalId, chatId),
+        eq(messages.email, email),
+        eq(messages.isSummary, false),
+      ),
+    )
     .orderBy(asc(messages.createdAt))
   return z.array(selectMessageSchema).parse(messagesArr)
 }
@@ -122,7 +128,13 @@ export const getChatMessagesBefore = async (
   const messagesArr = await trx
     .select()
     .from(messages)
-    .where(and(lt(messages.createdAt, createdAt), eq(messages.chatId, chatId), eq(messages.isSummary, false)))
+    .where(
+      and(
+        lt(messages.createdAt, createdAt),
+        eq(messages.chatId, chatId),
+        eq(messages.isSummary, false),
+      ),
+    )
     .orderBy(asc(messages.createdAt))
   return z.array(selectMessageSchema).parse(messagesArr)
 }
@@ -195,7 +207,11 @@ export async function getMessageCountsByChats({
     .from(chats)
     .leftJoin(
       messages,
-      and(eq(chats.id, messages.chatId), isNull(messages.deletedAt), eq(messages.isSummary, false)),
+      and(
+        eq(chats.id, messages.chatId),
+        isNull(messages.deletedAt),
+        eq(messages.isSummary, false),
+      ),
     )
     .where(inArray(chats.externalId, chatExternalIds))
     .groupBy(chats.externalId)
@@ -430,32 +446,32 @@ export const fetchUserQueriesForChat = async (
 }
 
 export const parseValidDate = (value?: string): Date | null => {
-  if (!value) return null;
+  if (!value) return null
 
-  const date = new Date(value);
-  return isNaN(date.getTime()) ? null : date;
-};
+  const date = new Date(value)
+  return isNaN(date.getTime()) ? null : date
+}
 
 export type AgentQueryResponsePair = {
   chatId: string
-    chatTitle: string
-    chatCreatedAt: string
-    userEmail: string
-    userName: string
-    totalCost: number
-    totalTokens: number
-    messageCount: number
-    totalLikes: number
-    totalDislikes: number
-    messages: {
-      messageId: string
-      queryText: string
-      responseText: string
-      createdAt: string
-      cost: number
-      tokensUsed: number
-      feedback: unknown | null
-    }[]
+  chatTitle: string
+  chatCreatedAt: string
+  userEmail: string
+  userName: string
+  totalCost: number
+  totalTokens: number
+  messageCount: number
+  totalLikes: number
+  totalDislikes: number
+  messages: {
+    messageId: string
+    queryText: string
+    responseText: string
+    createdAt: string
+    cost: number
+    tokensUsed: number
+    feedback: unknown | null
+  }[]
 }
 
 export const fetchAgentQueryResponsePairs = async (
@@ -464,9 +480,7 @@ export const fetchAgentQueryResponsePairs = async (
   workspaceExternalId?: string,
   fromDate?: string,
   toDate?: string,
-): Promise<
-  AgentQueryResponsePair []
-> => {
+): Promise<AgentQueryResponsePair[]> => {
   const conditions = [
     eq(chats.agentId, agentExternalId),
     isNull(messages.deletedAt),
@@ -483,11 +497,10 @@ export const fetchAgentQueryResponsePairs = async (
   const now = new Date()
   const defaultFromDate = new Date()
   defaultFromDate.setMonth(defaultFromDate.getMonth() - 1)
-  const parsedFrom = parseValidDate(fromDate);
-  const parsedTo = parseValidDate(toDate);
-  const from = parsedFrom ?? defaultFromDate;
-  const to = parsedTo ?? now;
-
+  const parsedFrom = parseValidDate(fromDate)
+  const parsedTo = parseValidDate(toDate)
+  const from = parsedFrom ?? defaultFromDate
+  const to = parsedTo ?? now
 
   conditions.push(gte(messages.createdAt, from))
   conditions.push(lte(messages.createdAt, to))
@@ -516,28 +529,30 @@ export const fetchAgentQueryResponsePairs = async (
     .where(and(...conditions))
     .orderBy(desc(chats.createdAt), desc(messages.createdAt))
 
-
   // Group messages by chat and pair user queries with assistant responses
-  const chatMap = new Map<string, {
-    chatId: string
-    chatTitle: string
-    chatCreatedAt: string
-    userEmail: string
-    userName: string
-    messages: {
-      messageId: string
-      queryText: string
-      responseText: string
-      createdAt: string
-      cost: number
-      tokensUsed: number
-      feedback: unknown | null
-    }[]
-    totalCost: number
-    totalTokens: number
-    totalLikes: number
-    totalDislikes: number
-  }>()
+  const chatMap = new Map<
+    string,
+    {
+      chatId: string
+      chatTitle: string
+      chatCreatedAt: string
+      userEmail: string
+      userName: string
+      messages: {
+        messageId: string
+        queryText: string
+        responseText: string
+        createdAt: string
+        cost: number
+        tokensUsed: number
+        feedback: unknown | null
+      }[]
+      totalCost: number
+      totalTokens: number
+      totalLikes: number
+      totalDislikes: number
+    }
+  >()
 
   // First pass: pair messages
   for (let i = 0; i < allMessages.length - 1; i++) {
@@ -570,11 +585,11 @@ export const fetchAgentQueryResponsePairs = async (
       const tokens = Number(currentMsg.tokensUsed) || 0
 
       // Count likes and dislikes
-      if (currentMsg.feedback && typeof currentMsg.feedback === 'object') {
+      if (currentMsg.feedback && typeof currentMsg.feedback === "object") {
         const feedbackObj = currentMsg.feedback as { type?: string }
-        if (feedbackObj.type === 'like') {
+        if (feedbackObj.type === "like") {
           chat.totalLikes++
-        } else if (feedbackObj.type === 'dislike') {
+        } else if (feedbackObj.type === "dislike") {
           chat.totalDislikes++
         }
       }
@@ -596,13 +611,16 @@ export const fetchAgentQueryResponsePairs = async (
 
   // Convert map to array and sort by latest message timestamp (newest first)
   return Array.from(chatMap.values())
-    .map(chat => ({
+    .map((chat) => ({
       ...chat,
       messageCount: chat.messages.length,
       // Get the latest message timestamp for sorting
-      latestMessageTime: chat.messages.length > 0
-        ? Math.max(...chat.messages.map(m => new Date(m.createdAt).getTime()))
-        : new Date(chat.chatCreatedAt).getTime()
+      latestMessageTime:
+        chat.messages.length > 0
+          ? Math.max(
+              ...chat.messages.map((m) => new Date(m.createdAt).getTime()),
+            )
+          : new Date(chat.chatCreatedAt).getTime(),
     }))
     .sort((a, b) => b.latestMessageTime - a.latestMessageTime)
     .map(({ latestMessageTime, ...chat }) => chat) // Remove latestMessageTime from final result

@@ -59,7 +59,7 @@ function normalizeWhitespace(value: string): string {
 }
 
 export function sanitizeAgentSystemPromptSnapshot(
-  prompt: string | undefined
+  prompt: string | undefined,
 ): string | undefined {
   if (!prompt || typeof prompt !== "string") {
     return undefined
@@ -72,7 +72,7 @@ export function sanitizeAgentSystemPromptSnapshot(
 }
 
 export function buildAgentSystemPromptContextBlock(
-  prompt: string | undefined
+  prompt: string | undefined,
 ): string | undefined {
   const snapshot = sanitizeAgentSystemPromptSnapshot(prompt)
   if (!snapshot) {
@@ -99,7 +99,7 @@ function hasAgentSystemPromptBlock(messages: Message[]): boolean {
 
 export function withAgentSystemPromptMessage(
   messages: Message[],
-  prompt: string | undefined
+  prompt: string | undefined,
 ): Message[] {
   const block = buildAgentSystemPromptContextBlock(prompt)
   if (!block || hasAgentSystemPromptBlock(messages)) {
@@ -123,7 +123,9 @@ function normalizeMetadataValue(value: unknown): string | null {
     serialized = String(value)
   } else if (Array.isArray(value)) {
     serialized = value
-      .map((entry) => (entry === undefined || entry === null ? "" : String(entry)))
+      .map((entry) =>
+        entry === undefined || entry === null ? "" : String(entry),
+      )
       .filter(Boolean)
       .join(", ")
   } else {
@@ -139,7 +141,7 @@ function normalizeMetadataValue(value: unknown): string | null {
 }
 
 function collectFragmentMetadataEntries(
-  fragment: MinimalAgentFragment
+  fragment: MinimalAgentFragment,
 ): Array<[string, string]> {
   const source = (fragment.source || {}) as Record<string, unknown>
   const preferredOrder = [
@@ -179,11 +181,16 @@ function collectFragmentMetadataEntries(
   return entries
 }
 
-function buildFragmentMetadataSearchText(fragment: MinimalAgentFragment): string {
+function buildFragmentMetadataSearchText(
+  fragment: MinimalAgentFragment,
+): string {
   const pairs = collectFragmentMetadataEntries(fragment)
-  const metadataText = pairs.map(([key, value]) => `${key}: ${value}`).join(" | ")
+  const metadataText = pairs
+    .map(([key, value]) => `${key}: ${value}`)
+    .join(" | ")
   const confidenceText =
-    typeof fragment.confidence === "number" && Number.isFinite(fragment.confidence)
+    typeof fragment.confidence === "number" &&
+    Number.isFinite(fragment.confidence)
       ? ` | confidence: ${fragment.confidence.toFixed(3)}`
       : ""
   return `${metadataText}${confidenceText}`.toLowerCase()
@@ -199,10 +206,13 @@ export function formatFragmentWithMetadataForRanking(
   index: number,
   toolName?: string,
   toolQuery?: string,
-  signals?: RetrievalSignal[]
+  signals?: RetrievalSignal[],
 ): string {
   const metadataEntries = collectFragmentMetadataEntries(fragment)
-  if (typeof fragment.confidence === "number" && Number.isFinite(fragment.confidence)) {
+  if (
+    typeof fragment.confidence === "number" &&
+    Number.isFinite(fragment.confidence)
+  ) {
     metadataEntries.push(["confidence", fragment.confidence.toFixed(3)])
   }
   const metadataBlock = metadataEntries.length
@@ -236,7 +246,7 @@ ${rawContent}`
 
 export function formatFragmentWithMetadata(
   fragment: MinimalAgentFragment,
-  index: number
+  index: number,
 ): string {
   const source = (fragment.source || {}) as Record<string, unknown>
   const hiddenKeys = new Set([
@@ -285,7 +295,7 @@ ${content}`
 
 export function formatFragmentsWithMetadata(
   fragments: MinimalAgentFragment[],
-  maxFragments?: number
+  maxFragments?: number,
 ): string {
   if (!fragments || fragments.length === 0) {
     return ""
@@ -317,7 +327,7 @@ function normalizeConstraintTerm(raw: string): string | null {
     .replace(/^[\s"'`]+|[\s"'`]+$/g, "")
     .replace(
       /\b(?:documents?|docs?|files?|sources?|metadata|records?|items?)\b/g,
-      " "
+      " ",
     )
   normalized = normalizeWhitespace(normalized).replace(/[.?!,:;]+$/g, "")
   if (!normalized || normalized.length < 2) return null
@@ -333,10 +343,7 @@ function normalizeConstraintTerm(raw: string): string | null {
   return truncateValue(normalized, METADATA_TERM_MAX_LENGTH)
 }
 
-function addConstraintTerms(
-  target: Set<string>,
-  rawValue: string
-): void {
+function addConstraintTerms(target: Set<string>, rawValue: string): void {
   splitConstraintCandidates(rawValue).forEach((candidate) => {
     const normalized = normalizeConstraintTerm(candidate)
     if (normalized) {
@@ -346,7 +353,7 @@ function addConstraintTerms(
 }
 
 export function extractMetadataConstraintsFromUserMessage(
-  userMessage: string
+  userMessage: string,
 ): MetadataQueryConstraints {
   const includeTerms = new Set<string>()
   const excludeTerms = new Set<string>()
@@ -428,7 +435,7 @@ function computeTermMatchScore(metadataText: string, term: string): number {
 
 export function rankFragmentsByMetadataConstraints(
   fragments: MinimalAgentFragment[],
-  constraints: MetadataQueryConstraints
+  constraints: MetadataQueryConstraints,
 ): {
   rankedCandidates: RankedMetadataCandidate[]
   hasConstraints: boolean
@@ -448,10 +455,7 @@ export function rankFragmentsByMetadataConstraints(
       constraints.includeTerms.length === 0 || includeScore > 0
     const excludeCompliant = excludeScore === 0
     const compliant = includeCompliant && excludeCompliant
-    let score =
-      includeScore * 3 -
-      excludeScore * 4 +
-      (fragment.confidence || 0)
+    let score = includeScore * 3 - excludeScore * 4 + (fragment.confidence || 0)
     if (constraints.strict && !compliant) {
       score -= 100
     }
@@ -501,7 +505,7 @@ export function rankFragmentsByMetadataConstraints(
 export function enforceMetadataConstraintsOnSelection(
   selected: MinimalAgentFragment[],
   rankedCandidates: RankedMetadataCandidate[],
-  constraints: MetadataQueryConstraints
+  constraints: MetadataQueryConstraints,
 ): MinimalAgentFragment[] {
   const hasConstraints =
     constraints.includeTerms.length > 0 || constraints.excludeTerms.length > 0
@@ -510,7 +514,7 @@ export function enforceMetadataConstraintsOnSelection(
   }
 
   const candidateById = new Map(
-    rankedCandidates.map((candidate) => [candidate.fragment.id, candidate])
+    rankedCandidates.map((candidate) => [candidate.fragment.id, candidate]),
   )
   const compliantSelected = selected.filter((fragment) => {
     return candidateById.get(fragment.id)?.compliant

@@ -200,8 +200,6 @@ function validateTextItem(item: any): boolean {
   )
 }
 
-
-
 /**
  * Process collected paragraphs into chunks and add to results
  * Returns the overlap text to maintain continuity across images
@@ -242,7 +240,7 @@ function processTextParagraphs(
     const chunk = chunks[i]
     text_chunks.push(chunk)
     text_chunk_pos.push(globalSeq.value)
-    
+
     // Determine page numbers for this chunk
     let page_numbers: number[]
     if (i === 0 && hasPrevPageOverlap) {
@@ -252,14 +250,14 @@ function processTextParagraphs(
       // Regular chunk on current page
       page_numbers = [pageNum - 1]
     }
-    
+
     // Add chunk metadata
     text_chunks_map.push({
       chunk_index: globalSeq.value,
       page_numbers: page_numbers,
       block_labels: ["text"], // Default label for PDF text chunks
     })
-    
+
     // console.log('TEXT DEBUG: Added chunk at position', globalSeq.value, 'content:', chunk)
     globalSeq.value++
   }
@@ -375,10 +373,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
         await fsPromises.mkdir(outputDir, { recursive: true })
         const imageFilename = `${globalSeq.value}.${type.ext || "png"}`
         imagePath = path.join(outputDir, imageFilename)
-        await fsPromises.writeFile(
-          imagePath,
-          buffer as NodeJS.ArrayBufferView,
-        )
+        await fsPromises.writeFile(imagePath, buffer as NodeJS.ArrayBufferView)
         Logger.info(
           savedLogLabel
             ? `Saved image (${savedLogLabel}) to: ${imagePath}`
@@ -391,12 +386,11 @@ export async function extractTextAndImagesWithChunksFromPDF(
         return false
       }
 
-      const description =
-        imageDescribeBatch.registerImagePathForLaterDescribe(
-          imageHash,
-          path.resolve(imagePath),
-          describeImages,
-        )
+      const description = imageDescribeBatch.registerImagePathForLaterDescribe(
+        imageHash,
+        path.resolve(imagePath),
+        describeImages,
+      )
 
       image_chunks.push(description)
       image_chunk_pos.push(globalSeq.value)
@@ -476,8 +470,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
       return paragraphs.filter((p) => p.trim().length > 0)
     }
 
-
-
     for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
       Logger.debug(`Processing page ${pageNum}`)
 
@@ -487,8 +479,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
 
         // Use textContent-based paragraphs for this page as primary source
         let paragraphs: string[] = await buildParagraphsFromPage(page)
-
-        
 
         let textOperatorCount = (await page.getTextContent()).items.length
 
@@ -507,7 +497,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
         Logger.debug("Text extraction summary for page", {
           pageNum,
           primaryParagraphs: paragraphs.length,
-         
+
           finalParagraphs: paragraphs.length,
           textOperatorCount,
           initialPageOverlap: pageOverlap,
@@ -832,9 +822,8 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     } else {
                       const cnv = createCanvas(width, height)
                       const cctx = cnv.getContext("2d")
-                      
+
                       try {
-                        
                         // @ts-ignore draw directly
                         cctx.drawImage(imgLike, 0, 0)
                         const buffer = cnv.toBuffer("image/png")

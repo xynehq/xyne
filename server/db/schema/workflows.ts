@@ -53,13 +53,25 @@ export const uuidArray = customType<{
   },
 })
 
-export const workflowStatusEnum = pgEnum("workflow_status", Object.values(WorkflowStatus) as [string, ...string[]])
+export const workflowStatusEnum = pgEnum(
+  "workflow_status",
+  Object.values(WorkflowStatus) as [string, ...string[]],
+)
 
-export const stepTypeEnum = pgEnum("step_type", Object.values(StepType) as [string, ...string[]])
+export const stepTypeEnum = pgEnum(
+  "step_type",
+  Object.values(StepType) as [string, ...string[]],
+)
 
-export const toolTypeEnum = pgEnum("tool_type", Object.values(ToolType) as [string, ...string[]])
+export const toolTypeEnum = pgEnum(
+  "tool_type",
+  Object.values(ToolType) as [string, ...string[]],
+)
 
-export const toolExecutionStatusEnum = pgEnum("tool_execution_status", Object.values(ToolExecutionStatus) as [string, ...string[]])
+export const toolExecutionStatusEnum = pgEnum(
+  "tool_execution_status",
+  Object.values(ToolExecutionStatus) as [string, ...string[]],
+)
 
 // 1. Workflow Templates Table (renamed from workflow_templates)
 export const workflowTemplate = pgTable("workflow_template", {
@@ -71,9 +83,7 @@ export const workflowTemplate = pgTable("workflow_template", {
   userId: integer("user_id")
     .notNull()
     .references(() => users.id),
-  isPublic: boolean("is_public")
-    .default(false)
-    .notNull(),
+  isPublic: boolean("is_public").default(false).notNull(),
   description: text("description"),
   version: text("version").notNull().default("1.0.0"),
   status: workflowStatusEnum("status").notNull().default(WorkflowStatus.DRAFT),
@@ -198,7 +208,9 @@ export const toolExecution = pgTable("tool_execution", {
     .notNull()
     .references(() => workflowTool.id),
   workflowExecutionId: uuid("workflow_execution_id").notNull(), // Renamed from stepId
-  status: toolExecutionStatusEnum("status").notNull().default(ToolExecutionStatus.PENDING),
+  status: toolExecutionStatusEnum("status")
+    .notNull()
+    .default(ToolExecutionStatus.PENDING),
   result: jsonb("result"), // Execution result/output
   // Removed: errorMessage column
   startedAt: timestamp("started_at", { withTimezone: true }),
@@ -266,11 +278,10 @@ export type InsertWorkflowStepExecution = z.infer<
 export type InsertToolExecution = z.infer<typeof insertToolExecutionSchema>
 
 // Public schemas (for API responses)
-export const publicWorkflowTemplateSchema = selectWorkflowTemplateSchema
-  .omit({
-    workspaceId: true,
-    userId: true,
-  })
+export const publicWorkflowTemplateSchema = selectWorkflowTemplateSchema.omit({
+  workspaceId: true,
+  userId: true,
+})
 
 export const publicWorkflowExecutionSchema = selectWorkflowExecutionSchema.omit(
   {
@@ -297,7 +308,9 @@ export const createWorkflowTemplateSchema = z.object({
 
 export const createWorkflowToolSchema = z.object({
   type: z.enum(Object.values(ToolType) as [string, ...string[]]),
-  value: z.union([z.string(), z.number(), z.record(z.string(), z.any())]).optional(),
+  value: z
+    .union([z.string(), z.number(), z.record(z.string(), z.any())])
+    .optional(),
   config: z.record(z.string(), z.any()).optional(),
 })
 
@@ -312,7 +325,9 @@ export const createWorkflowStepTemplateSchema = z.object({
   workflowTemplateId: z.uuid(),
   name: z.string().min(1).max(255),
   description: z.string().optional(),
-  type: z.enum(Object.values(StepType) as [string, ...string[]]).default(StepType.AUTOMATED),
+  type: z
+    .enum(Object.values(StepType) as [string, ...string[]])
+    .default(StepType.AUTOMATED),
   parentStepId: z.string().uuid().optional(),
   prevStepIds: z.array(z.string().uuid()).default([]),
   nextStepIds: z.array(z.string().uuid()).default([]),
@@ -328,8 +343,9 @@ export const executeWorkflowSchema = z.object({
 })
 
 // Additional schemas required by server.ts
-export const updateWorkflowTemplateSchema =
-  createWorkflowTemplateSchema.partial().extend({
+export const updateWorkflowTemplateSchema = createWorkflowTemplateSchema
+  .partial()
+  .extend({
     isPublic: z.boolean().optional(),
     status: z.enum(WorkflowStatus).optional(),
     userEmails: z
@@ -344,58 +360,70 @@ export const createComplexWorkflowTemplateSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().optional(),
   version: z.string().default("1.0.0"),
-  config: z.object({
-    ai_model: z.string().optional(),
-    max_file_size: z.string().optional(),
-    auto_execution: z.boolean().optional(),
-    schema_version: z.string().optional(),
-    allowed_file_types: z.array(z.string()).optional(),
-    supports_file_upload: z.boolean().optional(),
-  }).optional(),
-  nodes: z.array(z.object({
-    id: z.string(),
-    type: z.string(),
-    position: z.object({
-      x: z.number(),
-      y: z.number(),
-    }),
-    data: z.object({
-      step: z.object({
-        id: z.string(),
-        name: z.string(),
-        description: z.string().optional(),
-        type: z.string(),
-        status: z.string().optional(),
-        contents: z.array(z.any()).optional(),
-        config: z.record(z.string(), z.any()).optional(),
+  config: z
+    .object({
+      ai_model: z.string().optional(),
+      max_file_size: z.string().optional(),
+      auto_execution: z.boolean().optional(),
+      schema_version: z.string().optional(),
+      allowed_file_types: z.array(z.string()).optional(),
+      supports_file_upload: z.boolean().optional(),
+    })
+    .optional(),
+  nodes: z.array(
+    z.object({
+      id: z.string(),
+      type: z.string(),
+      position: z.object({
+        x: z.number(),
+        y: z.number(),
       }),
-      tools: z.array(z.object({
-        id: z.string().optional(),
-        type: z.string(),
-        value: z.any().optional(),
-        config: z.record(z.string(), z.any()).optional(),
-      })).optional(),
-      isActive: z.boolean().optional(),
-      isCompleted: z.boolean().optional(),
-      hasNext: z.boolean().optional(),
+      data: z.object({
+        step: z.object({
+          id: z.string(),
+          name: z.string(),
+          description: z.string().optional(),
+          type: z.string(),
+          status: z.string().optional(),
+          contents: z.array(z.any()).optional(),
+          config: z.record(z.string(), z.any()).optional(),
+        }),
+        tools: z
+          .array(
+            z.object({
+              id: z.string().optional(),
+              type: z.string(),
+              value: z.any().optional(),
+              config: z.record(z.string(), z.any()).optional(),
+            }),
+          )
+          .optional(),
+        isActive: z.boolean().optional(),
+        isCompleted: z.boolean().optional(),
+        hasNext: z.boolean().optional(),
+      }),
     }),
-  })),
-  edges: z.array(z.object({
-    id: z.string(),
-    source: z.string(),
-    target: z.string(),
-    type: z.string().optional(),
-    sourceHandle: z.string().optional(),
-    targetHandle: z.string().optional(),
-    style: z.record(z.string(), z.any()).optional(),
-    markerEnd: z.record(z.string(), z.any()).optional(),
-  })),
-  metadata: z.object({
-    nodeCount: z.number(),
-    edgeCount: z.number(),
-    createdAt: z.string(),
-    workflowType: z.string(),
-  }).optional(),
+  ),
+  edges: z.array(
+    z.object({
+      id: z.string(),
+      source: z.string(),
+      target: z.string(),
+      type: z.string().optional(),
+      sourceHandle: z.string().optional(),
+      targetHandle: z.string().optional(),
+      style: z.record(z.string(), z.any()).optional(),
+      markerEnd: z.record(z.string(), z.any()).optional(),
+    }),
+  ),
+  metadata: z
+    .object({
+      nodeCount: z.number(),
+      edgeCount: z.number(),
+      createdAt: z.string(),
+      workflowType: z.string(),
+    })
+    .optional(),
 })
 
 export const createWorkflowExecutionSchema = z.object({
@@ -424,12 +452,16 @@ export const formSubmissionSchema = z.object({
 export const addStepToWorkflowSchema = z.object({
   stepName: z.string().min(1).max(255),
   stepDescription: z.string().optional(),
-  stepType: z.enum(Object.values(StepType) as [string, ...string[]]).default(StepType.AUTOMATED),
+  stepType: z
+    .enum(Object.values(StepType) as [string, ...string[]])
+    .default(StepType.AUTOMATED),
   timeEstimate: z.number().int().min(0).default(300),
   metadata: z.record(z.string(), z.any()).optional(),
   tool: z.object({
     type: z.enum(Object.values(ToolType) as [string, ...string[]]),
-    value: z.union([z.string(), z.number(), z.record(z.string(), z.any())]).optional(),
+    value: z
+      .union([z.string(), z.number(), z.record(z.string(), z.any())])
+      .optional(),
     config: z.record(z.string(), z.any()).optional(),
   }),
 })

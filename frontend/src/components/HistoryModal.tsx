@@ -440,9 +440,7 @@ const HistoryModal = ({
                   router.navigate({
                     to: "/chat/$chatId",
                     params: { chatId: item.externalId },
-                    search: isEmbedded
-                      ? { embedded: true }
-                      : {},
+                    search: isEmbedded ? { embedded: true } : {},
                   })
                 }}
               >

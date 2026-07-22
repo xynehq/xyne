@@ -4,10 +4,7 @@ function getToken(): string | null {
   return localStorage.getItem("sdk_token")
 }
 
-async function request<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken()
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -43,17 +40,19 @@ export async function signup(data: {
   name: string
   workspace_name: string
 }) {
-  return request<{ token: string; workspace_id: string; user: { email: string; name: string } }>(
-    "/auth/signup",
-    { method: "POST", body: JSON.stringify(data) },
-  )
+  return request<{
+    token: string
+    workspace_id: string
+    user: { email: string; name: string }
+  }>("/auth/signup", { method: "POST", body: JSON.stringify(data) })
 }
 
 export async function login(data: { email: string; password: string }) {
-  return request<{ token: string; workspace_id: string; user: { email: string; name: string } }>(
-    "/auth/login",
-    { method: "POST", body: JSON.stringify(data) },
-  )
+  return request<{
+    token: string
+    workspace_id: string
+    user: { email: string; name: string }
+  }>("/auth/login", { method: "POST", body: JSON.stringify(data) })
 }
 
 // Me
@@ -61,7 +60,11 @@ export async function getMe() {
   return request<{
     user: { email: string; name: string; role: string }
     workspace_id: string
-    config: { token_expiry_seconds: number; allowed_origins: string[]; enabled: boolean } | null
+    config: {
+      token_expiry_seconds: number
+      allowed_origins: string[]
+      enabled: boolean
+    } | null
   }>("/me")
 }
 
@@ -80,7 +83,10 @@ export async function listCollections() {
   }>("/collections")
 }
 
-export async function createCollection(data: { name: string; description?: string }) {
+export async function createCollection(data: {
+  name: string
+  description?: string
+}) {
   return request<{
     id: string
     name: string
@@ -91,7 +97,10 @@ export async function createCollection(data: { name: string; description?: strin
 }
 
 export async function deleteCollection(id: string) {
-  return request<{ success: boolean; deletedCount: number }>(`/collections/${id}`, { method: "DELETE" })
+  return request<{ success: boolean; deletedCount: number }>(
+    `/collections/${id}`,
+    { method: "DELETE" },
+  )
 }
 
 export async function listCollectionItems(collectionId: string) {
@@ -121,10 +130,11 @@ export async function uploadDocuments(data: {
     source_url?: string
   }>
 }) {
-  return request<{ collection_id: string; documents: Array<{ docId: string; title: string; status: string }>; total: number }>(
-    "/documents",
-    { method: "POST", body: JSON.stringify(data) },
-  )
+  return request<{
+    collection_id: string
+    documents: Array<{ docId: string; title: string; status: string }>
+    total: number
+  }>("/documents", { method: "POST", body: JSON.stringify(data) })
 }
 
 export async function uploadFiles(data: {
@@ -168,16 +178,23 @@ export async function uploadFiles(data: {
 
 // API Keys
 export async function listApiKeys() {
-  return request<{ api_keys: Array<{ id: string; name: string; key_prefix: string; created_at: string }> }>(
-    "/api-keys",
-  )
+  return request<{
+    api_keys: Array<{
+      id: string
+      name: string
+      key_prefix: string
+      created_at: string
+    }>
+  }>("/api-keys")
 }
 
 export async function createApiKey() {
-  return request<{ api_key: string; id: string; name: string; created_at: string }>(
-    "/api-keys",
-    { method: "POST" },
-  )
+  return request<{
+    api_key: string
+    id: string
+    name: string
+    created_at: string
+  }>("/api-keys", { method: "POST" })
 }
 
 export async function deleteApiKey(id: string) {
@@ -185,18 +202,37 @@ export async function deleteApiKey(id: string) {
 }
 
 // Config
+export interface CreateTicketWithEmailConfig {
+  enabled: boolean
+  spacesBaseUrl: string
+  spacesAppToken: string
+  channelId: string
+  ackSubject?: string
+  ackBody?: string
+}
+
+export interface SpacesConfig {
+  createTicketWithEmail?: CreateTicketWithEmailConfig
+}
+
+export interface SdkConfigResponse {
+  token_expiry_seconds: number
+  allowed_origins: string[]
+  enabled: boolean
+  spaces_config: SpacesConfig
+}
+
 export async function getConfig() {
-  return request<{ token_expiry_seconds: number; allowed_origins: string[]; enabled: boolean }>(
-    "/config",
-  )
+  return request<SdkConfigResponse>("/config")
 }
 
 export async function updateConfig(data: {
   allowed_origins?: string[]
   token_expiry_seconds?: number
+  spaces_config?: SpacesConfig
 }) {
-  return request<{ token_expiry_seconds: number; allowed_origins: string[]; enabled: boolean }>(
-    "/config",
-    { method: "PUT", body: JSON.stringify(data) },
-  )
+  return request<SdkConfigResponse>("/config", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  })
 }

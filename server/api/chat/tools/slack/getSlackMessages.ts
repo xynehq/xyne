@@ -11,7 +11,10 @@ import {
 } from "@xyne/vespa-ts"
 import { getErrorMessage } from "@/utils"
 import { searchSlackMessages, SearchVespaThreads } from "@/search/vespa"
-import { parseAgentAppIntegrations, formatSearchToolResponseAsRawDocuments } from "../utils"
+import {
+  parseAgentAppIntegrations,
+  formatSearchToolResponseAsRawDocuments,
+} from "../utils"
 import { searchToCitation } from "@/api/chat/utils"
 import { answerContextMap } from "@/ai/context"
 import { getLogger, Subsystem } from "@/logger"
@@ -116,7 +119,7 @@ export const getSlackRelatedMessagesTool: Tool<
 
       if (shouldApplyFallbackRange) {
         Logger.debug(
-          "[getSlackRelatedMessages] No filters provided. Defaulting to the last 72 hours."
+          "[getSlackRelatedMessages] No filters provided. Defaulting to the last 72 hours.",
         )
       }
 
@@ -271,7 +274,10 @@ export const getSlackRelatedMessagesTool: Tool<
   },
 }
 
-type NormalizedTimestampRange = { from: number | null; to: number | null } | null
+type NormalizedTimestampRange = {
+  from: number | null
+  to: number | null
+} | null
 
 function buildDefaultRecentRange(): {
   startTime: string
@@ -285,9 +291,10 @@ function buildDefaultRecentRange(): {
   }
 }
 
-function normalizeTimestampRange(
-  range?: { startTime?: string; endTime?: string }
-): NormalizedTimestampRange {
+function normalizeTimestampRange(range?: {
+  startTime?: string
+  endTime?: string
+}): NormalizedTimestampRange {
   if (!range) {
     return null
   }

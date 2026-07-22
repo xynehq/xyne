@@ -84,9 +84,16 @@ export const describeImageWithllm = async (
       throw new Error("LiteLLM API endpoint, model ID, or API key is not set")
     }
     const client = createLiteLLMOpenAIClient(apiKey, baseURL)
-    const params = buildOpenAiImageDescribePayload(image, modelId, imageName, prompt)
+    const params = buildOpenAiImageDescribePayload(
+      image,
+      modelId,
+      imageName,
+      prompt,
+    )
 
-    Logger.debug("Sending image description via OpenAI client (LiteLLM baseURL)")
+    Logger.debug(
+      "Sending image description via OpenAI client (LiteLLM baseURL)",
+    )
     const response = await client.chat.completions.create(
       params,
       signal ? { signal } : undefined,

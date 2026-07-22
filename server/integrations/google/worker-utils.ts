@@ -426,7 +426,7 @@ export const processSpreadsheetFileWithSheetInfo = async (
         const worksheet = workbook.Sheets[sheetName]
         if (!worksheet) continue
 
-        const filteredSheetChunks = chunkSheetWithHeaders(worksheet);
+        const filteredSheetChunks = chunkSheetWithHeaders(worksheet)
 
         if (filteredSheetChunks.length === 0) {
           Logger.debug(

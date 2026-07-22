@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { ConversationRole, type Message as BedrockMessage } from "@aws-sdk/client-bedrock-runtime"
 import {
-  Apps,
-  KnowledgeBaseEntity,
-} from "@xyne/vespa-ts/types"
+  ConversationRole,
+  type Message as BedrockMessage,
+} from "@aws-sdk/client-bedrock-runtime"
+import { Apps, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
 import {
   ToolResponse,
   createRunId,
@@ -24,25 +24,21 @@ import type {
 import type { MinimalAgentFragment } from "@/api/chat/types"
 import type { Collection, CollectionItem } from "@/db/schema"
 
-process.env.ENCRYPTION_KEY ??=
-  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+process.env.ENCRYPTION_KEY ??= "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 process.env.SERVICE_ACCOUNT_ENCRYPTION_KEY ??=
   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
-const {
-  beforeToolExecutionHook,
-  afterToolExecutionHook,
-} = await import("@/api/chat/message-agents")
+const { beforeToolExecutionHook, afterToolExecutionHook } = await import(
+  "@/api/chat/message-agents"
+)
 const {
   executeLsKnowledgeBase,
   executeSearchKnowledgeBase,
   LsKnowledgeBaseInputSchema,
   SearchKnowledgeBaseInputSchema,
 } = await import("@/api/chat/tools/knowledgeBaseFlow")
-const {
-  getFragmentsForSynthesis,
-  mergeRawDocumentsIntoDocumentMemory,
-} = await import("@/api/chat/document-memory")
+const { getFragmentsForSynthesis, mergeRawDocumentsIntoDocumentMemory } =
+  await import("@/api/chat/document-memory")
 const { checkAndYieldCitationsForAgent } = await import("@/api/chat/utils")
 
 type LsKnowledgeBaseToolParams = Parameters<typeof executeLsKnowledgeBase>[0]
@@ -161,7 +157,9 @@ function createRepo() {
       return collections
     },
     async getCollectionById(collectionId: string) {
-      return collections.find((collection) => collection.id === collectionId) ?? null
+      return (
+        collections.find((collection) => collection.id === collectionId) ?? null
+      )
     },
     async getCollectionItemById(itemId: string) {
       return items.find((item) => item.id === itemId) ?? null
@@ -275,11 +273,10 @@ function createLsTool(
     schema: {
       name: "ls",
       description: "Browse the current knowledge-base scope.",
-      parameters:
-        LsKnowledgeBaseInputSchema as unknown as Tool<
-          LsKnowledgeBaseToolParams,
-          AgentRunContext
-        >["schema"]["parameters"],
+      parameters: LsKnowledgeBaseInputSchema as unknown as Tool<
+        LsKnowledgeBaseToolParams,
+        AgentRunContext
+      >["schema"]["parameters"],
     },
     async execute(args, context) {
       return executeLsKnowledgeBase(args, context as any, repo as any)
@@ -295,11 +292,10 @@ function createSearchTool(
     schema: {
       name: "searchKnowledgeBase",
       description: "Search the current knowledge-base scope.",
-      parameters:
-        SearchKnowledgeBaseInputSchema as unknown as Tool<
-          SearchKnowledgeBaseToolParams,
-          AgentRunContext
-        >["schema"]["parameters"],
+      parameters: SearchKnowledgeBaseInputSchema as unknown as Tool<
+        SearchKnowledgeBaseToolParams,
+        AgentRunContext
+      >["schema"]["parameters"],
     },
     async execute(args, context) {
       return executeSearchKnowledgeBase(args, context as any, {
@@ -310,7 +306,11 @@ function createSearchTool(
   }
 }
 
-function createToolCall(id: string, name: string, args: Record<string, unknown>) {
+function createToolCall(
+  id: string,
+  name: string,
+  args: Record<string, unknown>,
+) {
   return {
     id,
     type: "function" as const,
@@ -322,7 +322,11 @@ function createToolCall(id: string, name: string, args: Record<string, unknown>)
 }
 
 function createScriptedProvider(
-  steps: Array<(state: Readonly<{ messages: readonly Message[] }>) => { message?: { content?: string | null; tool_calls?: readonly ToolCall[] } }>,
+  steps: Array<
+    (state: Readonly<{ messages: readonly Message[] }>) => {
+      message?: { content?: string | null; tool_calls?: readonly ToolCall[] }
+    }
+  >,
 ): ModelProvider<AgentRunContext> {
   let index = 0
   return {
@@ -480,7 +484,10 @@ async function runScriptedKnowledgeBaseFlow(params: {
         answer = content
       }
     }
-    if (event.type === "final_output" && typeof event.data.output === "string") {
+    if (
+      event.type === "final_output" &&
+      typeof event.data.output === "string"
+    ) {
       answer = event.data.output
     }
   }
@@ -497,11 +504,14 @@ async function runScriptedKnowledgeBaseFlow(params: {
     }
   }
 
-  const synthesisFragments = await getFragmentsForSynthesis(context.documentMemory, {
-    email: context.user.email,
-    userId: context.user.numericId,
-    workspaceId: context.user.workspaceNumericId,
-  })
+  const synthesisFragments = await getFragmentsForSynthesis(
+    context.documentMemory,
+    {
+      email: context.user.email,
+      userId: context.user.numericId,
+      workspaceId: context.user.workspaceNumericId,
+    },
+  )
 
   return {
     answer,
@@ -575,21 +585,22 @@ describe("knowledge-base message agent flow", () => {
       },
     })
 
-    const preparedSearchArgsWithStringifiedTargets = await beforeToolExecutionHook(
-      "searchKnowledgeBase",
-      {
-        query: "spec chunk",
-        filters: {
-          targets: JSON.stringify([
-            JSON.stringify({
-              type: "file",
-              fileId: specFile.id,
-            }),
-          ]),
+    const preparedSearchArgsWithStringifiedTargets =
+      await beforeToolExecutionHook(
+        "searchKnowledgeBase",
+        {
+          query: "spec chunk",
+          filters: {
+            targets: JSON.stringify([
+              JSON.stringify({
+                type: "file",
+                fileId: specFile.id,
+              }),
+            ]),
+          },
         },
-      },
-      context,
-    )
+        context,
+      )
 
     expect(preparedSearchArgsWithStringifiedTargets).toEqual({
       query: "spec chunk",
@@ -715,7 +726,7 @@ describe("knowledge-base message agent flow", () => {
     const searchToolMessage = parseSerializedToolMessage(providerSnapshots[1])
 
     expect(lsToolMessage.tool_name).toBe("ls")
-    expect(lsToolMessage.result).toContain("\"type\":\"folder\"")
+    expect(lsToolMessage.result).toContain('"type":"folder"')
     expect(lsToolMessage.result).toContain(`\"id\":\"${projectsFolder.id}\"`)
     expect(searchToolMessage.tool_name).toBe("searchKnowledgeBase")
     expect(searchToolMessage.result).toContain("Spec chunk 0")
@@ -943,7 +954,8 @@ describe("knowledge-base message agent flow", () => {
       },
       () => ({
         message: {
-          content: "Alpha contains the README entry and the search stayed collection-scoped.",
+          content:
+            "Alpha contains the README entry and the search stayed collection-scoped.",
         },
       }),
     ])
@@ -1010,7 +1022,7 @@ describe("knowledge-base message agent flow", () => {
     const lsToolMessage = parseSerializedToolMessage(providerSnapshots[0])
 
     expect(lsToolMessage.tool_name).toBe("ls")
-    expect(lsToolMessage.result).toContain("\"type\":\"collection\"")
+    expect(lsToolMessage.result).toContain('"type":"collection"')
     expect(lsToolMessage.result).toContain(`\"id\":\"${collectionAlpha.id}\"`)
     expect(searchCalls).toEqual([
       {

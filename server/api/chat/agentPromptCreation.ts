@@ -84,7 +84,9 @@ export const agentPromptSections: AgentPromptSections = {
 `.trim(),
 }
 
-export function buildAgentPromptAddendum(internalAgentsContent?: string): string {
+export function buildAgentPromptAddendum(
+  internalAgentsContent?: string,
+): string {
   const internalAgentSection = internalAgentsContent
     ? agentPromptSections.internalAgentDiscipline.replace(
         "{{INTERNAL_AGENTS_PLACEHOLDER}}",

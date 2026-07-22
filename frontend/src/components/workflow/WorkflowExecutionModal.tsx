@@ -7,9 +7,7 @@ import { workflowExecutionsAPI } from "./api/ApiHandlers"
 import { api } from "../../api"
 import { WorkflowExecutionModalProps } from "./Types"
 
-
 const MAX_FILE_SIZE = 40 * 1024 * 1024 // 40MB
-
 
 export function WorkflowExecutionModal({
   isOpen,
@@ -36,16 +34,18 @@ export function WorkflowExecutionModal({
   const [maxRetries] = useState(3)
   const [executionId, setExecutionId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  
+
   // Use provided allowedFileTypes with validation and default fallback
-  const filteredFileTypes = (allowedFileTypes && allowedFileTypes.length > 0) 
-                ? allowedFileTypes.filter(type => type && type.trim() !== '') 
-                : []
-  const fileTypes = filteredFileTypes.length > 0 
-                    ? filteredFileTypes 
-                    : ["txt", "pdf", "docx", "doc", "xlsx", "xls"]
-  const acceptAttribute = fileTypes.map(type => `.${type}`).join(',')
-  const supportedFormatsText = fileTypes.join(', ')
+  const filteredFileTypes =
+    allowedFileTypes && allowedFileTypes.length > 0
+      ? allowedFileTypes.filter((type) => type && type.trim() !== "")
+      : []
+  const fileTypes =
+    filteredFileTypes.length > 0
+      ? filteredFileTypes
+      : ["txt", "pdf", "docx", "doc", "xlsx", "xls"]
+  const acceptAttribute = fileTypes.map((type) => `.${type}`).join(",")
+  const supportedFormatsText = fileTypes.join(", ")
 
   // Cleanup polling on component unmount
   useEffect(() => {
@@ -98,10 +98,10 @@ export function WorkflowExecutionModal({
     }
 
     // Handle API response errors
-    if (error?.error && typeof error.error === 'string') {
+    if (error?.error && typeof error.error === "string") {
       return error.error
     }
-    if (error?.message && typeof error.message === 'string') {
+    if (error?.message && typeof error.message === "string") {
       return error.message
     }
 
@@ -111,22 +111,22 @@ export function WorkflowExecutionModal({
     }
 
     // Handle network errors
-    if (error?.code === 'NETWORK_ERROR' || error?.name === 'NetworkError') {
+    if (error?.code === "NETWORK_ERROR" || error?.name === "NetworkError") {
       return "Network connection failed. Please check your internet connection and try again."
     }
 
     // Handle timeout errors
-    if (error?.code === 'ECONNABORTED' || error?.message?.includes('timeout')) {
+    if (error?.code === "ECONNABORTED" || error?.message?.includes("timeout")) {
       return "Request timed out. The operation took too long to complete."
     }
 
     // Handle validation errors
     if (error?.validation && Array.isArray(error.validation)) {
-      return error.validation.map((v: any) => v.message || v).join(', ')
+      return error.validation.map((v: any) => v.message || v).join(", ")
     }
 
     // Fallback for unknown error structures
-    if (typeof error === 'string') {
+    if (typeof error === "string") {
       return error
     }
 
@@ -143,7 +143,7 @@ export function WorkflowExecutionModal({
     }
 
     // Check file type using dynamic allowed types
-    const fileExtension = file.name.split('.').pop()?.toLowerCase()
+    const fileExtension = file.name.split(".").pop()?.toLowerCase()
     if (!fileExtension || !fileTypes.includes(fileExtension)) {
       return `Unsupported file type. Please select a file with one of these formats: ${supportedFormatsText}`
     }
@@ -197,7 +197,9 @@ export function WorkflowExecutionModal({
         setIsUploaded(false)
         setIsProcessing(false)
         setIsFailed(true)
-        const errorMessage = extractErrorMessage(response.error || response.message || response)
+        const errorMessage = extractErrorMessage(
+          response.error || response.message || response,
+        )
         setUploadError(`Execution failed: ${errorMessage}`)
       } else {
         setIsUploaded(true)
@@ -214,7 +216,8 @@ export function WorkflowExecutionModal({
         } else {
           console.warn("No execution ID found in response")
           // Try to extract from other possible locations
-          const alternativeId = response.data?.id || response.execution?.id || response.id
+          const alternativeId =
+            response.data?.id || response.execution?.id || response.id
           if (alternativeId) {
             setExecutionId(alternativeId)
             startStatusPolling(alternativeId)
@@ -222,7 +225,9 @@ export function WorkflowExecutionModal({
             // If no ID found, show error
             setIsProcessing(false)
             setIsFailed(true)
-            setUploadError("Execution started but could not track progress. Please check execution status manually.")
+            setUploadError(
+              "Execution started but could not track progress. Please check execution status manually.",
+            )
           }
         }
       }
@@ -261,13 +266,15 @@ export function WorkflowExecutionModal({
     if (!selectedFile) return
 
     setIsProcessing(true)
-    
+
     try {
       // Only execute with existing template ID
       if (templateId) {
         await executeWorkflow(selectedFile, templateId)
       } else {
-        throw new Error("No template ID provided for execution. Please save the workflow first.")
+        throw new Error(
+          "No template ID provided for execution. Please save the workflow first.",
+        )
       }
     } catch (error) {
       console.error("Execution error:", error)
@@ -293,7 +300,7 @@ export function WorkflowExecutionModal({
     setIsCompleted(false)
     setIsFailed(false)
     setUploadError(null)
-    setProcessingMessage("")      
+    setProcessingMessage("")
     if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current)
       pollingIntervalRef.current = null
@@ -307,31 +314,33 @@ export function WorkflowExecutionModal({
     if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current)
       pollingIntervalRef.current = null
-    }  
+    }
   }
 
   const startStatusPolling = async (executionId: string) => {
-
     // Clear any existing interval first
-    stopPolling()      
+    stopPolling()
 
     let currentAttempts = 0
     let currentRetryCount = 0
 
     const checkStatus = async () => {
       try {
-        currentAttempts += 1      
-        
+        currentAttempts += 1
+
         // Check if we've exceeded max polling attempts (timeout)
         if (currentAttempts >= maxPollingAttempts) {
           stopPolling()
           setIsProcessing(false)
           setIsFailed(true)
-          setUploadError("Execution timed out. The process is taking longer than expected. Please check the execution status manually.")
+          setUploadError(
+            "Execution timed out. The process is taking longer than expected. Please check the execution status manually.",
+          )
           return
         }
 
-        const response = await api.workflow.executions[executionId].status.$get()
+        const response =
+          await api.workflow.executions[executionId].status.$get()
 
         // Check if response is ok
         if (!response.ok) {
@@ -341,28 +350,37 @@ export function WorkflowExecutionModal({
         const statusData = await response.json()
 
         // Reset retry count on successful request
-        currentRetryCount = 0        
+        currentRetryCount = 0
 
         // Check if any step is awaiting user selection for Q&A regardless of overall status
-        const qaStepAwaitingSelection = statusData.stepExecutions?.find((step: any) => {
-          const toolExecs = statusData.toolExecutions?.filter((t: any) => 
-            step.toolExecIds?.includes(t.id)
-          ) || []
-          return toolExecs.some((tool: any) => tool.result?.awaitingUserSelection)
-        })
-        
+        const qaStepAwaitingSelection = statusData.stepExecutions?.find(
+          (step: any) => {
+            const toolExecs =
+              statusData.toolExecutions?.filter((t: any) =>
+                step.toolExecIds?.includes(t.id),
+              ) || []
+            return toolExecs.some(
+              (tool: any) => tool.result?.awaitingUserSelection,
+            )
+          },
+        )
+
         if (qaStepAwaitingSelection) {
           // Find the Q&A tool execution with awaiting selection
-          const qaToolExec = statusData.toolExecutions?.find((t: any) => 
-            qaStepAwaitingSelection.toolExecIds?.includes(t.id) && 
-            t.result?.awaitingUserSelection
+          const qaToolExec = statusData.toolExecutions?.find(
+            (t: any) =>
+              qaStepAwaitingSelection.toolExecIds?.includes(t.id) &&
+              t.result?.awaitingUserSelection,
           )
-          
+
           if (qaToolExec) {
-            console.log("🎯 Q&A tool execution found with awaitingUserSelection - triggering modal", qaToolExec)
+            console.log(
+              "🎯 Q&A tool execution found with awaitingUserSelection - triggering modal",
+              qaToolExec,
+            )
             stopPolling()
             setIsProcessing(false)
-            
+
             // Trigger Q&A execution modal
             const event = new CustomEvent("openQAExecution", {
               detail: {
@@ -370,21 +388,21 @@ export function WorkflowExecutionModal({
                 stepData: {
                   ...qaStepAwaitingSelection,
                   result: qaToolExec.result,
-                  executionId: executionId
+                  executionId: executionId,
                 },
                 toolData: qaToolExec,
-                workflowData: { execution: statusData }
-              }
+                workflowData: { execution: statusData },
+              },
             })
             console.log("🚀 Dispatching openQAExecution event", event.detail)
             window.dispatchEvent(event)
-            
+
             // Close the execution modal with state reset
             handleClose()
             return
           }
         }
-        
+
         if (statusData.status === "input_required") {
           stopPolling()
           setIsProcessing(false)
@@ -397,17 +415,23 @@ export function WorkflowExecutionModal({
           stopPolling()
           setIsProcessing(false)
           setIsFailed(true)
-          
+
           // Extract error message from status data
           let errorMessage = "Execution failed"
           if (statusData.error) {
             errorMessage = extractErrorMessage(statusData.error)
-          } else if (statusData.message && statusData.message !== "Execution failed") {
+          } else if (
+            statusData.message &&
+            statusData.message !== "Execution failed"
+          ) {
             errorMessage = statusData.message
           }
-          
+
           setUploadError(errorMessage)
-        } else if (statusData.status === "active" || statusData.status === "pending") {
+        } else if (
+          statusData.status === "active" ||
+          statusData.status === "pending"
+        ) {
           // Update processing message if provided
           if (statusData.message && statusData.message !== processingMessage) {
             setProcessingMessage(statusData.message)
@@ -417,17 +441,18 @@ export function WorkflowExecutionModal({
           // Unknown status
           console.warn("⚠️ Unknown execution status:", statusData.status)
         }
-        
       } catch (error) {
         console.error("Status polling error:", error)
-        currentRetryCount += 1        
-        
+        currentRetryCount += 1
+
         // If we've exceeded max retries, stop polling and show error
         if (currentRetryCount >= maxRetries) {
           stopPolling()
           setIsProcessing(false)
           setIsFailed(true)
-          setUploadError(`Failed to check execution status: ${extractErrorMessage(error)}`)
+          setUploadError(
+            `Failed to check execution status: ${extractErrorMessage(error)}`,
+          )
           return
         }
       }
@@ -440,7 +465,6 @@ export function WorkflowExecutionModal({
     // Also check immediately
     checkStatus()
   }
-
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -461,7 +485,9 @@ export function WorkflowExecutionModal({
               <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
                 {workflowName}
               </h2>
-              <p className="text-gray-600 dark:text-gray-400 text-base">{workflowDescription}</p>
+              <p className="text-gray-600 dark:text-gray-400 text-base">
+                {workflowDescription}
+              </p>
             </div>
 
             {/* Error Content */}
@@ -479,7 +505,8 @@ export function WorkflowExecutionModal({
                   Execution Failed
                 </h3>
                 <p className="text-red-700 dark:text-red-300 text-sm max-w-md">
-                  {uploadError || "The workflow execution encountered an error and could not be completed."}
+                  {uploadError ||
+                    "The workflow execution encountered an error and could not be completed."}
                 </p>
               </div>
 
@@ -509,7 +536,9 @@ export function WorkflowExecutionModal({
               <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
                 {workflowName}
               </h2>
-              <p className="text-gray-600 dark:text-gray-400 text-base">{workflowDescription}</p>
+              <p className="text-gray-600 dark:text-gray-400 text-base">
+                {workflowDescription}
+              </p>
             </div>
 
             {/* Completion Content */}
@@ -561,7 +590,9 @@ export function WorkflowExecutionModal({
               <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
                 {workflowName}
               </h2>
-              <p className="text-gray-600 dark:text-gray-400 text-base">{workflowDescription}</p>
+              <p className="text-gray-600 dark:text-gray-400 text-base">
+                {workflowDescription}
+              </p>
             </div>
 
             {/* Input Required Content */}
@@ -610,7 +641,9 @@ export function WorkflowExecutionModal({
               <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
                 {workflowName}
               </h2>
-              <p className="text-gray-600 dark:text-gray-400 text-base">{workflowDescription}</p>
+              <p className="text-gray-600 dark:text-gray-400 text-base">
+                {workflowDescription}
+              </p>
             </div>
 
             {/* Processing Content */}
@@ -644,7 +677,9 @@ export function WorkflowExecutionModal({
               <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
                 {workflowName}
               </h2>
-              <p className="text-gray-600 dark:text-gray-400 text-base">{workflowDescription}</p>
+              <p className="text-gray-600 dark:text-gray-400 text-base">
+                {workflowDescription}
+              </p>
             </div>
 
             {/* File Upload Area */}
@@ -692,7 +727,9 @@ export function WorkflowExecutionModal({
                     </Button>
 
                     {/* Or text */}
-                    <p className="text-gray-600 dark:text-gray-400">or drag & drop files</p>
+                    <p className="text-gray-600 dark:text-gray-400">
+                      or drag & drop files
+                    </p>
 
                     {/* Supported formats */}
                     <p className="text-gray-500 dark:text-gray-500 text-sm text-center leading-relaxed">
@@ -726,7 +763,9 @@ export function WorkflowExecutionModal({
                       <p className="text-sm text-red-700 dark:text-red-400 mt-1">
                         {uploadError}
                       </p>
-                      {(uploadError.includes("Network") || uploadError.includes("timeout") || uploadError.includes("Failed to check")) && (
+                      {(uploadError.includes("Network") ||
+                        uploadError.includes("timeout") ||
+                        uploadError.includes("Failed to check")) && (
                         <div className="mt-3">
                           <button
                             onClick={() => {

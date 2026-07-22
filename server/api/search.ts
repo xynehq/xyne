@@ -619,12 +619,7 @@ export const SearchKnowledgeBaseFilesApi = async (c: Context) => {
       rankProfile: SearchModes.NativeRank,
       timestampRange,
     }),
-    groupVespaSearchKnowledgeBase(
-      decodedQuery,
-      email,
-      page,
-      timestampRange,
-    ),
+    groupVespaSearchKnowledgeBase(decodedQuery, email, page, timestampRange),
   ])
   const newResults = VespaSearchResponseToSearchResult(vespaResponse, {
     chunkDocument: chunkDocument,

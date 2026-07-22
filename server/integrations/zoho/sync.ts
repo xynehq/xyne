@@ -62,7 +62,7 @@ export async function handleZohoDeskSync(
     Logger.info("✅ ZOHO SYNC HANDLER: Fetching all Zoho Desk connectors")
     connectorsToSync = await getAllZohoDeskConnectors()
     Logger.info(
-      `✅ ZOHO SYNC HANDLER: Found ${connectorsToSync.length} connectors`
+      `✅ ZOHO SYNC HANDLER: Found ${connectorsToSync.length} connectors`,
     )
   }
 
@@ -105,7 +105,6 @@ async function syncConnector(connector: SelectConnector): Promise<void> {
   Logger.info("🔄 SYNC CONNECTOR: Starting sync", { connectorId })
 
   try {
-
     // 2. Create new ingestion record
     Logger.info("✅ SYNC CONNECTOR: Creating ingestion record", { connectorId })
 
@@ -193,7 +192,7 @@ async function syncConnector(connector: SelectConnector): Promise<void> {
         oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
         lastModifiedTime = oneYearAgo.toISOString()
         Logger.info(
-          "🆕 SYNC CONNECTOR: FIRST-TIME SYNC - Fetching from past year"
+          "🆕 SYNC CONNECTOR: FIRST-TIME SYNC - Fetching from past year",
         )
       } else {
         Logger.info(
@@ -231,9 +230,7 @@ async function syncConnector(connector: SelectConnector): Promise<void> {
         .set({ state: newState })
         .where(eq(connectors.id, connector.id))
 
-      Logger.info(
-        "📝 Updated connector state with new sync timestamp"
-      )
+      Logger.info("📝 Updated connector state with new sync timestamp")
 
       // 8. Insert sync history
       metrics.endTime = Date.now()
@@ -353,9 +350,7 @@ async function syncTickets(
   const limit = 100
   let hasMore = true
 
-  Logger.info(
-    "📊 SYNC TICKETS: Starting ticket sync with timestamp filter"
-  )
+  Logger.info("📊 SYNC TICKETS: Starting ticket sync with timestamp filter")
 
   while (hasMore) {
     Logger.info("📥 Fetching tickets batch")
@@ -368,9 +363,7 @@ async function syncTickets(
 
     const tickets = response.data || []
 
-    Logger.info(
-      "Fetched tickets batch"
-    )
+    Logger.info("Fetched tickets batch")
 
     if (tickets.length === 0) {
       hasMore = false
@@ -379,21 +372,15 @@ async function syncTickets(
 
     // Fetch detailed info for the LAST ticket to check if we should continue
     const lastTicket = tickets[tickets.length - 1]
-  
 
     const lastTicketDetail = await client.fetchTicketById(lastTicket.id)
     const lastTicketModifiedTime = lastTicketDetail.modifiedTime
-
-   
 
     // Determine if this should be the last batch
     const shouldStopAfterBatch =
       lastModifiedTime && lastTicketModifiedTime <= lastModifiedTime
 
-
-    Logger.info(
-      "🔍 Batch boundary check"
-    )
+    Logger.info("🔍 Batch boundary check")
 
     // Queue all tickets in this batch (workers will filter when processing)
     let queuedInBatch = 0
@@ -416,7 +403,6 @@ async function syncTickets(
 
         metrics.ticketsFetched++
         queuedInBatch++
-
       } catch (error) {
         metrics.errors++
         Logger.error(
@@ -441,10 +427,8 @@ async function syncTickets(
     }
 
     const batchNum = Math.floor((from - 1) / limit) + 1
-  
-    Logger.info(
-      `📊 Batch ${batchNum} summary: Queued ${queuedInBatch} tickets`
-    )
+
+    Logger.info(`📊 Batch ${batchNum} summary: Queued ${queuedInBatch} tickets`)
 
     // Update ingestion metadata after processing each batch
     const updatedMetadata: { zohoDesk: ZohoDeskIngestionMetadata } = {
@@ -467,10 +451,7 @@ async function syncTickets(
 
     // Stop if last ticket was old
     if (shouldStopAfterBatch) {
-
-      Logger.info(
-        `🏁 SYNC COMPLETE: Queued ${metrics.ticketsFetched} tickets`
-      )
+      Logger.info(`🏁 SYNC COMPLETE: Queued ${metrics.ticketsFetched} tickets`)
       hasMore = false
       break
     }
@@ -484,7 +465,7 @@ async function syncTickets(
   }
 
   Logger.info(
-    `✅ TICKET SYNC COMPLETE: Queued ${metrics.ticketsFetched} tickets`
+    `✅ TICKET SYNC COMPLETE: Queued ${metrics.ticketsFetched} tickets`,
   )
 }
 

@@ -17,7 +17,12 @@ import {
 const getChunksInputSchema = z.object({
   docId: z.string().describe("Document ID to read from"),
   offset: z.number().int().min(0).describe("Starting chunk index (0-based)"),
-  limit: z.number().int().min(1).max(10).describe("Number of chunks to fetch (2-5 recommended)"),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(10)
+    .describe("Number of chunks to fetch (2-5 recommended)"),
 })
 
 function getValidatedChunkFields(fields: Record<string, unknown>): {
@@ -64,7 +69,7 @@ function normalizeWindowedVespaHit(
 
   const windowedChunks = chunksSummary.slice(offset, endOffset)
   const windowedPositions: number[] = []
-  for(let i = offset; i < endOffset; i++) {
+  for (let i = offset; i < endOffset; i++) {
     windowedPositions.push(chunkPositions[i] ?? i)
   }
   const chunkScoresCells: Record<string, number> = {}
@@ -94,37 +99,37 @@ function normalizeWindowedVespaHit(
 }
 
 /**
-   * Get chunks tool - deterministic fetch of document chunks
-   * 
-   * This tool reads document chunks at specified offsets for exploration.
-   * It supports both sparse scanning (at different positions) and focused reading.
-   * 
-   * IMPORTANT: This tool is ONLY available to agents with "read_document" in appIntegrations.
-   */
-  export const getChunksTool: Tool<GetChunksInput, AgentRunContext> = {
-    schema: {
-      name: "read_document",
-      description: [
-        "Read chunks of a document at specified offsets.",
-        "Use this for both sparse exploration (scanning at different positions) and focused reading.",
-        "For large documents: First explore sparse offsets to understand structure, then focus on relevant sections.",
-        "For small documents (≤20 chunks): You may read sequentially from offset=0.",
-        "Returns totalChunks so you can plan exploration strategy.",
-      ].join(" "),
-      parameters: getChunksInputSchema as any,
-    },
+ * Get chunks tool - deterministic fetch of document chunks
+ *
+ * This tool reads document chunks at specified offsets for exploration.
+ * It supports both sparse scanning (at different positions) and focused reading.
+ *
+ * IMPORTANT: This tool is ONLY available to agents with "read_document" in appIntegrations.
+ */
+export const getChunksTool: Tool<GetChunksInput, AgentRunContext> = {
+  schema: {
+    name: "read_document",
+    description: [
+      "Read chunks of a document at specified offsets.",
+      "Use this for both sparse exploration (scanning at different positions) and focused reading.",
+      "For large documents: First explore sparse offsets to understand structure, then focus on relevant sections.",
+      "For small documents (≤20 chunks): You may read sequentially from offset=0.",
+      "Returns totalChunks so you can plan exploration strategy.",
+    ].join(" "),
+    parameters: getChunksInputSchema as any,
+  },
 
   async execute(args, context) {
     const { docId, offset, limit } = args
 
     // Check if this agent has access to read_document tools via runtime tool state
     const hasDocumentAnalysisAccess = context.enabledTools?.has("read_document")
-    
+
     if (!hasDocumentAnalysisAccess) {
       return ToolResponse.error(
         ToolErrorCodes.PERMISSION_DENIED,
         "This agent does not have access to document analysis tools.",
-        { toolName: "read_document" }
+        { toolName: "read_document" },
       )
     }
 
@@ -138,14 +143,13 @@ function normalizeWindowedVespaHit(
       } finally {
         directFetchSpan.end()
       }
-      
-      
+
       const doc = result?.root?.children?.[0] as VespaSearchResult
       if (!doc) {
         return ToolResponse.error(
           ToolErrorCodes.NOT_FOUND,
           "Document not found",
-          { toolName: "read_document", docId }
+          { toolName: "read_document", docId },
         )
       }
 
@@ -156,7 +160,7 @@ function normalizeWindowedVespaHit(
         return ToolResponse.error(
           ToolErrorCodes.INVALID_INPUT,
           "Document has invalid or missing chunk summaries",
-          { toolName: "read_document", docId }
+          { toolName: "read_document", docId },
         )
       }
       const { chunksSummary, chunkPositions } = validatedChunkFields
@@ -167,7 +171,7 @@ function normalizeWindowedVespaHit(
         return ToolResponse.error(
           ToolErrorCodes.INVALID_INPUT,
           `Offset ${offset} is beyond document length (${totalChunks} chunks)`,
-          { toolName: "read_document", docId, offset, totalChunks }
+          { toolName: "read_document", docId, offset, totalChunks },
         )
       }
 
@@ -180,7 +184,6 @@ function normalizeWindowedVespaHit(
         endOffset,
       )
       result.root.children[0] = updatedDoc
-
 
       const rawDocuments = await formatSearchToolResponseAsRawDocuments(
         result,
@@ -208,14 +211,15 @@ function normalizeWindowedVespaHit(
         {
           toolName: "read_document",
           estimatedCostUsd: 0.001, // Minimal cost for read operation
-        }
+        },
       )
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error)
+      const errorMessage =
+        error instanceof Error ? error.message : String(error)
       return ToolResponse.error(
         ToolErrorCodes.EXECUTION_FAILED,
         `Failed to fetch chunks: ${errorMessage}`,
-        { toolName: "read_document", docId }
+        { toolName: "read_document", docId },
       )
     }
   },

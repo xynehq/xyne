@@ -34,9 +34,18 @@ import config, { IMAGE_CONTEXT_CONFIG } from "@/config"
 import type { UserMetadataType } from "@/types"
 import { getDateForAI } from "@/utils/index"
 import { getChunkCountPerDoc } from "./chunk-selection"
-import { Apps, dataSourceFileSchema, fileSchema, KbItemsSchema, mailAttachmentSchema } from "@xyne/vespa-ts/types"
+import {
+  Apps,
+  dataSourceFileSchema,
+  fileSchema,
+  KbItemsSchema,
+  mailAttachmentSchema,
+} from "@xyne/vespa-ts/types"
 import type { VespaSearchResults } from "@xyne/vespa-ts"
-import { contextWithoutImageBlocksFromMatches, imageFileNamesBlockMatches } from "./utils"
+import {
+  contextWithoutImageBlocksFromMatches,
+  imageFileNamesBlockMatches,
+} from "./utils"
 import { AgentResponseConfidence } from "./utils"
 import { MAX_QUERY_DOCS_PER_BASE_DOC } from "./agent-schemas"
 import { getPrecomputedDbContextIfNeeded } from "@/lib/databaseContext"
@@ -48,7 +57,10 @@ let syntheticDelegatedDocSequence = 0
 let syntheticChatMemoryDocSequence = 0
 
 /** Create an empty DocumentState. */
-export function createDocumentState(docId: string, source: Citation): DocumentState {
+export function createDocumentState(
+  docId: string,
+  source: Citation,
+): DocumentState {
   return {
     docId,
     source,
@@ -81,10 +93,7 @@ function updateDocumentScores(doc: DocumentState, currentTurn?: number): void {
 }
 
 /** Chunk score for ordering: confidence + small recency boost (lastSeenTurn / refTurn). */
-function chunkScoreForOrdering(
-  c: ChunkState,
-  refTurn: number,
-): number {
+function chunkScoreForOrdering(c: ChunkState, refTurn: number): number {
   const recencyBoost = refTurn > 0 ? 0.1 * (c.lastSeenTurn / refTurn) : 0
 
   const norm = (v: string) => v.toLowerCase().trim()
@@ -128,18 +137,14 @@ function normalizeVespaHitForDocumentChunks(
 
   const chunkEntries = Array.from(doc.chunks.entries())
   // Deterministic ordering even when all chunk scores are 0.
-  const scoredEntries = chunkEntries
-    .map(([chunkKey, chunk]) => {
-      const score = chunkScoreForOrdering(
-        chunk,
-        orderedBy.refTurn,
-      )
-      return { index: parseChunkKeyToCitationIndex(chunkKey), chunk, score }
-    })
+  const scoredEntries = chunkEntries.map(([chunkKey, chunk]) => {
+    const score = chunkScoreForOrdering(chunk, orderedBy.refTurn)
+    return { index: parseChunkKeyToCitationIndex(chunkKey), chunk, score }
+  })
 
   const chunks_summary = scoredEntries.map(({ chunk }) => chunk.content)
-  const chunks_pos_summary = scoredEntries.map(({ index }) =>
-    fieldsAny.chunks_pos_summary?.[index] ?? index
+  const chunks_pos_summary = scoredEntries.map(
+    ({ index }) => fieldsAny.chunks_pos_summary?.[index] ?? index,
   )
 
   const chunk_scores_cells: Record<string, number> = {}
@@ -174,7 +179,8 @@ function evictChunksIfNeeded(doc: DocumentState, refTurn: number): void {
   const entries = Array.from(doc.chunks.entries())
   const sorted = entries.sort(
     (a, b) =>
-      chunkScoreForOrdering(b[1], refTurn) - chunkScoreForOrdering(a[1], refTurn),
+      chunkScoreForOrdering(b[1], refTurn) -
+      chunkScoreForOrdering(a[1], refTurn),
   )
   const toKeep = sorted.slice(0, DOCUMENT_MEMORY_MAX_CHUNKS_PER_DOC)
   doc.chunks.clear()
@@ -197,7 +203,10 @@ function evictDocumentMemoryIfNeeded(
     const maxTurnB = Math.max(...docB.signals.map((s) => s.turn), 0)
     return maxTurnA - maxTurnB
   })
-  const toRemove = byScore.slice(0, documentMemory.size - DOCUMENT_MEMORY_MAX_DOCS)
+  const toRemove = byScore.slice(
+    0,
+    documentMemory.size - DOCUMENT_MEMORY_MAX_DOCS,
+  )
   for (const [docId] of toRemove) documentMemory.delete(docId)
 }
 
@@ -210,7 +219,7 @@ function evictQueryDocsIfNeeded(
 ): void {
   // Group query docs by baseDocId
   const queryDocsByBase = new Map<string, DocumentState[]>()
-  
+
   for (const doc of documentMemory.values()) {
     if (doc.isQueryDoc && doc.baseDocId) {
       const list = queryDocsByBase.get(doc.baseDocId) ?? []
@@ -218,11 +227,11 @@ function evictQueryDocsIfNeeded(
       queryDocsByBase.set(doc.baseDocId, list)
     }
   }
-  
+
   // For each base doc, keep only top MAX_QUERY_DOCS_PER_BASE_DOC by relevanceScore, then recency
   for (const [_, queryDocs] of queryDocsByBase) {
     if (queryDocs.length <= MAX_QUERY_DOCS_PER_BASE_DOC) continue
-    
+
     // Sort by relevanceScore desc, then by most recent turn desc
     const sorted = queryDocs.sort((a, b) => {
       if (b.relevanceScore !== a.relevanceScore) {
@@ -232,7 +241,7 @@ function evictQueryDocsIfNeeded(
       const maxTurnB = Math.max(...b.signals.map((s) => s.turn), 0)
       return maxTurnB - maxTurnA
     })
-    
+
     // Evict the excess
     const toEvict = sorted.slice(MAX_QUERY_DOCS_PER_BASE_DOC)
     for (const doc of toEvict) {
@@ -241,34 +250,40 @@ function evictQueryDocsIfNeeded(
   }
 }
 
-
 /**
  * Check if a document is query-dependent (sheets, CSV, Excel, DB schemas).
  * These documents need query-based processing during tool execution.
  */
 export function isQueryDependentDoc(result: VespaSearchResults): boolean {
   const fields = result.fields as Record<string, unknown>
-  
+
   // Check for spreadsheet types
-  if (fields.sddocname === fileSchema || fields.sddocname === KbItemsSchema || fields.sddocname === mailAttachmentSchema || fields.sddocname === dataSourceFileSchema) {
-    const mimeType = fields.sddocname === mailAttachmentSchema 
-      ? fields.fileType 
-      : fields.mimeType
-    
+  if (
+    fields.sddocname === fileSchema ||
+    fields.sddocname === KbItemsSchema ||
+    fields.sddocname === mailAttachmentSchema ||
+    fields.sddocname === dataSourceFileSchema
+  ) {
+    const mimeType =
+      fields.sddocname === mailAttachmentSchema
+        ? fields.fileType
+        : fields.mimeType
+
     if (
-      mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+      mimeType ===
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
       mimeType === "application/vnd.ms-excel" ||
       mimeType === "text/csv"
     ) {
       return true
     }
-    
+
     // Check for database schema
     if (fields.mimeType === MIME_DATABASE_SCHEMA) {
       return true
     }
   }
-  
+
   return false
 }
 
@@ -283,7 +298,7 @@ export function mergeRawDocumentsIntoDocumentMemory(
   turnNumber: number,
   query: string,
   toolName: string,
-  toolCallId: string = randomUUID()
+  toolCallId: string = randomUUID(),
 ): void {
   for (const raw of rawDocuments) {
     // Query-derived documents are never merged - they are immutable snapshots
@@ -386,7 +401,7 @@ export function mergeDocumentStatesIntoDocumentMemory(
         queryDoc.vespaHit = src.vespaHit
         queryDoc.relevanceScore = src.relevanceScore
         queryDoc.maxScore = src.maxScore
-        
+
         for (const [chunkKey, ch] of src.chunks) {
           queryDoc.chunks.set(chunkKey, {
             content: ch.content,
@@ -397,7 +412,7 @@ export function mergeDocumentStatesIntoDocumentMemory(
           })
           newChunksCount++
         }
-        
+
         for (const sig of src.signals) {
           queryDoc.signals.push({
             query: sig.query,
@@ -406,7 +421,7 @@ export function mergeDocumentStatesIntoDocumentMemory(
             toolName: sig.toolName,
           })
         }
-        
+
         targetMemory.set(src.docId, queryDoc)
       }
       continue
@@ -446,7 +461,8 @@ export function mergeDocumentStatesIntoDocumentMemory(
       }
     }
     // Use the provided currentTurn for accurate recency, fallback to current doc's latest
-    const refTurn = currentTurn ?? Math.max(...doc.signals.map((s) => s.turn), 1)
+    const refTurn =
+      currentTurn ?? Math.max(...doc.signals.map((s) => s.turn), 1)
     evictChunksIfNeeded(doc, refTurn)
 
     for (const sig of src.signals) {
@@ -515,11 +531,11 @@ export function documentMemoryToRawDocuments(
 export function getDocsWithSignalsInTurnRange(
   documentMemory: Map<string, DocumentState>,
   fromTurn: number,
-  toTurn: number
+  toTurn: number,
 ): DocumentState[] {
   const docs = Array.from(documentMemory.values())
   return docs.filter((doc) =>
-    doc.signals.some((s) => s.turn >= fromTurn && s.turn <= toTurn)
+    doc.signals.some((s) => s.turn >= fromTurn && s.turn <= toTurn),
   )
 }
 
@@ -529,16 +545,22 @@ export function getDocsWithSignalsInTurnRange(
  * Lifecycle: removed after the next review (cleanupSyntheticDocsAfterReview).
  */
 export function createSyntheticDocFromChatMemory(
-  fragments: { content: string; id: string; source: Citation; confidence?: number }[],
+  fragments: {
+    content: string
+    id: string
+    source: Citation
+    confidence?: number
+  }[],
   options: {
     chatId: string
     turnNumber: number
     query?: string
     toolCallId?: string
-  }
+  },
 ): DocumentState {
   const normalizedToolCallId =
-    typeof options.toolCallId === "string" && options.toolCallId.trim().length > 0
+    typeof options.toolCallId === "string" &&
+    options.toolCallId.trim().length > 0
       ? options.toolCallId.trim()
       : null
   const uniqueInvocationId =
@@ -597,11 +619,12 @@ export function createSyntheticDocFromLs(
     targetPath?: string
     turnNumber: number
     toolCallId?: string
-  }
+  },
 ): DocumentState {
   const targetId = options.targetId ?? "root"
   const normalizedToolCallId =
-    typeof options.toolCallId === "string" && options.toolCallId.trim().length > 0
+    typeof options.toolCallId === "string" &&
+    options.toolCallId.trim().length > 0
       ? options.toolCallId.trim()
       : null
   const uniqueInvocationId =
@@ -661,7 +684,7 @@ export function createSyntheticDocFromAgent(
     toolQuery?: string
     delegationRunId?: string
     toolCallId?: string
-  }
+  },
 ): DocumentState {
   const normalizedDelegationRunId =
     typeof options.delegationRunId === "string" &&
@@ -669,7 +692,8 @@ export function createSyntheticDocFromAgent(
       ? options.delegationRunId.trim()
       : null
   const normalizedToolCallId =
-    typeof options.toolCallId === "string" && options.toolCallId.trim().length > 0
+    typeof options.toolCallId === "string" &&
+    options.toolCallId.trim().length > 0
       ? options.toolCallId.trim()
       : null
   const uniqueInvocationId =
@@ -728,11 +752,14 @@ const defaultUserMetadata: UserMetadataType = {
  */
 async function buildFragmentsForDocList(
   docs: DocumentState[],
-  options: GetFragmentsForSynthesisOptions
+  options: GetFragmentsForSynthesisOptions,
 ): Promise<MinimalAgentFragment[]> {
   const uncachedWithVespa = docs.filter(
-    (d): d is DocumentState & { vespaHit: NonNullable<DocumentState["vespaHit"]> } =>
-      !d.cachedFragment && !!d.vespaHit,
+    (
+      d,
+    ): d is DocumentState & {
+      vespaHit: NonNullable<DocumentState["vespaHit"]>
+    } => !d.cachedFragment && !!d.vespaHit,
   )
   const builtUserQuery = options.query?.trim()
   // Normalize each hit so answerContextMap + getChunkCountPerDoc see the same chunk slice
@@ -740,9 +767,11 @@ async function buildFragmentsForDocList(
   const normalizedHitByDocId = new Map<string, VespaSearchResults>()
   const vespaHitsOrdered = uncachedWithVespa.map((d) => {
     const refTurn = Math.max(...d.signals.map((s) => s.turn), 1)
-    const normalized = d.isQueryDoc ? d.vespaHit : normalizeVespaHitForDocumentChunks(d, {
-      refTurn,
-    })
+    const normalized = d.isQueryDoc
+      ? d.vespaHit
+      : normalizeVespaHitForDocumentChunks(d, {
+          refTurn,
+        })
     normalizedHitByDocId.set(d.docId, normalized)
     return normalized
   })
@@ -751,7 +780,7 @@ async function buildFragmentsForDocList(
   let chunksPerDocument: number[] = []
 
   if (vespaHitsOrdered.length > 0) {
-    if(builtUserQuery) {
+    if (builtUserQuery) {
       precomputedDbContext = await getPrecomputedDbContextIfNeeded(
         vespaHitsOrdered,
         builtUserQuery,
@@ -845,7 +874,9 @@ async function buildFragmentsForDocList(
 }
 
 /** Position suffix in labels from answerContextMap: `{docId}_{image_chunks_pos[i]}` (optional extension). */
-function imageChunkPosFromContextFileName(fileName: string): number | undefined {
+function imageChunkPosFromContextFileName(
+  fileName: string,
+): number | undefined {
   const m = fileName.match(/_(\d+)(?:\.[A-Za-z0-9]+)?$/)
   return m ? Number(m[1]) : undefined
 }
@@ -854,8 +885,12 @@ export function extractImagesFromFragmentContent(
   fragment: MinimalAgentFragment,
   vespaHit: VespaSearchResults | undefined,
   isUserAttachment: boolean,
-): { images: ToolOutputExtractedImage[], fragmentWithoutImageBlocks: MinimalAgentFragment } {
-  if (!fragment.content || !vespaHit) return { images: [], fragmentWithoutImageBlocks: fragment }
+): {
+  images: ToolOutputExtractedImage[]
+  fragmentWithoutImageBlocks: MinimalAgentFragment
+} {
+  if (!fragment.content || !vespaHit)
+    return { images: [], fragmentWithoutImageBlocks: fragment }
 
   const content = fragment.content
 
@@ -942,8 +977,12 @@ export function gatherToolOutputExtractedImages(
   rawDocuments: ToolRawDocument[],
   toolFragments: MinimalAgentFragment[],
   imageCitations: ImageCitation[] | undefined,
-): { images: ToolOutputExtractedImage[], fragmentsWithoutImageBlocks: MinimalAgentFragment[] } {
-  if (!toolFragments && !imageCitations) return { images: [], fragmentsWithoutImageBlocks: [] }
+): {
+  images: ToolOutputExtractedImage[]
+  fragmentsWithoutImageBlocks: MinimalAgentFragment[]
+} {
+  if (!toolFragments && !imageCitations)
+    return { images: [], fragmentsWithoutImageBlocks: [] }
   const rawById = new Map(rawDocuments.map((d) => [d.docId, d]))
   const out: ToolOutputExtractedImage[] = []
   const fragmentsWithoutImageBlocks: MinimalAgentFragment[] = []
@@ -970,7 +1009,10 @@ export function gatherToolOutputExtractedImages(
     })
   }
 
-  return { images: mergeExtractedImagesByFileName(out), fragmentsWithoutImageBlocks }
+  return {
+    images: mergeExtractedImagesByFileName(out),
+    fragmentsWithoutImageBlocks,
+  }
 }
 
 /**
@@ -1090,7 +1132,9 @@ export function getImageFileNamesForLlmFromStores(
  * Filters out raw documents that have query-derived variants.
  * When a query doc exists for a base document, the raw doc is suppressed to avoid duplication.
  */
-function filterOutRawDocsWithQueryVariants(docs: DocumentState[]): DocumentState[] {
+function filterOutRawDocsWithQueryVariants(
+  docs: DocumentState[],
+): DocumentState[] {
   // Collect all base doc IDs that have query variants
   const baseDocsWithQueries = new Set<string>()
   for (const doc of docs) {
@@ -1098,7 +1142,7 @@ function filterOutRawDocsWithQueryVariants(docs: DocumentState[]): DocumentState
       baseDocsWithQueries.add(doc.baseDocId)
     }
   }
-  
+
   // Filter: keep query docs and raw docs that don't have query variants
   return docs.filter((doc) => {
     if (doc.isQueryDoc) return true // Always keep query docs
@@ -1116,7 +1160,7 @@ function filterOutRawDocsWithQueryVariants(docs: DocumentState[]): DocumentState
  */
 export async function getFragmentsForSynthesis(
   documentMemory: Map<string, DocumentState>,
-  options: GetFragmentsForSynthesisOptions = {}
+  options: GetFragmentsForSynthesisOptions = {},
 ): Promise<MinimalAgentFragment[]> {
   if (!documentMemory || !(documentMemory instanceof Map)) {
     return []
@@ -1139,9 +1183,13 @@ export async function getFragmentsForSynthesis(
 export async function getFragmentsForSynthesisForDocs(
   documentMemory: Map<string, DocumentState>,
   docs: DocumentState[],
-  options: GetFragmentsForSynthesisOptions = {}
+  options: GetFragmentsForSynthesisOptions = {},
 ): Promise<MinimalAgentFragment[]> {
-  if (!documentMemory || !(documentMemory instanceof Map) || docs.length === 0) {
+  if (
+    !documentMemory ||
+    !(documentMemory instanceof Map) ||
+    docs.length === 0
+  ) {
     return []
   }
 
@@ -1159,7 +1207,7 @@ export async function getFragmentsForSynthesisForDocs(
  */
 export function cleanupExpiredSyntheticDocs(
   documentMemory: Map<string, DocumentState>,
-  currentTurn: number
+  currentTurn: number,
 ): number {
   let removedCount = 0
   const docsToRemove: string[] = []

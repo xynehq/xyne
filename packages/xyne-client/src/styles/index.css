@@ -4,8 +4,13 @@
 
 /* Gentle thinking dots animation */
 @keyframes xyne-pulse {
-  0%, 100% { opacity: 0.35; }
-  50% { opacity: 1; }
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 .xyne-thinking-dot {
   animation: xyne-pulse 1.4s ease-in-out infinite;
@@ -33,7 +38,9 @@
   margin-bottom: 0.25rem;
   line-height: 1.4;
 }
-.xyne-markdown h4, .xyne-markdown h5, .xyne-markdown h6 {
+.xyne-markdown h4,
+.xyne-markdown h5,
+.xyne-markdown h6 {
   font-size: 0.875rem;
   font-weight: 600;
   margin-top: 0.625rem;
@@ -71,7 +78,8 @@
   margin-bottom: 0.25rem;
   line-height: 1.5;
 }
-.xyne-markdown li > ul, .xyne-markdown li > ol {
+.xyne-markdown li > ul,
+.xyne-markdown li > ol {
   margin-top: 0.25rem;
   margin-bottom: 0;
 }
@@ -141,20 +149,33 @@
 
 /* AI Popover */
 @keyframes xyne-popover-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 .xyne-popover {
   animation: xyne-popover-in 0.15s ease-out;
   background: white;
   border: 1px solid #e5e7eb;
   border-radius: 0.75rem;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px
+    rgba(0, 0, 0, 0.1);
   overflow: hidden;
 }
 @keyframes xyne-toolbar-in {
-  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
-  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
 }
 .xyne-toolbar {
   animation: xyne-toolbar-in 0.12s ease-out;

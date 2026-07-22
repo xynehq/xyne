@@ -23,7 +23,11 @@ import {
 import { db } from "./client"
 import { getLoggerWithChild } from "@/logger"
 import { getUserByEmail } from "./user"
-import { getCollectionById, getCollectionItemById, updateCollection } from "./knowledgeBase"
+import {
+  getCollectionById,
+  getCollectionItemById,
+  updateCollection,
+} from "./knowledgeBase"
 
 export { getAgentsMadeByMe, getAgentsSharedToMe }
 
@@ -35,7 +39,10 @@ async function updateCollectionsWithSharedEmails(
   agentData: any,
   newAgent: SelectAgent,
 ) {
-  const agentSharedEmails = [...(agentData.ownerEmails || []), ...(agentData.userEmails || [])]
+  const agentSharedEmails = [
+    ...(agentData.ownerEmails || []),
+    ...(agentData.userEmails || []),
+  ]
   if (!agentSharedEmails.length) return
 
   const collectionIds = await getAgentCollectionIds(trx, newAgent)
@@ -271,11 +278,7 @@ export const updateAgentByExternalId = async (
   const updatedAgent = selectAgentSchema.parse(agentArr[0])
 
   try {
-    await updateCollectionsWithSharedEmails(
-      trx,
-      agentData,
-      updatedAgent,
-    )
+    await updateCollectionsWithSharedEmails(trx, agentData, updatedAgent)
   } catch (error) {
     loggerWithChild().warn(
       `Failed to process collection permissions for agent ${updatedAgent.externalId}: ${error}`,
@@ -634,7 +637,9 @@ export const getAgentCollectionIds = async (
   if (typeof agentInput === "string") {
     // agentInput is an external ID
     if (!userId || !userWorkspaceId) {
-      throw new Error("userId and userWorkspaceId are required when providing agentId")
+      throw new Error(
+        "userId and userWorkspaceId are required when providing agentId",
+      )
     }
     const fetchedAgent = await getAgentByExternalIdWithPermissionCheck(
       trx,

@@ -4,7 +4,13 @@ import { useAuth } from "@/auth"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 
 export function Signup() {
   const { signup } = useAuth()
@@ -106,7 +112,10 @@ export function Signup() {
 
               <p className="text-sm text-center text-muted-foreground">
                 Already have an account?{" "}
-                <Link to="/login" className="text-foreground font-medium hover:underline">
+                <Link
+                  to="/login"
+                  className="text-foreground font-medium hover:underline"
+                >
                   Sign in
                 </Link>
               </p>

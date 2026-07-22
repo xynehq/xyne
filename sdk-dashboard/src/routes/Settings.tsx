@@ -1,12 +1,20 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Key, Trash2, Plus, Copy, X, Check } from "lucide-react"
+import { Key, Trash2, Plus, Copy, X, Check, Ticket } from "lucide-react"
 import * as api from "@/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import type { CreateTicketWithEmailConfig } from "@/api"
 
 export function Settings() {
   return (
@@ -19,6 +27,7 @@ export function Settings() {
       </div>
       <ApiKeysSection />
       <ConfigSection />
+      <SpacesIntegrationSection />
     </div>
   )
 }
@@ -82,7 +91,12 @@ function ApiKeysSection() {
               <code className="flex-1 px-3 py-2 bg-background border rounded-md text-sm font-mono break-all">
                 {newKey}
               </code>
-              <Button variant="ghost" size="icon" onClick={copyKey} className="h-8 w-8 shrink-0">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={copyKey}
+                className="h-8 w-8 shrink-0"
+              >
                 {copied ? (
                   <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                 ) : (
@@ -124,7 +138,8 @@ function ApiKeysSection() {
                   <Key className="h-4 w-4 text-muted-foreground" />
                   <div>
                     <span className="text-sm font-mono">
-                      {key.key_prefix}{"*".repeat(28)}
+                      {key.key_prefix}
+                      {"*".repeat(28)}
                     </span>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       Created {new Date(key.created_at).toLocaleDateString()}
@@ -245,14 +260,24 @@ function ConfigSection() {
               placeholder="https://example.com"
               className="flex-1"
             />
-            <Button type="button" variant="outline" size="sm" onClick={addOrigin} className="h-9">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={addOrigin}
+              className="h-9"
+            >
               Add
             </Button>
           </div>
           {currentOrigins.length > 0 && (
             <div className="flex flex-wrap gap-1.5 pt-1">
               {currentOrigins.map((origin) => (
-                <Badge key={origin} variant="secondary" className="gap-1 pr-1 font-normal">
+                <Badge
+                  key={origin}
+                  variant="secondary"
+                  className="gap-1 pr-1 font-normal"
+                >
                   {origin}
                   <button
                     type="button"
@@ -269,6 +294,179 @@ function ConfigSection() {
             Origins allowed to make requests with SDK tokens (CORS)
           </p>
         </div>
+
+        <div className="flex items-center gap-3 pt-2">
+          <Button onClick={handleSave} disabled={mutation.isPending}>
+            {mutation.isPending ? "Saving..." : "Save Changes"}
+          </Button>
+          {saved && (
+            <span className="text-sm text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+              <Check className="h-4 w-4" /> Saved
+            </span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function SpacesIntegrationSection() {
+  const queryClient = useQueryClient()
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["config"],
+    queryFn: api.getConfig,
+  })
+
+  const ticketConfig = data?.spaces_config?.createTicketWithEmail
+
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [spacesBaseUrl, setSpacesBaseUrl] = useState<string | null>(null)
+  const [spacesAppToken, setSpacesAppToken] = useState<string | null>(null)
+  const [channelId, setChannelId] = useState<string | null>(null)
+  const [ackSubject, setAckSubject] = useState<string | null>(null)
+  const [ackBody, setAckBody] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+
+  const currentEnabled = enabled ?? ticketConfig?.enabled ?? false
+  const currentBaseUrl = spacesBaseUrl ?? ticketConfig?.spacesBaseUrl ?? ""
+  const currentToken = spacesAppToken ?? ticketConfig?.spacesAppToken ?? ""
+  const currentChannelId = channelId ?? ticketConfig?.channelId ?? ""
+  const currentAckSubject = ackSubject ?? ticketConfig?.ackSubject ?? ""
+  const currentAckBody = ackBody ?? ticketConfig?.ackBody ?? ""
+
+  const mutation = useMutation({
+    mutationFn: api.updateConfig,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["config"] })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    },
+  })
+
+  const handleSave = () => {
+    const config: CreateTicketWithEmailConfig = {
+      enabled: currentEnabled,
+      spacesBaseUrl: currentBaseUrl,
+      spacesAppToken: currentToken,
+      channelId: currentChannelId,
+      ...(currentAckSubject && { ackSubject: currentAckSubject }),
+      ...(currentAckBody && { ackBody: currentAckBody }),
+    }
+    mutation.mutate({
+      spaces_config: { createTicketWithEmail: config },
+    })
+  }
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="py-8">
+          <div className="text-sm text-muted-foreground text-center">
+            Loading...
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Ticket className="h-4 w-4" />
+          Spaces Integration — Desk Ticket Creation
+        </CardTitle>
+        <CardDescription>
+          Connect to Xyne Spaces to create support tickets via email when the AI
+          agent decides human follow-up is needed.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={currentEnabled}
+            onClick={() => setEnabled(!currentEnabled)}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+              currentEnabled ? "bg-emerald-600" : "bg-muted"
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition-transform ${
+                currentEnabled ? "translate-x-5" : "translate-x-0"
+              }`}
+            />
+          </button>
+          <Label>Enable Desk Ticket Creation</Label>
+        </div>
+
+        {currentEnabled && (
+          <>
+            <div className="space-y-2">
+              <Label>Spaces Base URL</Label>
+              <Input
+                value={currentBaseUrl}
+                onChange={(e) => setSpacesBaseUrl(e.target.value)}
+                placeholder="https://spaces.xyne.com"
+              />
+              <p className="text-xs text-muted-foreground">
+                Base URL of your Xyne Spaces instance
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Spaces App Token</Label>
+              <Input
+                type="password"
+                value={currentToken}
+                onChange={(e) => setSpacesAppToken(e.target.value)}
+                placeholder="JWT token from Xyne Apps"
+              />
+              <p className="text-xs text-muted-foreground">
+                JWT token for authenticating with the Xyne Apps API
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Channel ID</Label>
+              <Input
+                value={currentChannelId}
+                onChange={(e) => setChannelId(e.target.value)}
+                placeholder="clxx..."
+              />
+              <p className="text-xs text-muted-foreground">
+                Desk email channel ID from Xyne Spaces dashboard
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Acknowledgment Subject Template (optional)</Label>
+              <Input
+                value={currentAckSubject}
+                onChange={(e) => setAckSubject(e.target.value)}
+                placeholder="We received your request: {{subject}}"
+              />
+              <p className="text-xs text-muted-foreground">
+                {"Use {{subject}} as a placeholder for the ticket subject"}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Acknowledgment Body Template (optional)</Label>
+              <Textarea
+                value={currentAckBody}
+                onChange={(e) => setAckBody(e.target.value)}
+                placeholder="Thanks for reaching out. We will update you in this thread."
+                rows={3}
+              />
+              <p className="text-xs text-muted-foreground">
+                HTML body sent to the end-user as acknowledgment
+              </p>
+            </div>
+          </>
+        )}
 
         <div className="flex items-center gap-3 pt-2">
           <Button onClick={handleSave} disabled={mutation.isPending}>

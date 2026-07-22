@@ -39,15 +39,20 @@ export class FireworksProvider extends BaseProvider {
           stream: false,
           tools: params.tools
             ? params.tools.map((t) => ({
-                type: 'function',
+                type: "function",
                 function: {
                   name: t.name,
                   description: t.description,
-                  parameters: t.parameters || { type: 'object', properties: {} },
+                  parameters: t.parameters || {
+                    type: "object",
+                    properties: {},
+                  },
                 },
               }))
             : undefined,
-          tool_choice: params.tools ? (params.tool_choice ?? 'auto') : undefined,
+          tool_choice: params.tools
+            ? (params.tool_choice ?? "auto")
+            : undefined,
         },
       )
 
@@ -56,9 +61,12 @@ export class FireworksProvider extends BaseProvider {
       const toolCalls = fc
         ? [
             {
-              id: '',
-              type: 'function' as const,
-              function: { name: fc.name || '', arguments: fc.arguments || '{}' },
+              id: "",
+              type: "function" as const,
+              function: {
+                name: fc.name || "",
+                arguments: fc.arguments || "{}",
+              },
             },
           ]
         : []
@@ -98,30 +106,39 @@ export class FireworksProvider extends BaseProvider {
           // max_tokens: modelParams.maxTokens,
           tools: params.tools
             ? params.tools.map((t) => ({
-                type: 'function',
+                type: "function",
                 function: {
                   name: t.name,
                   description: t.description,
-                  parameters: t.parameters || { type: 'object', properties: {} },
+                  parameters: t.parameters || {
+                    type: "object",
+                    properties: {},
+                  },
                 },
               }))
             : undefined,
-          tool_choice: params.tools ? (params.tool_choice ?? 'auto') : undefined,
+          tool_choice: params.tools
+            ? (params.tool_choice ?? "auto")
+            : undefined,
         },
       )) {
-        if ((evt as any).type === 'tool_call') {
-          const tc = evt as { type: 'tool_call'; name: string; arguments: string }
+        if ((evt as any).type === "tool_call") {
+          const tc = evt as {
+            type: "tool_call"
+            name: string
+            arguments: string
+          }
           yield {
             tool_calls: [
               {
-                id: '',
-                type: 'function' as const,
-                function: { name: tc.name, arguments: tc.arguments || '{}' },
+                id: "",
+                type: "function" as const,
+                function: { name: tc.name, arguments: tc.arguments || "{}" },
               },
             ],
           }
-        } else if ((evt as any).type === 'text') {
-          const t = evt as { type: 'text'; text: string }
+        } else if ((evt as any).type === "text") {
+          const t = evt as { type: "text"; text: string }
           yield { text: t.text, cost: 0 }
         }
       }

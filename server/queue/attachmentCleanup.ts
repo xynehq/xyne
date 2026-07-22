@@ -138,7 +138,10 @@ export const handleAttachmentCleanup = async () => {
               // Update message in database to clear attachments and update sources
               await db.transaction(async (trx) => {
                 // Remove fileIds from sources array
-                type SourceWithFileId = { fileId?: string; [key: string]: unknown }
+                type SourceWithFileId = {
+                  fileId?: string
+                  [key: string]: unknown
+                }
                 const sources = (message.sources || []) as SourceWithFileId[]
                 const updatedSources = sources.filter((source) => {
                   // Remove sources that reference deleted attachments

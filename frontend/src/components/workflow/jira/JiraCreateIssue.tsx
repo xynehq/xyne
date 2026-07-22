@@ -3,8 +3,8 @@
  * UI for configuring Jira issue creation
  */
 
-import React, { useState } from 'react'
-import { JiraIcon } from '../WorkflowIcons'
+import React, { useState } from "react"
+import { JiraIcon } from "../WorkflowIcons"
 
 interface JiraCreateIssueProps {
   onSave: (config: JiraCreateIssueConfig) => void
@@ -29,30 +29,30 @@ export interface JiraCreateIssueConfig {
   parentKey?: string
 }
 
-const ISSUE_TYPES = ['Task', 'Story', 'Bug', 'Epic', 'Subtask']
-const PRIORITIES = ['Highest', 'High', 'Medium', 'Low', 'Lowest']
+const ISSUE_TYPES = ["Task", "Story", "Bug", "Epic", "Subtask"]
+const PRIORITIES = ["Highest", "High", "Medium", "Low", "Lowest"]
 
 export const JiraCreateIssue: React.FC<JiraCreateIssueProps> = ({
   onSave,
   initialConfig,
 }) => {
   const [config, setConfig] = useState<JiraCreateIssueConfig>({
-    domain: initialConfig?.domain || '',
-    email: initialConfig?.email || '',
-    apiToken: initialConfig?.apiToken || '',
-    projectKey: initialConfig?.projectKey || '',
-    summary: initialConfig?.summary || '',
-    description: initialConfig?.description || '',
-    issueType: initialConfig?.issueType || 'Task',
-    priority: initialConfig?.priority || 'Medium',
-    assignee: initialConfig?.assignee || '',
+    domain: initialConfig?.domain || "",
+    email: initialConfig?.email || "",
+    apiToken: initialConfig?.apiToken || "",
+    projectKey: initialConfig?.projectKey || "",
+    summary: initialConfig?.summary || "",
+    description: initialConfig?.description || "",
+    issueType: initialConfig?.issueType || "Task",
+    priority: initialConfig?.priority || "Medium",
+    assignee: initialConfig?.assignee || "",
     labels: initialConfig?.labels || [],
     components: initialConfig?.components || [],
-    parentKey: initialConfig?.parentKey || '',
+    parentKey: initialConfig?.parentKey || "",
   })
 
   const [showPassword, setShowPassword] = useState(false)
-  const [labelInput, setLabelInput] = useState('')
+  const [labelInput, setLabelInput] = useState("")
 
   const handleAddLabel = () => {
     if (labelInput.trim() && !config.labels?.includes(labelInput.trim())) {
@@ -60,7 +60,7 @@ export const JiraCreateIssue: React.FC<JiraCreateIssueProps> = ({
         ...config,
         labels: [...(config.labels || []), labelInput.trim()],
       })
-      setLabelInput('')
+      setLabelInput("")
     }
   }
 
@@ -71,22 +71,21 @@ export const JiraCreateIssue: React.FC<JiraCreateIssueProps> = ({
     })
   }
 
-
   const handleSave = () => {
     // Validate required fields
     if (!config.domain || !config.email || !config.apiToken) {
-      alert('Please fill in Jira credentials')
+      alert("Please fill in Jira credentials")
       return
     }
 
     if (!config.projectKey || !config.summary || !config.issueType) {
-      alert('Please fill in required issue fields')
+      alert("Please fill in required issue fields")
       return
     }
 
     // Validate parentKey for Subtask
-    if (config.issueType === 'Subtask' && !config.parentKey) {
-      alert('Please provide Parent Issue Key for a Subtask')
+    if (config.issueType === "Subtask" && !config.parentKey) {
+      alert("Please provide Parent Issue Key for a Subtask")
       return
     }
 
@@ -102,9 +101,7 @@ export const JiraCreateIssue: React.FC<JiraCreateIssueProps> = ({
           <h3 className="text-lg font-semibold text-gray-900">
             Create Jira Issue
           </h3>
-          <p className="text-sm text-gray-500">
-            Create a new issue in Jira
-          </p>
+          <p className="text-sm text-gray-500">Create a new issue in Jira</p>
         </div>
       </div>
 
@@ -120,9 +117,7 @@ export const JiraCreateIssue: React.FC<JiraCreateIssueProps> = ({
             type="text"
             placeholder="your-domain.atlassian.net"
             value={config.domain}
-            onChange={(e) =>
-              setConfig({ ...config, domain: e.target.value })
-            }
+            onChange={(e) => setConfig({ ...config, domain: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
@@ -146,7 +141,7 @@ export const JiraCreateIssue: React.FC<JiraCreateIssueProps> = ({
           </label>
           <div className="relative">
             <input
-              type={showPassword ? 'text' : 'password'}
+              type={showPassword ? "text" : "password"}
               placeholder="Your Jira API token"
               value={config.apiToken}
               onChange={(e) =>
@@ -159,7 +154,7 @@ export const JiraCreateIssue: React.FC<JiraCreateIssueProps> = ({
               onClick={() => setShowPassword(!showPassword)}
               className="absolute right-3 top-1/2 transform -translate-y-1/2 text-sm text-gray-500 hover:text-gray-700"
             >
-              {showPassword ? 'Hide' : 'Show'}
+              {showPassword ? "Hide" : "Show"}
             </button>
           </div>
         </div>
@@ -180,7 +175,10 @@ export const JiraCreateIssue: React.FC<JiraCreateIssueProps> = ({
               placeholder="PROJ"
               value={config.projectKey}
               onChange={(e) =>
-                setConfig({ ...config, projectKey: e.target.value.toUpperCase() })
+                setConfig({
+                  ...config,
+                  projectKey: e.target.value.toUpperCase(),
+                })
               }
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -216,9 +214,7 @@ export const JiraCreateIssue: React.FC<JiraCreateIssueProps> = ({
             type="text"
             placeholder="Issue summary"
             value={config.summary}
-            onChange={(e) =>
-              setConfig({ ...config, summary: e.target.value })
-            }
+            onChange={(e) => setConfig({ ...config, summary: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
@@ -288,7 +284,7 @@ export const JiraCreateIssue: React.FC<JiraCreateIssueProps> = ({
               placeholder="Add label"
               value={labelInput}
               onChange={(e) => setLabelInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleAddLabel()}
+              onKeyDown={(e) => e.key === "Enter" && handleAddLabel()}
               className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <button
@@ -319,7 +315,7 @@ export const JiraCreateIssue: React.FC<JiraCreateIssueProps> = ({
         </div>
 
         {/* Parent Key (for subtasks) */}
-        {config.issueType === 'Subtask' && (
+        {config.issueType === "Subtask" && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Parent Issue Key
@@ -329,7 +325,10 @@ export const JiraCreateIssue: React.FC<JiraCreateIssueProps> = ({
               placeholder="PROJ-123"
               value={config.parentKey}
               onChange={(e) =>
-                setConfig({ ...config, parentKey: e.target.value.toUpperCase() })
+                setConfig({
+                  ...config,
+                  parentKey: e.target.value.toUpperCase(),
+                })
               }
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />

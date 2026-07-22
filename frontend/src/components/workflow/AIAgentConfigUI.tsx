@@ -12,12 +12,12 @@ import { ChatSSEvents } from "shared/types"
 interface AIAgentConfigUIProps {
   isVisible: boolean
   onBack: () => void
-  onClose?: () => void 
+  onClose?: () => void
   onSave?: (agentConfig: AIAgentConfig) => void
   toolData?: any
-  toolId?: string 
-  stepData?: any 
-  showBackButton?: boolean 
+  toolId?: string
+  stepData?: any
+  showBackButton?: boolean
   builder?: boolean
 }
 
@@ -52,19 +52,16 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
     isExistingAgent: false,
   })
 
-  
   React.useEffect(() => {
     if (isVisible) {
-      
       let existingConfig = null
-      
+
       if (stepData?.config) {
         existingConfig = stepData.config
       } else if (toolData) {
-        
         existingConfig = toolData.val || toolData.value || toolData.config || {}
       }
-      
+
       if (existingConfig) {
         setAgentConfig({
           name: existingConfig.name || "AI Agent",
@@ -76,11 +73,10 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
           isExistingAgent: existingConfig.isExistingAgent || false,
         })
       } else {
-        
         setAgentConfig({
           name: "AI Agent",
           description: "some agent description",
-          model: getValidModelId(undefined), 
+          model: getValidModelId(undefined),
           inputPrompt: "$json.input",
           systemPrompt: "",
           knowledgeBase: "",
@@ -100,14 +96,13 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
   const [modelsLoaded, setModelsLoaded] = useState(false)
   const [defaultModel, setDefaultModel] = useState<string>("")
 
-  
   React.useEffect(() => {
     if (isVisible && !modelsLoaded) {
       const fetchModels = async () => {
         setIsLoadingModels(true)
         try {
           const response = await api.workflow.models.$get()
-          
+
           if (response.ok) {
             const data = await response.json()
             if (data.success && data.data && Array.isArray(data.data)) {
@@ -122,10 +117,10 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
               setModelsLoaded(true)
             }
           } else {
-            console.warn('Failed to fetch models from API, using defaults')
+            console.warn("Failed to fetch models from API, using defaults")
           }
         } catch (error) {
-          console.warn('Error fetching models:', error)
+          console.warn("Error fetching models:", error)
         } finally {
           setIsLoadingModels(false)
         }
@@ -134,11 +129,10 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
       fetchModels()
     }
   }, [isVisible, modelsLoaded])
-  
-  
-  const HIDDEN_APPEND_TEXT = "\n\nPlease convert the text output of the previous step in pure textual representation removing any html tags/escape sequences"
-  
-  
+
+  const HIDDEN_APPEND_TEXT =
+    "\n\nPlease convert the text output of the previous step in pure textual representation removing any html tags/escape sequences"
+
   const getValidModelId = (modelId: string | undefined): string => {
     // Prefer the provided modelId if valid, then defaultModel from API, then first model in list
     if (modelId && models.includes(modelId)) {
@@ -150,7 +144,6 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
     return models[0] || ""
   }
 
-  
   const getDisplaySystemPrompt = (systemPrompt: string): string => {
     if (systemPrompt.endsWith(HIDDEN_APPEND_TEXT)) {
       return systemPrompt.slice(0, -HIDDEN_APPEND_TEXT.length)
@@ -158,10 +151,9 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
     return systemPrompt
   }
 
-  
   const getFullSystemPrompt = (displayPrompt: string): string => {
     if (displayPrompt.endsWith(HIDDEN_APPEND_TEXT)) {
-      return displayPrompt 
+      return displayPrompt
     }
     return displayPrompt + HIDDEN_APPEND_TEXT
   }
@@ -176,7 +168,6 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
     setIsEnhancingPrompt(true)
 
     try {
-      
       const requirements = `Enhance this AI agent system prompt to be more professional, clear, and effective. Make it more structured and comprehensive while preserving the original intent.
 
 Original prompt: "${displayPrompt}"
@@ -189,9 +180,7 @@ Please provide an enhanced version that:
 
 Return only the enhanced system prompt without any additional explanation.`
 
-      
       try {
-        
         const url = new URL(
           "/api/v1/agent/generate-prompt",
           window.location.origin,
@@ -202,7 +191,6 @@ Return only the enhanced system prompt without any additional explanation.`
         let eventSource: EventSource | null = null
         let generatedPrompt = ""
 
-        
         try {
           eventSource = await createAuthEventSource(url.toString())
         } catch (err) {
@@ -210,7 +198,6 @@ Return only the enhanced system prompt without any additional explanation.`
           throw new Error("Failed to create EventSource")
         }
 
-        
         await new Promise((resolve, reject) => {
           if (!eventSource) {
             reject(new Error("EventSource not created"))
@@ -225,7 +212,7 @@ Return only the enhanced system prompt without any additional explanation.`
             try {
               const data = JSON.parse(event.data)
               const finalPrompt = data.fullPrompt || generatedPrompt
-              
+
               if (finalPrompt.trim()) {
                 setAgentConfig((prev) => ({
                   ...prev,
@@ -271,13 +258,11 @@ Return only the enhanced system prompt without any additional explanation.`
             reject(new Error("Connection error during prompt generation"))
           })
         })
-        
-        
+
         return
       } catch (error) {
         console.error("Generate prompt API error:", error)
 
-        
         const fallbackEnhancement = `You are a professional ${agentConfig.name.toLowerCase()} AI agent specialized in ${agentConfig.description || "data processing"}.
 
 CORE RESPONSIBILITIES:
@@ -312,13 +297,14 @@ Always strive for excellence and helpfulness in your responses while adhering to
 
   const handleSave = async () => {
     try {
-      
       const configToSave = {
         ...agentConfig,
-        description: agentConfig.description === "some agent description" ? "" : agentConfig.description
+        description:
+          agentConfig.description === "some agent description"
+            ? ""
+            : agentConfig.description,
       }
 
-      
       if (toolId && !builder) {
         const updatedToolData = {
           type: "ai_agent",
@@ -334,14 +320,16 @@ Always strive for excellence and helpfulness in your responses while adhering to
         await workflowToolsAPI.updateTool(toolId, updatedToolData)
       }
 
-      
       onSave?.(configToSave)
     } catch (error) {
       console.error("Failed to save AI agent configuration:", error)
-      
+
       const configToSave = {
         ...agentConfig,
-        description: agentConfig.description === "some agent description" ? "" : agentConfig.description
+        description:
+          agentConfig.description === "some agent description"
+            ? ""
+            : agentConfig.description,
       }
       onSave?.(configToSave)
     }
@@ -468,7 +456,9 @@ Always strive for excellence and helpfulness in your responses while adhering to
                 onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
                 className="w-full h-10 px-3 py-2 bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-600 rounded-md text-sm text-left flex items-center justify-between focus:outline-none focus:ring-1 focus:ring-slate-400 dark:focus:ring-gray-500 focus:border-slate-400 dark:focus:border-gray-500"
               >
-                <span className="text-slate-900 dark:text-gray-300">{agentConfig.model}</span>
+                <span className="text-slate-900 dark:text-gray-300">
+                  {agentConfig.model}
+                </span>
                 <ChevronDown
                   className={`w-4 h-4 text-slate-500 dark:text-gray-400 transition-transform ${isModelDropdownOpen ? "rotate-180" : ""}`}
                 />
@@ -511,7 +501,10 @@ Always strive for excellence and helpfulness in your responses while adhering to
               </Label>
               <button
                 onClick={enhanceSystemPrompt}
-                disabled={isEnhancingPrompt || !getDisplaySystemPrompt(agentConfig.systemPrompt).trim()}
+                disabled={
+                  isEnhancingPrompt ||
+                  !getDisplaySystemPrompt(agentConfig.systemPrompt).trim()
+                }
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Enhance with AI"
               >
@@ -540,7 +533,7 @@ Always strive for excellence and helpfulness in your responses while adhering to
             </p>
           </div>
         </div>
-        
+
         {/* Save Button - Sticky to bottom */}
         <div className="pt-6 px-0">
           <Button

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react'
-import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
-import { useSlackData } from '@/hooks/useSlackData'
-import { SlackEntity } from 'shared/types'
+import React, { useState, useEffect } from "react"
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
+import { useSlackData } from "@/hooks/useSlackData"
+import { SlackEntity } from "shared/types"
 
 interface SlackChannelFilterProps {
   filterValue?: string
@@ -14,7 +14,9 @@ export const SlackChannelFilter: React.FC<SlackChannelFilterProps> = ({
   onFilterChange,
   onUpdateNameMapping,
 }) => {
-  const [selectedChannels, setSelectedChannels] = useState<Set<string>>(new Set())
+  const [selectedChannels, setSelectedChannels] = useState<Set<string>>(
+    new Set(),
+  )
 
   const {
     items: slackChannels,
@@ -28,15 +30,17 @@ export const SlackChannelFilter: React.FC<SlackChannelFilterProps> = ({
 
   // Load initial channels on mount
   useEffect(() => {
-    fetchItems('', 0, false)
+    fetchItems("", 0, false)
   }, [fetchItems])
 
   // Parse existing filter values to set selected channels
   useEffect(() => {
     if (!filterValue) return
 
-    const filters = filterValue.split(', ').filter(f => f.trim())
-    const channelIds = filters.filter(f => f.startsWith('#')).map(f => f.substring(1))
+    const filters = filterValue.split(", ").filter((f) => f.trim())
+    const channelIds = filters
+      .filter((f) => f.startsWith("#"))
+      .map((f) => f.substring(1))
 
     setSelectedChannels(new Set(channelIds))
   }, [filterValue])
@@ -53,16 +57,22 @@ export const SlackChannelFilter: React.FC<SlackChannelFilterProps> = ({
     setSelectedChannels(updatedChannels)
 
     // Build filter string from selected channels
-    const selectedChannelIds = Array.from(updatedChannels).map(id => `#${id}`)
+    const selectedChannelIds = Array.from(updatedChannels).map((id) => `#${id}`)
 
     // Preserve existing filters from current filterValue that aren't channel filters
-    const currentFilters = filterValue?.split(', ').filter(f => f.trim()) || []
-    const existingNonChannelFilters = currentFilters.filter(f => !f.startsWith('#'))
+    const currentFilters =
+      filterValue?.split(", ").filter((f) => f.trim()) || []
+    const existingNonChannelFilters = currentFilters.filter(
+      (f) => !f.startsWith("#"),
+    )
 
     // Combine new channel filters with existing non-channel filters
-    const combinedFilters = [...selectedChannelIds, ...existingNonChannelFilters]
+    const combinedFilters = [
+      ...selectedChannelIds,
+      ...existingNonChannelFilters,
+    ]
 
-    onFilterChange(combinedFilters.join(', '))
+    onFilterChange(combinedFilters.join(", "))
   }
 
   return (
@@ -111,7 +121,9 @@ export const SlackChannelFilter: React.FC<SlackChannelFilterProps> = ({
                   checked={selectedChannels.has(channel.id)}
                   onChange={() => {}}
                 />
-                <span className="text-gray-700 dark:text-gray-200">{channel.name}</span>
+                <span className="text-gray-700 dark:text-gray-200">
+                  {channel.name}
+                </span>
               </DropdownMenuItem>
             ))}
             {isLoading && (

@@ -44,10 +44,7 @@ import type { z } from "zod"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import config from "@/config"
 import type { UserQuery, QueryRouterLLMResponse } from "@/ai/types"
-import {
-  OpenAIError,
-  type AttachmentMetadata,
-} from "@/shared/types"
+import { OpenAIError, type AttachmentMetadata } from "@/shared/types"
 import type {
   Citation,
   ImageCitation,
@@ -196,29 +193,40 @@ export function collectReferencedFileIdsUntilCompaction(
         if (a.fileId && !seen.has(`f:${a.fileId}`)) {
           fileIds.push(a.fileId)
           seen.add(`f:${a.fileId}`)
-          if (fileIds.length >= maxFiles) return Array.from(new Set(fileIds)).slice(0, maxFiles)
+          if (fileIds.length >= maxFiles)
+            return Array.from(new Set(fileIds)).slice(0, maxFiles)
         }
       }
     }
 
     // 2) fileIds from user messages
-    if (Array.isArray(m.fileIds) && m.fileIds.length > 0 && fileIds.length < maxFiles) {
+    if (
+      Array.isArray(m.fileIds) &&
+      m.fileIds.length > 0 &&
+      fileIds.length < maxFiles
+    ) {
       for (const fileId of m.fileIds) {
         if (!seen.has(`f:${fileId}`)) {
           fileIds.push(fileId)
           seen.add(`f:${fileId}`)
-          if (fileIds.length >= maxFiles) return Array.from(new Set(fileIds)).slice(0, maxFiles)
+          if (fileIds.length >= maxFiles)
+            return Array.from(new Set(fileIds)).slice(0, maxFiles)
         }
       }
     }
 
     // 3) sourceIds from assistant messages
-    if (Array.isArray(m.sources) && m.sources.length > 0 && fileIds.length < maxFiles) {
+    if (
+      Array.isArray(m.sources) &&
+      m.sources.length > 0 &&
+      fileIds.length < maxFiles
+    ) {
       for (const source of m.sources) {
         if (!seen.has(`f:${source.docId}`)) {
           fileIds.push(source.docId)
           seen.add(`f:${source.docId}`)
-          if (fileIds.length >= maxFiles) return Array.from(new Set(fileIds)).slice(0, maxFiles)
+          if (fileIds.length >= maxFiles)
+            return Array.from(new Set(fileIds)).slice(0, maxFiles)
         }
       }
     }
@@ -541,9 +549,7 @@ export function contextWithoutImageBlocksFromMatches(
   matches: RegExpMatchArray[],
 ): string {
   if (matches.length === 0) return context
-  const sorted = [...matches].sort(
-    (a, b) => (a.index ?? 0) - (b.index ?? 0),
-  )
+  const sorted = [...matches].sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
   let out = ""
   let lastEnd = 0
   for (const m of sorted) {
@@ -724,8 +730,7 @@ export const textToChunkCitationIndex = /K\[(\d+_\d+)\]/g
 //   K[<docId>_<chunkIndex>]  (e.g. K[attf_<uuid>_21])
 // instead of the expected:
 //   K[<docIndex>_<chunkIndex>] (e.g. K[1_21])
-const textToChunkCitationIndexWithDocKey =
-      /K\[([A-Za-z0-9_-]+)_([0-9]+)\]/g
+const textToChunkCitationIndexWithDocKey = /K\[([A-Za-z0-9_-]+)_([0-9]+)\]/g
 
 export const processMessage = (
   text: string,
@@ -737,7 +742,7 @@ export const processMessage = (
   }
 
   text = splitGroupedCitationsWithSpaces(text)
-  
+
   // Process regular citations [N] -> remap to final citation array position
   let processed = text.replace(textToCitationIndex, (_match, num) => {
     const originalIndex = parseInt(num, 10)
@@ -747,16 +752,15 @@ export const processMessage = (
   })
 
   // Process KB citations K[docId_chunkIndex] -> convert to [N_chunkIndex] format
-  processed = processed.replace(
-    textToChunkCitationIndex,
-    (_match, docKey) => {
-      const docIndex = parseInt(docKey.split("_")[0], 10)
-      const chunkIndex = parseInt(docKey.split("_")[1], 10)
-      const finalIndex = citationMap[docIndex]
+  processed = processed.replace(textToChunkCitationIndex, (_match, docKey) => {
+    const docIndex = parseInt(docKey.split("_")[0], 10)
+    const chunkIndex = parseInt(docKey.split("_")[1], 10)
+    const finalIndex = citationMap[docIndex]
 
-      return typeof finalIndex === "number" ? `K[${finalIndex + 1}_${chunkIndex}]` : ""
-    },
-  )
+    return typeof finalIndex === "number"
+      ? `K[${finalIndex + 1}_${chunkIndex}]`
+      : ""
+  })
 
   return processed
 }
@@ -1540,8 +1544,9 @@ export const checkAndYieldCitationsForAgent = async function* (
     while (
       (match = textToCitationIndex.exec(text)) !== null ||
       (imgMatch = textToImageCitationIndex.exec(text)) !== null ||
-      ((chunkMatch = textToChunkCitationIndex.exec(text)) !== null) ||
-      ((chunkDocKeyMatch = textToChunkCitationIndexWithDocKey.exec(text)) !== null)
+      (chunkMatch = textToChunkCitationIndex.exec(text)) !== null ||
+      (chunkDocKeyMatch = textToChunkCitationIndexWithDocKey.exec(text)) !==
+        null
     ) {
       if (match || chunkMatch || chunkDocKeyMatch) {
         citationsProcessed++
@@ -1797,7 +1802,10 @@ export const formatAgentScopesText = (agent: SelectAgent): string => {
 
   // Extract apps from appIntegrations
   if (agent.appIntegrations) {
-    if (typeof agent.appIntegrations === "object" && !Array.isArray(agent.appIntegrations)) {
+    if (
+      typeof agent.appIntegrations === "object" &&
+      !Array.isArray(agent.appIntegrations)
+    ) {
       // AppSelectionMap format
       const appNames: string[] = []
       for (const [appKey, selection] of Object.entries(agent.appIntegrations)) {

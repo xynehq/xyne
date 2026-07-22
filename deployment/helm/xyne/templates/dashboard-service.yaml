@@ -1,0 +1,16 @@
+{{- if .Values.sdkDashboard.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "xyne.fullname" . }}-dashboard
+  labels:
+    {{- include "xyne.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: {{ .Values.sdkDashboard.port }}
+  selector:
+    {{- include "xyne.dashboard.selectorLabels" . | nindent 4 }}
+{{- end }}

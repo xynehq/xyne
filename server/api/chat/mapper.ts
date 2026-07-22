@@ -29,10 +29,8 @@ import { getRelativeTime } from "@/utils"
 import { flattenObject } from "@/api/chat/utils"
 import { getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
-import { SystemEntity} from "@/shared/types"
-import {
-  Apps,
-} from "@xyne/vespa-ts/types"
+import { SystemEntity } from "@/shared/types"
+import { Apps } from "@xyne/vespa-ts/types"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 

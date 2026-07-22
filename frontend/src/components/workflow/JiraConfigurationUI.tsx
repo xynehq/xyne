@@ -3,11 +3,11 @@
  * Handles both trigger setup and credential configuration
  */
 
-import React, { useState, useEffect } from 'react'
-import { JiraIcon } from './WorkflowIcons'
-import { Check } from 'lucide-react'
-import { MultiSelect } from '../ui/MultiSelect'
-import { Snackbar } from '../ui/Snackbar'
+import React, { useState, useEffect } from "react"
+import { JiraIcon } from "./WorkflowIcons"
+import { Check } from "lucide-react"
+import { MultiSelect } from "../ui/MultiSelect"
+import { Snackbar } from "../ui/Snackbar"
 import { generateUUID } from "@/utils/uuid"
 
 export interface JiraConfig {
@@ -52,12 +52,32 @@ interface JiraConfigurationUIProps {
 
 const JIRA_EVENTS = [
   // Issue Events
-  { value: 'jira:issue_created', label: 'Issue Created', description: 'When a new issue is created', category: 'Issue' },
-  { value: 'jira:issue_updated', label: 'Issue Updated', description: 'When an issue is updated', category: 'Issue' },
+  {
+    value: "jira:issue_created",
+    label: "Issue Created",
+    description: "When a new issue is created",
+    category: "Issue",
+  },
+  {
+    value: "jira:issue_updated",
+    label: "Issue Updated",
+    description: "When an issue is updated",
+    category: "Issue",
+  },
 
   // Project Events
-  { value: 'project_created', label: 'Project Created', description: 'When a new project is created', category: 'Project' },
-  { value: 'project_updated', label: 'Project Updated', description: 'When a project is updated', category: 'Project' },
+  {
+    value: "project_created",
+    label: "Project Created",
+    description: "When a new project is created",
+    category: "Project",
+  },
+  {
+    value: "project_updated",
+    label: "Project Updated",
+    description: "When a project is updated",
+    category: "Project",
+  },
 ]
 
 export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
@@ -69,17 +89,17 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
   toolId,
 }) => {
   const [config, setConfig] = useState<JiraConfig>({
-    domain: '',
-    email: '',
-    apiToken: '',
+    domain: "",
+    email: "",
+    apiToken: "",
     events: [],
-    jqlFilter: '',
-    title: 'Jira Trigger',
-    description: '',
+    jqlFilter: "",
+    title: "Jira Trigger",
+    description: "",
   })
 
   const [showPassword, setShowPassword] = useState(false)
-  const [activeTab, setActiveTab] = useState<'params' | 'settings'>('params')
+  const [activeTab, setActiveTab] = useState<"params" | "settings">("params")
   const [copiedTest, setCopiedTest] = useState(false)
   const [copiedProduction, setCopiedProduction] = useState(false)
   const [isTestingConnection, setIsTestingConnection] = useState(false)
@@ -96,10 +116,10 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
   const [validationSnackbar, setValidationSnackbar] = useState<{
     isVisible: boolean
     message: string
-  }>({ isVisible: false, message: '' })
+  }>({ isVisible: false, message: "" })
 
   // Filter mode and metadata state
-  const [filterMode, setFilterMode] = useState<'simple' | 'advanced'>('simple')
+  const [filterMode, setFilterMode] = useState<"simple" | "advanced">("simple")
   const [jiraMetadata, setJiraMetadata] = useState<{
     projects: Array<{ key: string; name: string; id: string }>
     priorities: Array<{ id: string; name: string }>
@@ -107,7 +127,13 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
     issueTypes: Array<{ id: string; name: string }>
     epics: Array<{ key: string; summary: string }>
     components: Array<{ id: string; name: string }>
-    issues: Array<{ key: string; summary: string; status?: string; issuetype?: string; priority?: string }>
+    issues: Array<{
+      key: string
+      summary: string
+      status?: string
+      issuetype?: string
+      priority?: string
+    }>
   } | null>(null)
   const [isFetchingMetadata, setIsFetchingMetadata] = useState(false)
 
@@ -133,15 +159,17 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
   const generateWebhookUrls = () => {
     // Get webhook base URL from environment or current origin
     // Priority: ENV variable > Current origin
-    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    const isLocalhost =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1"
 
     // For local development, use VITE_WEBHOOK_URL env var or fallback to window.location.origin
     // For production, always use window.location.origin (your deployed domain)
     const baseUrl = isLocalhost
-      ? (import.meta.env.VITE_WEBHOOK_URL || window.location.origin)
+      ? import.meta.env.VITE_WEBHOOK_URL || window.location.origin
       : window.location.origin
 
-    const webhookId = config.webhookId || initialConfig?.webhookId || 'pending'
+    const webhookId = config.webhookId || initialConfig?.webhookId || "pending"
     const testUrl = `${baseUrl}/api/v1/webhook-test/jira/${webhookId}`
     const productionUrl = `${baseUrl}/api/v1/webhook/jira/${webhookId}`
 
@@ -152,17 +180,17 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
   useEffect(() => {
     if (initialConfig) {
       setConfig({
-        domain: initialConfig.domain || '',
-        email: initialConfig.email || '',
-        apiToken: '', // Never hydrate apiToken - it's write-only for security
+        domain: initialConfig.domain || "",
+        email: initialConfig.email || "",
+        apiToken: "", // Never hydrate apiToken - it's write-only for security
         events: initialConfig.events || [],
-        jqlFilter: initialConfig.jqlFilter || '',
+        jqlFilter: initialConfig.jqlFilter || "",
         webhookId: initialConfig.webhookId,
         webhookUrl: initialConfig.webhookUrl,
         testWebhookUrl: initialConfig.testWebhookUrl,
         productionWebhookUrl: initialConfig.productionWebhookUrl,
-        title: initialConfig.title || 'Jira Trigger',
-        description: initialConfig.description || '',
+        title: initialConfig.title || "Jira Trigger",
+        description: initialConfig.description || "",
       })
 
       // Restore simple filters if they exist
@@ -212,13 +240,13 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
     try {
       await navigator.clipboard.writeText(url)
     } catch (err) {
-      console.error('Failed to copy URL:', err)
+      console.error("Failed to copy URL:", err)
       // Fallback for browsers that don't support clipboard API
-      const textArea = document.createElement('textarea')
+      const textArea = document.createElement("textarea")
       textArea.value = url
       document.body.appendChild(textArea)
       textArea.select()
-      document.execCommand('copy')
+      document.execCommand("copy")
       document.body.removeChild(textArea)
     }
 
@@ -233,7 +261,9 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
       if (simpleFilters.projects.length === 1) {
         conditions.push(`project = "${simpleFilters.projects[0]}"`)
       } else {
-        const projectList = simpleFilters.projects.map(p => `"${p}"`).join(', ')
+        const projectList = simpleFilters.projects
+          .map((p) => `"${p}"`)
+          .join(", ")
         conditions.push(`project IN (${projectList})`)
       }
     }
@@ -242,7 +272,9 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
       if (simpleFilters.issueTypes.length === 1) {
         conditions.push(`issuetype = "${simpleFilters.issueTypes[0]}"`)
       } else {
-        const typeList = simpleFilters.issueTypes.map(t => `"${t}"`).join(', ')
+        const typeList = simpleFilters.issueTypes
+          .map((t) => `"${t}"`)
+          .join(", ")
         conditions.push(`issuetype IN (${typeList})`)
       }
     }
@@ -251,7 +283,9 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
       if (simpleFilters.priorities.length === 1) {
         conditions.push(`priority = "${simpleFilters.priorities[0]}"`)
       } else {
-        const priorityList = simpleFilters.priorities.map(p => `"${p}"`).join(', ')
+        const priorityList = simpleFilters.priorities
+          .map((p) => `"${p}"`)
+          .join(", ")
         conditions.push(`priority IN (${priorityList})`)
       }
     }
@@ -260,7 +294,9 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
       if (simpleFilters.statuses.length === 1) {
         conditions.push(`status = "${simpleFilters.statuses[0]}"`)
       } else {
-        const statusList = simpleFilters.statuses.map(s => `"${s}"`).join(', ')
+        const statusList = simpleFilters.statuses
+          .map((s) => `"${s}"`)
+          .join(", ")
         conditions.push(`status IN (${statusList})`)
       }
     }
@@ -269,7 +305,7 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
       if (simpleFilters.epics.length === 1) {
         conditions.push(`"Epic Link" = "${simpleFilters.epics[0]}"`)
       } else {
-        const epicList = simpleFilters.epics.map(e => `"${e}"`).join(', ')
+        const epicList = simpleFilters.epics.map((e) => `"${e}"`).join(", ")
         conditions.push(`"Epic Link" IN (${epicList})`)
       }
     }
@@ -278,17 +314,17 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
       if (simpleFilters.issues.length === 1) {
         conditions.push(`key = "${simpleFilters.issues[0]}"`)
       } else {
-        const issueList = simpleFilters.issues.map(k => `"${k}"`).join(', ')
+        const issueList = simpleFilters.issues.map((k) => `"${k}"`).join(", ")
         conditions.push(`key IN (${issueList})`)
       }
     }
 
-    return conditions.join(' AND ')
+    return conditions.join(" AND ")
   }
 
   // Update JQL when simple filters change (only in simple mode)
   useEffect(() => {
-    if (filterMode === 'simple') {
+    if (filterMode === "simple") {
       const generatedJQL = generateJQLFromSimpleFilters()
       setConfig((prev) => ({ ...prev, jqlFilter: generatedJQL }))
     }
@@ -306,7 +342,7 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
       ) {
         setIsFetchingMetadata(true)
         try {
-          const { workflowToolsAPI } = await import('./api/ApiHandlers')
+          const { workflowToolsAPI } = await import("./api/ApiHandlers")
           const metadata = await workflowToolsAPI.fetchJiraMetadata({
             domain: config.domain,
             email: config.email,
@@ -314,9 +350,9 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
             projectKeys: simpleFilters.projects,
           })
           setJiraMetadata(metadata)
-          console.log('✅ Project-specific metadata refetched:', metadata)
+          console.log("✅ Project-specific metadata refetched:", metadata)
         } catch (error) {
-          console.error('Failed to fetch project-specific metadata:', error)
+          console.error("Failed to fetch project-specific metadata:", error)
         } finally {
           setIsFetchingMetadata(false)
         }
@@ -332,7 +368,7 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
     if (!config.domain || !config.email || !config.apiToken) {
       setConnectionTestResult({
         success: false,
-        message: 'Please fill in domain, email, and API token fields',
+        message: "Please fill in domain, email, and API token fields",
       })
       return
     }
@@ -341,7 +377,7 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
     setConnectionTestResult(null)
 
     try {
-      const { workflowToolsAPI } = await import('./api/ApiHandlers')
+      const { workflowToolsAPI } = await import("./api/ApiHandlers")
       const result = await workflowToolsAPI.testJiraConnection({
         domain: config.domain,
         email: config.email,
@@ -360,23 +396,27 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
             apiToken: config.apiToken,
           })
           setJiraMetadata(metadata)
-          console.log('✅ Jira metadata fetched:', metadata)
+          console.log("✅ Jira metadata fetched:", metadata)
         } catch (metadataError) {
-          console.error('Failed to fetch Jira metadata:', metadataError)
+          console.error("Failed to fetch Jira metadata:", metadataError)
           // Don't fail the connection test if metadata fetch fails
         } finally {
           setIsFetchingMetadata(false)
         }
       }
     } catch (error: any) {
-      console.error('Connection test failed:', error)
+      console.error("Connection test failed:", error)
 
       // Provide helpful error messages
-      let errorMessage = error.message || 'Failed to connect to Jira'
+      let errorMessage = error.message || "Failed to connect to Jira"
 
       // If it's a generic network error, provide more context
-      if (errorMessage.toLowerCase().includes('network error') || errorMessage.toLowerCase() === 'failed to fetch') {
-        errorMessage = 'Unable to connect to Jira. Please verify the domain, email, and API token are correct.'
+      if (
+        errorMessage.toLowerCase().includes("network error") ||
+        errorMessage.toLowerCase() === "failed to fetch"
+      ) {
+        errorMessage =
+          "Unable to connect to Jira. Please verify the domain, email, and API token are correct."
       }
 
       setConnectionTestResult({
@@ -391,7 +431,7 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
   const handleSave = async () => {
     // Prevent double submissions
     if (isRegisteringWebhook) {
-      console.log('⚠️ Save already in progress, ignoring duplicate call')
+      console.log("⚠️ Save already in progress, ignoring duplicate call")
       return
     }
 
@@ -401,7 +441,7 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
     if (isNewConfig && (!config.domain || !config.email || !config.apiToken)) {
       setValidationSnackbar({
         isVisible: true,
-        message: 'Please fill in all required credential fields'
+        message: "Please fill in all required credential fields",
       })
       return
     }
@@ -409,17 +449,20 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
     if (!config.domain || !config.email) {
       setValidationSnackbar({
         isVisible: true,
-        message: 'Please fill in domain and email'
+        message: "Please fill in domain and email",
       })
       return
     }
 
     // Require successful connection test only for NEW configs or if credentials changed
-    const credentialsChanged = config.apiToken !== '' // User entered a new token
-    if ((isNewConfig || credentialsChanged) && (!connectionTestResult || !connectionTestResult.success)) {
+    const credentialsChanged = config.apiToken !== "" // User entered a new token
+    if (
+      (isNewConfig || credentialsChanged) &&
+      (!connectionTestResult || !connectionTestResult.success)
+    ) {
       setValidationSnackbar({
         isVisible: true,
-        message: 'Please test the connection successfully before saving'
+        message: "Please test the connection successfully before saving",
       })
       return
     }
@@ -427,7 +470,7 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
     if (config.events.length === 0) {
       setValidationSnackbar({
         isVisible: true,
-        message: 'Please select at least one event'
+        message: "Please select at least one event",
       })
       return
     }
@@ -440,17 +483,19 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
       const { testUrl, productionUrl } = generateWebhookUrls()
 
       // Get actual API token - fetch from backend if user didn't provide a new one
-      const { workflowToolsAPI } = await import('./api/ApiHandlers')
+      const { workflowToolsAPI } = await import("./api/ApiHandlers")
       let actualApiToken = config.apiToken
 
       if (!actualApiToken && initialConfig && toolId) {
         // User is editing and didn't provide new token - fetch existing from backend
         const existingTool = await workflowToolsAPI.getTool(toolId)
-        actualApiToken = existingTool.config?.apiToken || ''
+        actualApiToken = existingTool.config?.apiToken || ""
       }
 
       if (!actualApiToken) {
-        throw new Error('API token is required. Please enter your Jira API token.')
+        throw new Error(
+          "API token is required. Please enter your Jira API token.",
+        )
       }
 
       // Register webhook with Jira
@@ -460,7 +505,7 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
         apiToken: actualApiToken,
         webhookUrl: productionUrl,
         events: config.events,
-        name: config.title || 'Xyne Jira Trigger',
+        name: config.title || "Xyne Jira Trigger",
         filters: config.jqlFilter ? { jqlFilter: config.jqlFilter } : undefined,
       })
 
@@ -480,10 +525,11 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
       setIsRegisteringWebhook(false)
       onSave(finalConfig)
     } catch (error: any) {
-      console.error('Webhook registration failed:', error)
+      console.error("Webhook registration failed:", error)
       setWebhookRegistrationResult({
         success: false,
-        message: error.message || 'Failed to register webhook. Please try again.',
+        message:
+          error.message || "Failed to register webhook. Please try again.",
       })
       // Re-enable button on error so user can retry
       setIsRegisteringWebhook(false)
@@ -546,21 +592,21 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
       {/* Tabs */}
       <div className="flex border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
         <button
-          onClick={() => setActiveTab('params')}
+          onClick={() => setActiveTab("params")}
           className={`flex-1 px-6 py-3 text-sm font-medium transition-colors ${
-            activeTab === 'params'
-              ? 'text-gray-900 dark:text-white border-b-2 border-gray-900 dark:border-white bg-white dark:bg-gray-900'
-              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+            activeTab === "params"
+              ? "text-gray-900 dark:text-white border-b-2 border-gray-900 dark:border-white bg-white dark:bg-gray-900"
+              : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
           }`}
         >
           Parameters
         </button>
         <button
-          onClick={() => setActiveTab('settings')}
+          onClick={() => setActiveTab("settings")}
           className={`flex-1 px-6 py-3 text-sm font-medium transition-colors ${
-            activeTab === 'settings'
-              ? 'text-gray-900 dark:text-white border-b-2 border-gray-900 dark:border-white bg-white dark:bg-gray-900'
-              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+            activeTab === "settings"
+              ? "text-gray-900 dark:text-white border-b-2 border-gray-900 dark:border-white bg-white dark:bg-gray-900"
+              : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
           }`}
         >
           Settings
@@ -569,7 +615,7 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-6 py-6">
-        {activeTab === 'params' ? (
+        {activeTab === "params" ? (
           <div className="space-y-6">
             {/* Credentials Section */}
             <div>
@@ -615,13 +661,19 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
               {/* API Token */}
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  API Token {initialConfig ? '' : '*'}
+                  API Token {initialConfig ? "" : "*"}
                 </label>
                 <div className="relative">
                   <input
-                    type={showPassword ? 'text' : 'password'}
-                    placeholder={initialConfig ? "••••••••••••••••" : "Your Jira API token"}
-                    title={initialConfig ? "Existing API token is saved. Leave empty to keep it, or enter a new one to update" : "Enter your Jira API token"}
+                    type={showPassword ? "text" : "password"}
+                    placeholder={
+                      initialConfig ? "••••••••••••••••" : "Your Jira API token"
+                    }
+                    title={
+                      initialConfig
+                        ? "Existing API token is saved. Leave empty to keep it, or enter a new one to update"
+                        : "Enter your Jira API token"
+                    }
                     value={config.apiToken}
                     onChange={(e) =>
                       setConfig({ ...config, apiToken: e.target.value })
@@ -633,7 +685,7 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-1/2 transform -translate-y-1/2 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                   >
-                    {showPassword ? 'Hide' : 'Show'}
+                    {showPassword ? "Hide" : "Show"}
                   </button>
                 </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -653,21 +705,52 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
                 <button
                   type="button"
                   onClick={handleTestConnection}
-                  disabled={isTestingConnection || !config.domain || !config.email || !config.apiToken}
+                  disabled={
+                    isTestingConnection ||
+                    !config.domain ||
+                    !config.email ||
+                    !config.apiToken
+                  }
                   className="px-4 py-2 bg-gray-900 hover:bg-gray-800 dark:bg-white dark:hover:bg-gray-100 disabled:bg-gray-400 disabled:cursor-not-allowed text-white dark:text-gray-900 font-medium rounded-md transition-colors text-sm flex items-center gap-2"
                 >
                   {isTestingConnection ? (
                     <>
-                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      <svg
+                        className="animate-spin h-4 w-4"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        ></circle>
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        ></path>
                       </svg>
                       Testing...
                     </>
                   ) : (
                     <>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M13 10V3L4 14h7v7l9-11h-7z"
+                        />
                       </svg>
                       Test Connection
                     </>
@@ -679,23 +762,35 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
                   <div
                     className={`mt-3 p-3 rounded-md flex items-start gap-2 ${
                       connectionTestResult.success
-                        ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
-                        : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+                        ? "bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800"
+                        : "bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800"
                     }`}
                   >
                     {connectionTestResult.success ? (
                       <Check className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
                     ) : (
-                      <svg className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      <svg
+                        className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
                       </svg>
                     )}
                     <div className="flex-1">
-                      <p className={`text-sm font-medium ${
-                        connectionTestResult.success
-                          ? 'text-green-800 dark:text-green-200'
-                          : 'text-red-800 dark:text-red-200'
-                      }`}>
+                      <p
+                        className={`text-sm font-medium ${
+                          connectionTestResult.success
+                            ? "text-green-800 dark:text-green-200"
+                            : "text-red-800 dark:text-red-200"
+                        }`}
+                      >
                         {connectionTestResult.message}
                       </p>
                     </div>
@@ -723,12 +818,15 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
                     <div
                       className={`mt-0.5 relative flex items-center justify-center w-4 h-4 rounded border transition-colors ${
                         config.events.includes(event.value)
-                          ? 'bg-black dark:bg-white border-black dark:border-white'
-                          : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600'
+                          ? "bg-black dark:bg-white border-black dark:border-white"
+                          : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600"
                       }`}
                     >
                       {config.events.includes(event.value) && (
-                        <Check className="w-3 h-3 text-white dark:text-black" strokeWidth={3} />
+                        <Check
+                          className="w-3 h-3 text-white dark:text-black"
+                          strokeWidth={3}
+                        />
                       )}
                     </div>
                     <div className="flex-1">
@@ -754,21 +852,21 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
                 {jiraMetadata && (
                   <div className="flex gap-1 p-0.5 bg-gray-100 dark:bg-gray-800 rounded-md">
                     <button
-                      onClick={() => setFilterMode('simple')}
+                      onClick={() => setFilterMode("simple")}
                       className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
-                        filterMode === 'simple'
-                          ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                        filterMode === "simple"
+                          ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
+                          : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
                       }`}
                     >
                       Simple
                     </button>
                     <button
-                      onClick={() => setFilterMode('advanced')}
+                      onClick={() => setFilterMode("advanced")}
                       className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
-                        filterMode === 'advanced'
-                          ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                        filterMode === "advanced"
+                          ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
+                          : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
                       }`}
                     >
                       Advanced
@@ -778,11 +876,12 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
               </div>
 
               {/* Simple Mode - Dropdowns */}
-              {filterMode === 'simple' && jiraMetadata && (
+              {filterMode === "simple" && jiraMetadata && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <p className="text-xs text-gray-600 dark:text-gray-400">
-                      Select filters using dropdowns. JQL will be generated automatically.
+                      Select filters using dropdowns. JQL will be generated
+                      automatically.
                     </p>
                     {(simpleFilters.projects.length > 0 ||
                       simpleFilters.issueTypes.length > 0 ||
@@ -834,13 +933,16 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
                       )}
                     </div>
                     <MultiSelect
-                      options={jiraMetadata.projects.map(p => ({
+                      options={jiraMetadata.projects.map((p) => ({
                         value: p.key,
                         label: `${p.name} (${p.key})`,
                       }))}
                       value={simpleFilters.projects}
                       onChange={(selected) =>
-                        setSimpleFilters({ ...simpleFilters, projects: selected })
+                        setSimpleFilters({
+                          ...simpleFilters,
+                          projects: selected,
+                        })
                       }
                       placeholder="All projects"
                     />
@@ -855,7 +957,12 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
                         </label>
                         {simpleFilters.issueTypes.length > 0 && (
                           <button
-                            onClick={() => setSimpleFilters({ ...simpleFilters, issueTypes: [] })}
+                            onClick={() =>
+                              setSimpleFilters({
+                                ...simpleFilters,
+                                issueTypes: [],
+                              })
+                            }
                             className="text-xs text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300"
                           >
                             Clear
@@ -863,13 +970,16 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
                         )}
                       </div>
                       <MultiSelect
-                        options={jiraMetadata.issueTypes.map(it => ({
+                        options={jiraMetadata.issueTypes.map((it) => ({
                           value: it.name,
                           label: it.name,
                         }))}
                         value={simpleFilters.issueTypes}
                         onChange={(selected) =>
-                          setSimpleFilters({ ...simpleFilters, issueTypes: selected })
+                          setSimpleFilters({
+                            ...simpleFilters,
+                            issueTypes: selected,
+                          })
                         }
                         placeholder="All issue types"
                       />
@@ -885,7 +995,12 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
                         </label>
                         {simpleFilters.priorities.length > 0 && (
                           <button
-                            onClick={() => setSimpleFilters({ ...simpleFilters, priorities: [] })}
+                            onClick={() =>
+                              setSimpleFilters({
+                                ...simpleFilters,
+                                priorities: [],
+                              })
+                            }
                             className="text-xs text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300"
                           >
                             Clear
@@ -893,13 +1008,16 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
                         )}
                       </div>
                       <MultiSelect
-                        options={jiraMetadata.priorities.map(p => ({
+                        options={jiraMetadata.priorities.map((p) => ({
                           value: p.name,
                           label: p.name,
                         }))}
                         value={simpleFilters.priorities}
                         onChange={(selected) =>
-                          setSimpleFilters({ ...simpleFilters, priorities: selected })
+                          setSimpleFilters({
+                            ...simpleFilters,
+                            priorities: selected,
+                          })
                         }
                         placeholder="All priorities"
                       />
@@ -915,7 +1033,12 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
                         </label>
                         {simpleFilters.statuses.length > 0 && (
                           <button
-                            onClick={() => setSimpleFilters({ ...simpleFilters, statuses: [] })}
+                            onClick={() =>
+                              setSimpleFilters({
+                                ...simpleFilters,
+                                statuses: [],
+                              })
+                            }
                             className="text-xs text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300"
                           >
                             Clear
@@ -923,13 +1046,16 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
                         )}
                       </div>
                       <MultiSelect
-                        options={jiraMetadata.statuses.map(s => ({
+                        options={jiraMetadata.statuses.map((s) => ({
                           value: s.name,
                           label: s.name,
                         }))}
                         value={simpleFilters.statuses}
                         onChange={(selected) =>
-                          setSimpleFilters({ ...simpleFilters, statuses: selected })
+                          setSimpleFilters({
+                            ...simpleFilters,
+                            statuses: selected,
+                          })
                         }
                         placeholder="All status"
                       />
@@ -937,34 +1063,43 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
                   )}
 
                   {/* Epics Multi-Select (if projects selected) */}
-                  {simpleFilters.projects.length > 0 && jiraMetadata.epics.length > 0 && (
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Epics
-                        </label>
-                        {simpleFilters.epics.length > 0 && (
-                          <button
-                            onClick={() => setSimpleFilters({ ...simpleFilters, epics: [] })}
-                            className="text-xs text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300"
-                          >
-                            Clear
-                          </button>
-                        )}
+                  {simpleFilters.projects.length > 0 &&
+                    jiraMetadata.epics.length > 0 && (
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Epics
+                          </label>
+                          {simpleFilters.epics.length > 0 && (
+                            <button
+                              onClick={() =>
+                                setSimpleFilters({
+                                  ...simpleFilters,
+                                  epics: [],
+                                })
+                              }
+                              className="text-xs text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300"
+                            >
+                              Clear
+                            </button>
+                          )}
+                        </div>
+                        <MultiSelect
+                          options={jiraMetadata.epics.map((e) => ({
+                            value: e.key,
+                            label: `${e.key}: ${e.summary}`,
+                          }))}
+                          value={simpleFilters.epics}
+                          onChange={(selected) =>
+                            setSimpleFilters({
+                              ...simpleFilters,
+                              epics: selected,
+                            })
+                          }
+                          placeholder="All epics"
+                        />
                       </div>
-                      <MultiSelect
-                        options={jiraMetadata.epics.map(e => ({
-                          value: e.key,
-                          label: `${e.key}: ${e.summary}`,
-                        }))}
-                        value={simpleFilters.epics}
-                        onChange={(selected) =>
-                          setSimpleFilters({ ...simpleFilters, epics: selected })
-                        }
-                        placeholder="All epics"
-                      />
-                    </div>
-                  )}
+                    )}
 
                   {/* Issues Multi-Select (if projects selected) */}
                   {simpleFilters.projects.length > 0 && (
@@ -975,7 +1110,9 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
                         </label>
                         {simpleFilters.issues.length > 0 && (
                           <button
-                            onClick={() => setSimpleFilters({ ...simpleFilters, issues: [] })}
+                            onClick={() =>
+                              setSimpleFilters({ ...simpleFilters, issues: [] })
+                            }
                             className="text-xs text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300"
                           >
                             Clear
@@ -983,20 +1120,25 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
                         )}
                       </div>
                       <MultiSelect
-                        options={jiraMetadata.issues?.map(issue => ({
-                          value: issue.key,
-                          label: `${issue.key}: ${issue.summary}`,
-                        })) || []}
+                        options={
+                          jiraMetadata.issues?.map((issue) => ({
+                            value: issue.key,
+                            label: `${issue.key}: ${issue.summary}`,
+                          })) || []
+                        }
                         value={simpleFilters.issues}
                         onChange={(selected) =>
-                          setSimpleFilters({ ...simpleFilters, issues: selected })
+                          setSimpleFilters({
+                            ...simpleFilters,
+                            issues: selected,
+                          })
                         }
                         placeholder={
                           isFetchingMetadata
                             ? "Loading issues..."
                             : jiraMetadata.issues?.length === 0
-                            ? "No issues found in selected projects"
-                            : "All issues"
+                              ? "No issues found in selected projects"
+                              : "All issues"
                         }
                         disabled={isFetchingMetadata}
                       />
@@ -1006,7 +1148,8 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
                         </p>
                       ) : jiraMetadata.issues?.length > 0 ? (
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          Showing {jiraMetadata.issues.length} most recent issues from selected projects
+                          Showing {jiraMetadata.issues.length} most recent
+                          issues from selected projects
                         </p>
                       ) : (
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -1031,17 +1174,19 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
               )}
 
               {/* Advanced Mode - Manual JQL */}
-              {(filterMode === 'advanced' || !jiraMetadata) && (
+              {(filterMode === "advanced" || !jiraMetadata) && (
                 <div>
                   <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
                     {jiraMetadata
-                      ? 'Write custom JQL query for advanced filtering.'
-                      : 'Test connection first to enable Simple mode with dropdowns.'}
+                      ? "Write custom JQL query for advanced filtering."
+                      : "Test connection first to enable Simple mode with dropdowns."}
                   </p>
                   <textarea
                     placeholder='Example: project = "MYPROJECT" AND issuetype = "Bug"'
                     value={config.jqlFilter}
-                    onChange={(e) => setConfig({ ...config, jqlFilter: e.target.value })}
+                    onChange={(e) =>
+                      setConfig({ ...config, jqlFilter: e.target.value })
+                    }
                     rows={3}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 dark:bg-gray-800 dark:text-gray-100 font-mono text-xs"
                   />
@@ -1051,9 +1196,15 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
                     </p>
                     <ul className="text-xs text-gray-500 dark:text-gray-400 space-y-1 ml-4">
                       <li className="font-mono">• project = "BACKEND"</li>
-                      <li className="font-mono">• project IN ("PROJ1", "PROJ2")</li>
-                      <li className="font-mono">• project = "API" AND issuetype = "Bug"</li>
-                      <li className="font-mono">• status CHANGED FROM "In Progress" TO "Done"</li>
+                      <li className="font-mono">
+                        • project IN ("PROJ1", "PROJ2")
+                      </li>
+                      <li className="font-mono">
+                        • project = "API" AND issuetype = "Bug"
+                      </li>
+                      <li className="font-mono">
+                        • status CHANGED FROM "In Progress" TO "Done"
+                      </li>
                     </ul>
                   </div>
                 </div>
@@ -1066,7 +1217,8 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
                 Webhook URLs
               </h3>
               <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
-                Use these webhook URLs to configure Jira webhooks for the selected events
+                Use these webhook URLs to configure Jira webhooks for the
+                selected events
               </p>
 
               {/* Test URL */}
@@ -1081,15 +1233,27 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
                     </div>
                   </div>
                   <button
-                    onClick={() => copyWebhookUrl(generateWebhookUrls().testUrl, true)}
+                    onClick={() =>
+                      copyWebhookUrl(generateWebhookUrls().testUrl, true)
+                    }
                     className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
                     title={copiedTest ? "Copied!" : "Copy URL"}
                   >
                     {copiedTest ? (
                       <Check className="w-3.5 h-3.5 text-green-600" />
                     ) : (
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      <svg
+                        className="w-3.5 h-3.5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                        />
                       </svg>
                     )}
                   </button>
@@ -1111,15 +1275,27 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
                     </div>
                   </div>
                   <button
-                    onClick={() => copyWebhookUrl(generateWebhookUrls().productionUrl, false)}
+                    onClick={() =>
+                      copyWebhookUrl(generateWebhookUrls().productionUrl, false)
+                    }
                     className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
                     title={copiedProduction ? "Copied!" : "Copy URL"}
                   >
                     {copiedProduction ? (
                       <Check className="w-3.5 h-3.5 text-green-600" />
                     ) : (
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      <svg
+                        className="w-3.5 h-3.5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                        />
                       </svg>
                     )}
                   </button>
@@ -1178,8 +1354,9 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
                 <div className="text-sm text-blue-900 dark:text-blue-100">
                   <p className="font-medium mb-1">How Jira triggers work</p>
                   <p className="text-xs text-blue-800 dark:text-blue-200">
-                    A webhook will be automatically registered with Jira when you save this workflow.
-                    When the selected events occur in Jira, this workflow will be triggered.
+                    A webhook will be automatically registered with Jira when
+                    you save this workflow. When the selected events occur in
+                    Jira, this workflow will be triggered.
                   </p>
                 </div>
               </div>
@@ -1195,23 +1372,35 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
           <div
             className={`mb-3 p-3 rounded-md flex items-start gap-2 ${
               webhookRegistrationResult.success
-                ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
-                : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+                ? "bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800"
+                : "bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800"
             }`}
           >
             {webhookRegistrationResult.success ? (
               <Check className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
             ) : (
-              <svg className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <svg
+                className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             )}
             <div className="flex-1">
-              <p className={`text-sm font-medium ${
-                webhookRegistrationResult.success
-                  ? 'text-green-800 dark:text-green-200'
-                  : 'text-red-800 dark:text-red-200'
-              }`}>
+              <p
+                className={`text-sm font-medium ${
+                  webhookRegistrationResult.success
+                    ? "text-green-800 dark:text-green-200"
+                    : "text-red-800 dark:text-red-200"
+                }`}
+              >
                 {webhookRegistrationResult.message}
               </p>
               {webhookRegistrationResult.webhookId && (
@@ -1230,16 +1419,32 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
         >
           {isRegisteringWebhook ? (
             <>
-              <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              <svg
+                className="animate-spin h-5 w-5"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                ></circle>
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
               </svg>
               Registering Webhook...
             </>
-          ) : (config.webhookId || initialConfig?.webhookId) ? (
-            'Save Changes'
+          ) : config.webhookId || initialConfig?.webhookId ? (
+            "Save Changes"
           ) : (
-            'Save & Register Webhook'
+            "Save & Register Webhook"
           )}
         </button>
       </div>
@@ -1249,7 +1454,7 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
         message={validationSnackbar.message}
         type="error"
         isVisible={validationSnackbar.isVisible}
-        onClose={() => setValidationSnackbar({ isVisible: false, message: '' })}
+        onClose={() => setValidationSnackbar({ isVisible: false, message: "" })}
         duration={5000}
         position="top-center"
       />

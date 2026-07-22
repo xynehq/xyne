@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { Plus, X as LucideX } from 'lucide-react'
+import React, { useState, useEffect } from "react"
+import { Plus, X as LucideX } from "lucide-react"
 
 interface GmailPeopleFields {
   from: string[]
@@ -35,10 +35,10 @@ export const GmailPeopleFilter: React.FC<GmailPeopleFilterProps> = ({
     cc: string
     bcc: string
   }>({
-    from: '',
-    to: '',
-    cc: '',
-    bcc: '',
+    from: "",
+    to: "",
+    cc: "",
+    bcc: "",
   })
 
   const [showError, setShowError] = useState<{
@@ -57,7 +57,7 @@ export const GmailPeopleFilter: React.FC<GmailPeopleFilterProps> = ({
   useEffect(() => {
     if (!filterValue) return
 
-    const filters = filterValue.split(', ').filter(f => f.trim())
+    const filters = filterValue.split(", ").filter((f) => f.trim())
     const newFields: GmailPeopleFields = {
       from: [],
       to: [],
@@ -65,14 +65,14 @@ export const GmailPeopleFilter: React.FC<GmailPeopleFilterProps> = ({
       bcc: [],
     }
 
-    filters.forEach(filter => {
-      if (filter.startsWith('from:')) {
+    filters.forEach((filter) => {
+      if (filter.startsWith("from:")) {
         newFields.from.push(filter.substring(5))
-      } else if (filter.startsWith('to:')) {
+      } else if (filter.startsWith("to:")) {
         newFields.to.push(filter.substring(3))
-      } else if (filter.startsWith('cc:')) {
+      } else if (filter.startsWith("cc:")) {
         newFields.cc.push(filter.substring(3))
-      } else if (filter.startsWith('bcc:')) {
+      } else if (filter.startsWith("bcc:")) {
         newFields.bcc.push(filter.substring(4))
       }
     })
@@ -82,17 +82,24 @@ export const GmailPeopleFilter: React.FC<GmailPeopleFilterProps> = ({
 
   const buildFilterString = (fields: GmailPeopleFields) => {
     const filterParts: string[] = []
-    if (fields.from.length > 0) filterParts.push(...fields.from.map(e => `from:${e}`))
-    if (fields.to.length > 0) filterParts.push(...fields.to.map(e => `to:${e}`))
-    if (fields.cc.length > 0) filterParts.push(...fields.cc.map(e => `cc:${e}`))
-    if (fields.bcc.length > 0) filterParts.push(...fields.bcc.map(e => `bcc:${e}`))
+    if (fields.from.length > 0)
+      filterParts.push(...fields.from.map((e) => `from:${e}`))
+    if (fields.to.length > 0)
+      filterParts.push(...fields.to.map((e) => `to:${e}`))
+    if (fields.cc.length > 0)
+      filterParts.push(...fields.cc.map((e) => `cc:${e}`))
+    if (fields.bcc.length > 0)
+      filterParts.push(...fields.bcc.map((e) => `bcc:${e}`))
 
     // Preserve existing timeline filters from the current filterValue
-    const currentFilters = filterValue?.split(', ').filter(f => f.trim()) || []
-    const existingTimelineFilters = currentFilters.filter(f => f.startsWith('~'))
+    const currentFilters =
+      filterValue?.split(", ").filter((f) => f.trim()) || []
+    const existingTimelineFilters = currentFilters.filter((f) =>
+      f.startsWith("~"),
+    )
     const combinedFilters = [...filterParts, ...existingTimelineFilters]
 
-    return combinedFilters.join(', ')
+    return combinedFilters.join(", ")
   }
 
   const addEmail = (field: keyof GmailPeopleFields) => {
@@ -101,21 +108,21 @@ export const GmailPeopleFilter: React.FC<GmailPeopleFilterProps> = ({
 
     // Validate email for cc and bcc fields
     if (!isValidEmail(email)) {
-      setShowError(prev => ({ ...prev, [field]: true }))
+      setShowError((prev) => ({ ...prev, [field]: true }))
       return
     }
 
     // Clear error and add email
-    setShowError(prev => ({ ...prev, [field]: false }))
+    setShowError((prev) => ({ ...prev, [field]: false }))
 
     const newFields = {
       ...peopleFields,
       [field]: [...peopleFields[field], email],
     }
     setPeopleFields(newFields)
-    setPeopleInputs(prev => ({
+    setPeopleInputs((prev) => ({
       ...prev,
-      [field]: '',
+      [field]: "",
     }))
 
     onFilterChange(buildFilterString(newFields))
@@ -131,16 +138,19 @@ export const GmailPeopleFilter: React.FC<GmailPeopleFilterProps> = ({
     onFilterChange(buildFilterString(newFields))
   }
 
-  const handleKeyDown = (field: keyof GmailPeopleFields, e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (
+    field: keyof GmailPeopleFields,
+    e: React.KeyboardEvent<HTMLInputElement>,
+  ) => {
     e.stopPropagation()
-    if (e.key === 'Enter' && peopleInputs[field].trim()) {
+    if (e.key === "Enter" && peopleInputs[field].trim()) {
       addEmail(field)
     }
   }
 
   return (
     <div className="px-4 py-3 space-y-3">
-      {(['from', 'to', 'cc', 'bcc'] as const).map((field) => (
+      {(["from", "to", "cc", "bcc"] as const).map((field) => (
         <div key={field} className="space-y-2">
           <label className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase">
             {field}
@@ -152,13 +162,13 @@ export const GmailPeopleFilter: React.FC<GmailPeopleFilterProps> = ({
                 placeholder={`Enter ${field} address`}
                 value={peopleInputs[field]}
                 onChange={(e) => {
-                  setPeopleInputs(prev => ({
+                  setPeopleInputs((prev) => ({
                     ...prev,
                     [field]: e.target.value,
                   }))
                   // Clear error when user starts typing
                   if (showError[field]) {
-                    setShowError(prev => ({ ...prev, [field]: false }))
+                    setShowError((prev) => ({ ...prev, [field]: false }))
                   }
                 }}
                 onKeyDown={(e) => handleKeyDown(field, e)}
@@ -166,8 +176,8 @@ export const GmailPeopleFilter: React.FC<GmailPeopleFilterProps> = ({
                 onMouseDown={(e) => e.stopPropagation()}
                 className={`flex-1 w-full px-3 py-2 text-sm border rounded-md bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-0 ${
                   showError[field]
-                    ? 'border-red-500 dark:border-red-500 focus:border-red-500 dark:focus:border-red-500'
-                    : 'border-gray-300 dark:border-gray-600 focus:border-gray-300 dark:focus:border-gray-600'
+                    ? "border-red-500 dark:border-red-500 focus:border-red-500 dark:focus:border-red-500"
+                    : "border-gray-300 dark:border-gray-600 focus:border-gray-300 dark:focus:border-gray-600"
                 }`}
               />
               {showError[field] && (

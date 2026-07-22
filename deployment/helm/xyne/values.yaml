@@ -1,0 +1,131 @@
+global:
+  imagePullPolicy: IfNotPresent
+
+# --- Xyne App (server + frontend) ---
+app:
+  image: asia.gcr.io/xyne-spaces/xyne-intelligence-sdk
+  tag: ca55aa9b
+  replicaCount: 1
+  port: 3000
+  metricsPort: 3001
+  syncServerPort: 3010
+  storage:
+    size: 10Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "8Gi"
+  syncServer:
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "2Gi"
+      limits:
+        cpu: "2"
+        memory: "8Gi"
+  # Non-secret environment variables
+  env:
+    NODE_ENV: production
+    EMBEDDING_MODEL: bge-small-en-v1.5
+    VESPA_FEED_PORT: "8080"
+    VESPA_QUERY_PORT: "8081"
+    GOOGLE_WEB_LOGIN_ENABLED: "false"
+    KEYCLOAK_WEB_ENABLED: "false"
+    DOCLING_ENABLED: "false"
+    AUTH_TYPE: OAuth
+    LITELLM_FAST_MODEL: "open-large"
+    LITELLM_BEST_MODEL: "open-large"
+    LITELLM_BEST_AGENTIC_MODEL: "open-large"
+  # Sensitive environment variables — override at install time
+  secrets:
+    ACCESS_TOKEN_SECRET: ""       # REQUIRED — openssl rand -base64 32
+    REFRESH_TOKEN_SECRET: ""      # REQUIRED — openssl rand -base64 32
+    ENCRYPTION_KEY: ""            # REQUIRED — openssl rand -base64 32
+    SERVICE_ACCOUNT_ENCRYPTION_KEY: ""  # REQUIRED
+    LITELLM_API_KEY: ""           # REQUIRED
+    LITELLM_BASE_URL: ""          # REQUIRED — e.g. https://grid.ai.juspay.net
+
+# --- SDK Dashboard ---
+sdkDashboard:
+  enabled: true
+  image: asia.gcr.io/xyne-spaces/xyne-intelligence-sdk-dashboard
+  tag: 7eaec5d7
+  replicaCount: 1
+  port: 80
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "256Mi"
+
+# --- PostgreSQL (CloudNativePG — in-cluster) ---
+# Set enabled: false to use an external database (e.g. RDS, Cloud SQL)
+postgresql:
+  enabled: true
+  image: ghcr.io/cloudnative-pg/postgresql:15.4
+  user: xyne
+  password: xyne
+  database: xyne
+  port: 5432
+  instances: 1          # set to 3 for HA with auto-failover
+  storage:
+    size: 20Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+  parameters:
+    shared_buffers: "256MB"
+    effective_cache_size: "512MB"
+  backup:
+    enabled: false
+    destinationPath: ""    # e.g. s3://my-bucket/backups
+    retentionPolicy: "30d"
+    s3: false
+
+# --- External Database (when postgresql.enabled is false) ---
+# Use this for managed databases like RDS, Cloud SQL, etc.
+externalDatabase:
+  host: ""               # e.g. mydb.xxxx.us-east-1.rds.amazonaws.com
+  port: 5432
+  user: xyne
+  password: ""
+  database: xyne
+
+# --- Vespa ---
+vespa:
+  image: vespaengine/vespa
+  tag: latest
+  port: 8080
+  queryPort: 8081
+  configPort: 19071
+  storage:
+    size: 50Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: "2"
+      memory: "6Gi"
+    limits:
+      cpu: "4"
+      memory: "8Gi"
+  jvm:
+    configServer: "-Xms1g -Xmx2g -XX:+UseG1GC"
+    configProxy: "-Xms512m -Xmx1g -XX:+UseG1GC"
+
+# --- Ingress ---
+ingress:
+  enabled: false
+  className: ""
+  host: xyne.local
+  tls: []

@@ -38,7 +38,11 @@ function normalizeMemoryText(text: string): string {
 }
 
 /** Generate deterministic docId from workspaceId, email, and memory text. */
-function generateEpisodicMemoryDocId(workspaceId: string, email: string, memoryText: string): string {
+function generateEpisodicMemoryDocId(
+  workspaceId: string,
+  email: string,
+  memoryText: string,
+): string {
   const normalized = normalizeMemoryText(memoryText)
   const hash = createHash("sha256")
     .update(`${workspaceId}:${email}:${normalized}`)
@@ -78,7 +82,9 @@ Output a JSON array only, no markdown or explanation. Each item: { "memory": "..
 If nothing worth remembering, output: []`
 
 /** Parse LLM response into episodic memory items: array, or object with .memories/.items, or single { memory, type }. */
-function parseEpisodicMemoriesResponse(raw: string | undefined): Array<{ memory: string; type: string }> {
+function parseEpisodicMemoriesResponse(
+  raw: string | undefined,
+): Array<{ memory: string; type: string }> {
   const s = (raw ?? "").trim()
   if (!s) return []
   let jsonStr = s
@@ -94,7 +100,9 @@ function parseEpisodicMemoriesResponse(raw: string | undefined): Array<{ memory:
       }))
     }
     if (parsed && typeof parsed === "object") {
-      const arr = (parsed as { memories?: unknown[] }).memories ?? (parsed as { items?: unknown[] }).items
+      const arr =
+        (parsed as { memories?: unknown[] }).memories ??
+        (parsed as { items?: unknown[] }).items
       if (Array.isArray(arr)) {
         return (arr as Array<{ memory?: string; type?: string }>).map((x) => ({
           memory: (x.memory ?? "").trim(),
@@ -103,7 +111,9 @@ function parseEpisodicMemoriesResponse(raw: string | undefined): Array<{ memory:
       }
       if ("memory" in (parsed as object)) {
         const one = parsed as { memory?: string; type?: string }
-        return [{ memory: (one.memory ?? "").trim(), type: one.type ?? "workflow" }]
+        return [
+          { memory: (one.memory ?? "").trim(), type: one.type ?? "workflow" },
+        ]
       }
     }
   } catch {
@@ -143,7 +153,8 @@ async function isDuplicateMemory(params: {
       const f = (c.fields ?? {}) as VespaEpisodicMemorySearch
       const mf = f.matchfeatures
       if (!mf) continue
-      const vectorScore = typeof mf.vector_score === "number" ? mf.vector_score : 0
+      const vectorScore =
+        typeof mf.vector_score === "number" ? mf.vector_score : 0
       if (vectorScore >= DUPLICATE_SIMILARITY_THRESHOLD) {
         return true
       }
@@ -186,7 +197,11 @@ export async function extractEpisodicMemories(params: {
   if (conversationText.length > MAX_CONVERSATION_CHARS) {
     conversationText = conversationText.slice(-MAX_CONVERSATION_CHARS)
     Logger.debug(
-      { chatId, originalLength: buildConversationText(messagesToProcess).length, truncatedTo: MAX_CONVERSATION_CHARS },
+      {
+        chatId,
+        originalLength: buildConversationText(messagesToProcess).length,
+        truncatedTo: MAX_CONVERSATION_CHARS,
+      },
       "Episodic extraction: truncated conversation to fit context",
     )
   }
@@ -196,16 +211,13 @@ export async function extractEpisodicMemories(params: {
   try {
     const { text: rawResponse } = await getProviderByModel(
       config.defaultBestModel,
-    ).converse(
-      [{ role: "user", content: [{ text: prompt }] }],
-      {
-        modelId: config.defaultBestModel,
-        max_new_tokens: 1024,
-        temperature: 0.2,
-        stream: false,
-        json: true,
-      },
-    )
+    ).converse([{ role: "user", content: [{ text: prompt }] }], {
+      modelId: config.defaultBestModel,
+      max_new_tokens: 1024,
+      temperature: 0.2,
+      stream: false,
+      json: true,
+    })
 
     const items = parseEpisodicMemoriesResponse(rawResponse)
     if (items.length === 0) {

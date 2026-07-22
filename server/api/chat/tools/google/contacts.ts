@@ -5,7 +5,10 @@ import { Apps, GoogleApps } from "@xyne/vespa-ts"
 import { getErrorMessage } from "@/utils"
 import { searchGoogleApps } from "@/search/vespa"
 import config from "@/config"
-import { formatSearchToolResponse, formatSearchToolResponseAsRawDocuments } from "../utils"
+import {
+  formatSearchToolResponse,
+  formatSearchToolResponseAsRawDocuments,
+} from "../utils"
 import type { Ctx, WithExcludedIds } from "../types"
 import { baseToolParams, createQuerySchema } from "../schemas"
 

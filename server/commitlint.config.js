@@ -4,4 +4,4 @@ export default {
   rules: {
     "subject-case": [0], // disable subject case rule
   },
-};
+}

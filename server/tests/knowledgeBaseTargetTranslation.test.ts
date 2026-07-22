@@ -2,8 +2,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test"
 import { Apps, KnowledgeBaseEntity, SearchModes } from "@xyne/vespa-ts/types"
 import type { MinimalAgentFragment } from "@/api/chat/types"
 
-process.env.ENCRYPTION_KEY ??=
-  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+process.env.ENCRYPTION_KEY ??= "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 process.env.SERVICE_ACCOUNT_ENCRYPTION_KEY ??=
   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
@@ -345,35 +344,37 @@ async function runSearchAndCapture(params: any) {
   let capturedYql = ""
 
   const searchExecutor = mock(
-    async (options: any): Promise<{
+    async (
+      options: any,
+    ): Promise<{
       fragments: MinimalAgentFragment[]
       rawDocuments: any[]
     }> => {
-    capturedSelections = options.collectionSelections
-    capturedProcessedSelections = await extractCollectionVespaIds({
-      collectionSelections: options.collectionSelections,
-    } as any)
-    capturedYql = buildKnowledgeBaseYql(capturedProcessedSelections)
+      capturedSelections = options.collectionSelections
+      capturedProcessedSelections = await extractCollectionVespaIds({
+        collectionSelections: options.collectionSelections,
+      } as any)
+      capturedYql = buildKnowledgeBaseYql(capturedProcessedSelections)
 
-    return {
-      fragments: [
-        {
-          id: "fragment-1",
-          content: "hit",
-          source: {
-            docId: "clf-spec",
-            title: "spec.md",
-            url: "",
-            app: Apps.KnowledgeBase,
-            entity: KnowledgeBaseEntity.File,
+      return {
+        fragments: [
+          {
+            id: "fragment-1",
+            content: "hit",
+            source: {
+              docId: "clf-spec",
+              title: "spec.md",
+              url: "",
+              app: Apps.KnowledgeBase,
+              entity: KnowledgeBaseEntity.File,
+            },
+            confidence: 0.9,
+            visibleChunkIndices: [],
           },
-          confidence: 0.9,
-          visibleChunkIndices: [],
-        },
-      ],
-      rawDocuments: [],
-    }
-  },
+        ],
+        rawDocuments: [],
+      }
+    },
   )
 
   const result = await executeSearchKnowledgeBase(params, createContext(), {
@@ -422,7 +423,9 @@ describe("knowledge base target translation to Vespa", () => {
     expect(outcome.capturedProcessedSelections).toEqual({
       collectionIds: [collectionAlpha.id],
     })
-    expect(outcome.capturedYql).toContain(`clId contains '${collectionAlpha.id}'`)
+    expect(outcome.capturedYql).toContain(
+      `clId contains '${collectionAlpha.id}'`,
+    )
   })
 
   test("folder and folder-path targets become clFd filters and expand descendant folders", async () => {
@@ -448,7 +451,9 @@ describe("knowledge base target translation to Vespa", () => {
     expect(outcome.capturedProcessedSelections).toEqual({
       collectionFolderIds: [projectsFolder.id, apiFolder.id],
     })
-    expect(outcome.capturedYql).toContain(`clFd contains '${projectsFolder.id}'`)
+    expect(outcome.capturedYql).toContain(
+      `clFd contains '${projectsFolder.id}'`,
+    )
     expect(outcome.capturedYql).toContain(`clFd contains '${apiFolder.id}'`)
     expect(mockGetAllFolderIds).toHaveBeenCalledWith([projectsFolder.id], {})
   })
@@ -519,8 +524,12 @@ describe("knowledge base target translation to Vespa", () => {
       collectionFolderIds: [projectsFolder.id, apiFolder.id],
       collectionFileIds: [specFile.vespaDocId],
     })
-    expect(outcome.capturedYql).toContain(`clId contains '${collectionBeta.id}'`)
-    expect(outcome.capturedYql).toContain(`clFd contains '${projectsFolder.id}'`)
+    expect(outcome.capturedYql).toContain(
+      `clId contains '${collectionBeta.id}'`,
+    )
+    expect(outcome.capturedYql).toContain(
+      `clFd contains '${projectsFolder.id}'`,
+    )
     expect(outcome.capturedYql).toContain(
       `docId contains '${specFile.vespaDocId}'`,
     )
@@ -532,7 +541,8 @@ describe("knowledge base target translation to Vespa", () => {
     expect(lsResult.status).toBe("success")
 
     const collectionEntry = (lsResult as any).data.entries.find(
-      (entry: any) => entry.type === "collection" && entry.id === collectionAlpha.id,
+      (entry: any) =>
+        entry.type === "collection" && entry.id === collectionAlpha.id,
     )
     expect(collectionEntry).toBeDefined()
 
@@ -553,7 +563,9 @@ describe("knowledge base target translation to Vespa", () => {
         collectionIds: [collectionAlpha.id],
       },
     ])
-    expect(outcome.capturedYql).toContain(`clId contains '${collectionAlpha.id}'`)
+    expect(outcome.capturedYql).toContain(
+      `clId contains '${collectionAlpha.id}'`,
+    )
   })
 
   test("folder ls rows can be reused as folderId targets and path targets", async () => {
@@ -613,7 +625,9 @@ describe("knowledge base target translation to Vespa", () => {
         collectionFolderIds: [projectsFolder.id],
       },
     ])
-    expect(pathOutcome.capturedYql).toContain(`clFd contains '${projectsFolder.id}'`)
+    expect(pathOutcome.capturedYql).toContain(
+      `clFd contains '${projectsFolder.id}'`,
+    )
   })
 
   test("file ls rows can be reused as fileId targets and path targets", async () => {

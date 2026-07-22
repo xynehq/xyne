@@ -345,9 +345,11 @@ export type SearchKnowledgeBaseInput = z.infer<
 
 // Calendar search input
 export const SearchCalendarInputSchema = z.object({
-  query: z.string().describe(
-    "Short meeting/topic retrieval query for calendar events. Put attendee, status, and time constraints in the dedicated filters.",
-  ),
+  query: z
+    .string()
+    .describe(
+      "Short meeting/topic retrieval query for calendar events. Put attendee, status, and time constraints in the dedicated filters.",
+    ),
   attendees: z
     .array(z.string())
     .optional()
@@ -444,11 +446,27 @@ export type GetSlackUserProfileInput = z.infer<
 >
 
 export const SearchChatHistoryInputSchema = z.object({
-  query: z.string().describe("Search query to find relevant earlier messages in the conversation"),
-  chatId: z.string().optional().describe("Conversation to search. Use the chatId from 'Relevant Past Experiences' when searching a past conversation; omit to search the current conversation only. Without a valid chatId no results are returned."),
-  limit: z.number().min(1).max(10).optional().describe("Max number of conversation messages to return"),
+  query: z
+    .string()
+    .describe(
+      "Search query to find relevant earlier messages in the conversation",
+    ),
+  chatId: z
+    .string()
+    .optional()
+    .describe(
+      "Conversation to search. Use the chatId from 'Relevant Past Experiences' when searching a past conversation; omit to search the current conversation only. Without a valid chatId no results are returned.",
+    ),
+  limit: z
+    .number()
+    .min(1)
+    .max(10)
+    .optional()
+    .describe("Max number of conversation messages to return"),
 })
-export type SearchChatHistoryInput = z.infer<typeof SearchChatHistoryInputSchema>
+export type SearchChatHistoryInput = z.infer<
+  typeof SearchChatHistoryInputSchema
+>
 
 // ============================================================================
 // AGENT TOOL SCHEMAS
@@ -572,7 +590,8 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
   // Planning Tools
   toDoWrite: {
     name: XyneTools.toDoWrite,
-    description: "Create or update an execution plan with sequential tasks. MUST be called first before any other tool.",
+    description:
+      "Create or update an execution plan with sequential tasks. MUST be called first before any other tool.",
     category: ToolCategory.Planning,
     inputSchema: ToDoWriteInputSchema,
     outputSchema: ToDoWriteOutputSchema,
@@ -656,8 +675,7 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
         },
       },
       {
-        scenario:
-          "Search only the PDF files identified from a prior ls call",
+        scenario: "Search only the PDF files identified from a prior ls call",
         input: {
           query: "vendor risk questionnaire requirements",
           filters: {
@@ -690,7 +708,8 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
     outputSchema: LsKnowledgeBaseOutputSchema,
     examples: [
       {
-        scenario: "Inspect a known collection root before deciding whether to search inside it",
+        scenario:
+          "Inspect a known collection root before deciding whether to search inside it",
         input: {
           target: {
             type: "collection" as const,

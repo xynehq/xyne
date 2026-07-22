@@ -1,9 +1,20 @@
-import { afterAll, afterEach, beforeAll, describe, expect, mock, test } from "bun:test"
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  mock,
+  test,
+} from "bun:test"
 import fs from "fs"
 import os from "os"
 import path from "path"
 import { z } from "zod"
-import type { AgentRunContext, ImageMemoryEntry } from "@/api/chat/agent-schemas"
+import type {
+  AgentRunContext,
+  ImageMemoryEntry,
+} from "@/api/chat/agent-schemas"
 import type { Message, RunState, TraceEvent } from "@juspay-xyne-jaf/jaf"
 
 const tempImageRoot = fs.mkdtempSync(
@@ -32,11 +43,7 @@ process.env.ENCRYPTION_KEY ??= "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 process.env.SERVICE_ACCOUNT_ENCRYPTION_KEY ??=
   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
-const {
-  createRunId,
-  createTraceId,
-  run,
-} = await import("@juspay-xyne-jaf/jaf")
+const { createRunId, createTraceId, run } = await import("@juspay-xyne-jaf/jaf")
 const { Models } = await import("@/ai/types")
 const { makeXyneGenericJAFProvider } = await import(
   "@/api/chat/jaf-generic-provider"
@@ -173,7 +180,10 @@ const createAgent = (
         schema: {
           name: "searchGlobal",
           description: "Search globally",
-          parameters: z.object({ query: z.string(), limit: z.number().optional() }),
+          parameters: z.object({
+            query: z.string(),
+            limit: z.number().optional(),
+          }),
         },
         execute:
           executeByTool.searchGlobal ??
@@ -206,9 +216,9 @@ const createAgent = (
   }) as any
 
 const getRequestBodies = (fetchMock: FetchMock) =>
-  (((fetchMock.mock.calls as unknown) as MockedFetchCall[]).map(([, init]) =>
+  (fetchMock.mock.calls as unknown as MockedFetchCall[]).map(([, init]) =>
     JSON.parse(String(init?.body)),
-  ))
+  )
 
 beforeAll(() => {
   fs.mkdirSync(imageDir, { recursive: true })
@@ -275,7 +285,7 @@ describe("makeXyneGenericJAFProvider", () => {
     expect(result.message?.content).toBe("Done.")
     expect(legacyProvider.getCompletion).not.toHaveBeenCalled()
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    const [url] = ((fetchMock.mock.calls as unknown) as MockedFetchCall[])[0]
+    const [url] = (fetchMock.mock.calls as unknown as MockedFetchCall[])[0]
     expect(String(url)).toBe("https://litellm.test/v1/chat/completions")
 
     const [body] = getRequestBodies(fetchMock)
@@ -512,7 +522,9 @@ merchant_123 can proceed to the subscription flow immediately.`,
     ])
     expect(firstBody.tool_choice).toBe("auto")
 
-    expect(secondBody.messages.map((message: { role: string }) => message.role)).toEqual([
+    expect(
+      secondBody.messages.map((message: { role: string }) => message.role),
+    ).toEqual([
       "system",
       "user",
       "assistant",
@@ -551,7 +563,9 @@ merchant_123 can proceed to the subscription flow immediately.`,
       jsonResponse({
         id: "chatcmpl-image",
         model: "glm-flash-experimental",
-        choices: [{ message: { role: "assistant", content: "I can see the image." } }],
+        choices: [
+          { message: { role: "assistant", content: "I can see the image." } },
+        ],
       }),
     )
     global.fetch = fetchMock as unknown as typeof fetch
@@ -572,7 +586,10 @@ merchant_123 can proceed to the subscription flow immediately.`,
     const state = createState(Models.GLM_FLASH, {
       context,
       messages: [
-        { role: "user", content: "Summarize the attachment and prior context." },
+        {
+          role: "user",
+          content: "Summarize the attachment and prior context.",
+        },
         {
           role: "assistant",
           content: "",
@@ -597,11 +614,15 @@ merchant_123 can proceed to the subscription flow immediately.`,
     })
     const provider = makeXyneGenericJAFProvider<AgentRunContext>()
 
-    const result = await provider.getCompletion(state, createAgent(Models.GLM_FLASH), {
-      agentRegistry: new Map(),
-      modelProvider: provider,
-      modelOverride: Models.GLM_FLASH,
-    })
+    const result = await provider.getCompletion(
+      state,
+      createAgent(Models.GLM_FLASH),
+      {
+        agentRegistry: new Map(),
+        modelProvider: provider,
+        modelOverride: Models.GLM_FLASH,
+      },
+    )
 
     expect(result.message?.content).toBe("I can see the image.")
     expect(fetchMock).toHaveBeenCalledTimes(1)
@@ -623,7 +644,9 @@ merchant_123 can proceed to the subscription flow immediately.`,
         },
       ],
     })
-    expect(body.messages[2].tool_calls[0].function.name).toBe("getAttachmentContent")
+    expect(body.messages[2].tool_calls[0].function.name).toBe(
+      "getAttachmentContent",
+    )
     expect(body.messages[3].tool_call_id).toBe("call_attachment_context")
   })
 

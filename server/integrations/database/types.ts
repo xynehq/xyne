@@ -55,9 +55,18 @@ export interface DatabaseTableSchemaDoc {
   connectorId: string
   tableName: string
   schema: string
-  columns: { name: string; type: string; nullable: boolean; isPrimaryKey?: boolean }[]
+  columns: {
+    name: string
+    type: string
+    nullable: boolean
+    isPrimaryKey?: boolean
+  }[]
   primaryKey: string[]
-  foreignKeys?: { columns: string[]; referencedTable: string; referencedColumns: string[] }[]
+  foreignKeys?: {
+    columns: string[]
+    referencedTable: string
+    referencedColumns: string[]
+  }[]
   rowCount?: number
   /** Per-column aggregates (min/max/avg/distinct etc.) from a sample; helps SQL generation. */
   columnStats?: Record<string, ColumnStats>

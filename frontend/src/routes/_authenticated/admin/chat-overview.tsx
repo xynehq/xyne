@@ -64,7 +64,8 @@ function ChatOverviewPage({
 }: ChatOverviewPageProps) {
   const navigate = useNavigate()
   const search = Route.useSearch()
-  const { selectedUser, clearSelectedUser, dateRange, setDateRange } = useAdminUserSelectionStore()
+  const { selectedUser, clearSelectedUser, dateRange, setDateRange } =
+    useAdminUserSelectionStore()
   const [adminChats, setAdminChats] = useState<AdminChat[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -92,7 +93,14 @@ function ChatOverviewPage({
   // Reset to page 1 when filter changes
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchQuery, filterType, userFilter, sortBy, dateRange.from, dateRange.to])
+  }, [
+    searchQuery,
+    filterType,
+    userFilter,
+    sortBy,
+    dateRange.from,
+    dateRange.to,
+  ])
 
   // Function to execute search
   const handleSearch = () => {

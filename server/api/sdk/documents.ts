@@ -71,13 +71,19 @@ function calculateChecksum(buffer: Buffer): string {
  */
 async function removeExistingItem(
   tx: TxnOrClient,
-  existing: { id: string; vespaDocId: string | null; storagePath: string | null },
+  existing: {
+    id: string
+    vespaDocId: string | null
+    storagePath: string | null
+  },
 ): Promise<void> {
   if (existing.vespaDocId) {
     try {
       await DeleteDocument(existing.vespaDocId, KbItemsSchema)
     } catch (err) {
-      Logger.warn(`Failed to delete old Vespa doc ${existing.vespaDocId}: ${err}`)
+      Logger.warn(
+        `Failed to delete old Vespa doc ${existing.vespaDocId}: ${err}`,
+      )
     }
   }
   if (existing.storagePath) {
@@ -110,7 +116,9 @@ async function upsertTextDocument(
     metadata?: Record<string, unknown>
   },
 ): Promise<{ itemId: string; title: string; status: string }> {
-  const fileName = sanitizeFileName(doc.title.endsWith(".txt") ? doc.title : `${doc.title}.txt`)
+  const fileName = sanitizeFileName(
+    doc.title.endsWith(".txt") ? doc.title : `${doc.title}.txt`,
+  )
   const buffer = Buffer.from(doc.content, "utf-8")
   const checksum = calculateChecksum(buffer)
   const storageKey = generateStorageKey()
@@ -127,7 +135,12 @@ async function upsertTextDocument(
   await writeFile(storagePath, new Uint8Array(buffer))
 
   const item = await db.transaction(async (tx: TxnOrClient) => {
-    const existing = await getCollectionItemByPath(tx, collectionId, "/", fileName)
+    const existing = await getCollectionItemByPath(
+      tx,
+      collectionId,
+      "/",
+      fileName,
+    )
     if (existing) {
       await removeExistingItem(tx, existing)
     }
@@ -190,11 +203,23 @@ export const SdkIngestApi = async (c: Context) => {
   try {
     const results = []
     for (const doc of documents as Array<{
-      doc_id?: string; title: string; content: string
-      visibility?: string; access_tags: string[]
-      source_url?: string; metadata?: Record<string, unknown>
+      doc_id?: string
+      title: string
+      content: string
+      visibility?: string
+      access_tags: string[]
+      source_url?: string
+      metadata?: Record<string, unknown>
     }>) {
-      results.push(await upsertTextDocument(collection_id as string, workspaceExternalId, userId, userEmail, doc))
+      results.push(
+        await upsertTextDocument(
+          collection_id as string,
+          workspaceExternalId,
+          userId,
+          userEmail,
+          doc,
+        ),
+      )
     }
 
     return c.json({ collection_id, documents: results, total: results.length })
@@ -266,7 +291,12 @@ export const SdkFileUploadApi = async (c: Context) => {
 
       // Create DB record (upsert: remove existing if present)
       const item = await db.transaction(async (tx: TxnOrClient) => {
-        const existing = await getCollectionItemByPath(tx, collectionId, "/", fileName)
+        const existing = await getCollectionItemByPath(
+          tx,
+          collectionId,
+          "/",
+          fileName,
+        )
         if (existing) {
           await removeExistingItem(tx, existing)
         }
@@ -337,7 +367,11 @@ export const SdkFileUploadApi = async (c: Context) => {
  * Documents uploaded via the dashboard (different source) are never touched.
  */
 export const SdkSyncApi = async (c: Context) => {
-  const { collection: collectionName, source, documents } = c.req.valid("json" as never) as {
+  const {
+    collection: collectionName,
+    source,
+    documents,
+  } = c.req.valid("json" as never) as {
     collection: string
     source: string
     documents: Array<{
@@ -355,9 +389,14 @@ export const SdkSyncApi = async (c: Context) => {
   const userId = await resolveUserId(userEmail)
 
   // Resolve collection name → UUID
-  const collectionId = await resolveCollectionId(workspaceExternalId, collectionName)
+  const collectionId = await resolveCollectionId(
+    workspaceExternalId,
+    collectionName,
+  )
   if (!collectionId) {
-    throw new HTTPException(404, { message: `Collection "${collectionName}" not found` })
+    throw new HTTPException(404, {
+      message: `Collection "${collectionName}" not found`,
+    })
   }
 
   const collection = await getCollectionById(db, collectionId)
@@ -378,7 +417,13 @@ export const SdkSyncApi = async (c: Context) => {
         ...doc,
         metadata: { ...doc.metadata, source },
       }
-      const result = await upsertTextDocument(collectionId, workspaceExternalId, userId, userEmail, merged)
+      const result = await upsertTextDocument(
+        collectionId,
+        workspaceExternalId,
+        userId,
+        userEmail,
+        merged,
+      )
       upsertedDocIds.add(doc.doc_id)
       results.push(result)
     }
@@ -412,7 +457,9 @@ export const SdkSyncApi = async (c: Context) => {
           await removeExistingItem(tx, item)
         })
         deletedCount++
-        Logger.info(`Sync cleanup: removed stale "${item.name}" (${item.vespaDocId})`)
+        Logger.info(
+          `Sync cleanup: removed stale "${item.name}" (${item.vespaDocId})`,
+        )
       } catch (err) {
         Logger.error(`Sync cleanup: failed to remove "${item.name}": ${err}`)
       }

@@ -118,7 +118,10 @@ export default function CreateChannelModal({
           description: description || undefined,
           purpose: purpose || undefined,
           type: channelType,
-          memberIds: selectedMembers.length > 0 ? selectedMembers.map(u => u.id) : undefined,
+          memberIds:
+            selectedMembers.length > 0
+              ? selectedMembers.map((u) => u.id)
+              : undefined,
         },
       })
 

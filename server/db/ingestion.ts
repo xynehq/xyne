@@ -2,11 +2,11 @@
 // Provides CRUD operations and business logic for the ingestions table
 
 import { eq, and, sql } from "drizzle-orm"
-import { 
-  ingestions, 
-  type InsertIngestion, 
+import {
+  ingestions,
+  type InsertIngestion,
   type SelectIngestion,
-  type IngestionStatus 
+  type IngestionStatus,
 } from "./schema/ingestions"
 import type { TxnOrClient } from "@/types"
 
@@ -14,12 +14,9 @@ import type { TxnOrClient } from "@/types"
 // Returns the created record with generated ID and timestamps
 export const createIngestion = async (
   txn: TxnOrClient,
-  data: InsertIngestion
+  data: InsertIngestion,
 ): Promise<SelectIngestion> => {
-  const [result] = await txn
-    .insert(ingestions)
-    .values(data)
-    .returning()
+  const [result] = await txn.insert(ingestions).values(data).returning()
   return result as SelectIngestion
 }
 
@@ -29,7 +26,7 @@ export const createIngestion = async (
 export const getActiveIngestionForUser = async (
   txn: TxnOrClient,
   userId: number,
-  connectorId: number
+  connectorId: number,
 ): Promise<SelectIngestion | null> => {
   const result = await txn
     .select()
@@ -38,11 +35,11 @@ export const getActiveIngestionForUser = async (
       and(
         eq(ingestions.userId, userId),
         eq(ingestions.connectorId, connectorId),
-        sql`status IN ('in_progress', 'paused', 'failed')`
-      )
+        sql`status IN ('in_progress', 'paused', 'failed')`,
+      ),
     )
     .limit(1)
-  
+
   return (result[0] as SelectIngestion) || null
 }
 
@@ -53,23 +50,23 @@ export const updateIngestionStatus = async (
   txn: TxnOrClient,
   ingestionId: number,
   status: IngestionStatus,
-  errorMessage?: string
+  errorMessage?: string,
 ): Promise<SelectIngestion> => {
   const updateData: any = {
     status,
     updatedAt: sql`NOW()`,
   }
-  
+
   // Set startedAt timestamp when ingestion begins processing
   if (status === "in_progress" && !errorMessage) {
     updateData.startedAt = sql`NOW()`
   }
-  
+
   // Set completedAt timestamp when ingestion finishes (any final state)
   if (status === "completed" || status === "failed" || status === "cancelled") {
     updateData.completedAt = sql`NOW()`
   }
-  
+
   // Store error message for failed ingestions
   if (errorMessage) {
     updateData.errorMessage = errorMessage
@@ -80,7 +77,7 @@ export const updateIngestionStatus = async (
     .set(updateData)
     .where(eq(ingestions.id, ingestionId))
     .returning()
-    
+
   return result as SelectIngestion
 }
 
@@ -90,7 +87,7 @@ export const updateIngestionStatus = async (
 export const updateIngestionMetadata = async (
   txn: TxnOrClient,
   ingestionId: number,
-  metadata: any
+  metadata: any,
 ): Promise<SelectIngestion> => {
   const [result] = await txn
     .update(ingestions)
@@ -100,7 +97,7 @@ export const updateIngestionMetadata = async (
     })
     .where(eq(ingestions.id, ingestionId))
     .returning()
-    
+
   return result as SelectIngestion
 }
 
@@ -109,17 +106,16 @@ export const updateIngestionMetadata = async (
 // Returns null if ingestion doesn't exist
 export const getIngestionById = async (
   txn: TxnOrClient,
-  ingestionId: number
+  ingestionId: number,
 ): Promise<SelectIngestion | null> => {
   const result = await txn
     .select()
     .from(ingestions)
     .where(eq(ingestions.id, ingestionId))
     .limit(1)
-    
+
   return (result[0] as SelectIngestion) || null
 }
-
 
 // Fast check to see if user has any active ingestions for a connector
 // Used to prevent concurrent ingestions and enforce business rules
@@ -127,7 +123,7 @@ export const getIngestionById = async (
 export const hasActiveIngestion = async (
   txn: TxnOrClient,
   userId: number,
-  connectorId: number
+  connectorId: number,
 ): Promise<boolean> => {
   const result = await txn
     .select({ count: sql<number>`count(*)` })
@@ -136,9 +132,9 @@ export const hasActiveIngestion = async (
       and(
         eq(ingestions.userId, userId),
         eq(ingestions.connectorId, connectorId),
-        sql`status IN ('pending', 'in_progress', 'paused', 'failed')`
-      )
+        sql`status IN ('pending', 'in_progress', 'paused', 'failed')`,
+      ),
     )
-    
+
   return Number(result[0].count) > 0
 }

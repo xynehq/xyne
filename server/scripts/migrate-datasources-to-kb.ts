@@ -32,10 +32,7 @@ import {
 import { agents, collectionItems, collections } from "@/db/schema"
 import { getUserByEmail } from "@/db/user"
 import { getLogger } from "@/logger"
-import {
-  insert,
-  GetDocument,
-} from "@/search/vespa"
+import { insert, GetDocument } from "@/search/vespa"
 import { UploadStatus } from "@/shared/types"
 import { Subsystem } from "@/types"
 import { Apps, KnowledgeBaseEntity, KbItemsSchema } from "@xyne/vespa-ts/types"
@@ -146,7 +143,10 @@ async function migrateDatasourcesToKnowledgeBase(removeDataSource = false) {
             let datasourceName: string = `Datasource_${datasourceId}`
 
             try {
-              const datasourceDoc = await GetDocument("datasource", datasourceId)
+              const datasourceDoc = await GetDocument(
+                "datasource",
+                datasourceId,
+              )
 
               if (datasourceDoc && datasourceDoc.fields) {
                 datasource = datasourceDoc.fields as VespaDataSource
@@ -245,21 +245,21 @@ async function migrateDatasourcesToKnowledgeBase(removeDataSource = false) {
             for (const dsFileSearchResult of datasourceFilesSearch) {
               try {
                 // Extract docId from search result
-                const docId = (dsFileSearchResult as any).fields?.docId ||
-                             (dsFileSearchResult as any).docId
+                const docId =
+                  (dsFileSearchResult as any).fields?.docId ||
+                  (dsFileSearchResult as any).docId
 
                 if (!docId) {
-                  Logger.warn('File search result missing docId, skipping...')
+                  Logger.warn("File search result missing docId, skipping...")
                   continue
                 }
 
-                Logger.debug(`Fetching full document from Vespa for file: ${docId}`)
+                Logger.debug(
+                  `Fetching full document from Vespa for file: ${docId}`,
+                )
 
                 // Fetch the full document from Vespa to get ALL fields including chunks
-                const fullFileDoc = await GetDocument(
-                  "datasource_file",
-                  docId,
-                )
+                const fullFileDoc = await GetDocument("datasource_file", docId)
 
                 if (!fullFileDoc || !fullFileDoc.fields) {
                   Logger.warn(
@@ -277,9 +277,10 @@ async function migrateDatasourcesToKnowledgeBase(removeDataSource = false) {
                 )
                 stats.totalFilesCreated++
               } catch (fileError) {
-                const fileId = (dsFileSearchResult as any).fields?.docId ||
-                              (dsFileSearchResult as any).docId ||
-                              'unknown'
+                const fileId =
+                  (dsFileSearchResult as any).fields?.docId ||
+                  (dsFileSearchResult as any).docId ||
+                  "unknown"
                 Logger.error(`Error migrating file ${fileId}:`, fileError)
                 stats.errors.push({
                   agentId: agent.id,
@@ -435,7 +436,8 @@ async function migrateFileToKnowledgeBase(
       originalDatasourceFileId: dsFile.docId,
       originalFileName: dsFile.fileName,
       uploadedBy: userEmail,
-      chunksCount: (dsFile.chunks || []).length + (dsFile.image_chunks || []).length,
+      chunksCount:
+        (dsFile.chunks || []).length + (dsFile.image_chunks || []).length,
       imageChunksCount: (dsFile.image_chunks || []).length,
       lastModified: Date.now(),
     }),
@@ -508,7 +510,9 @@ async function updateAgentWithKnowledgeBase(
   } else if (removeDataSource && !appIntegrations.DataSource) {
     Logger.debug(`DataSource already removed from agent ${agentId}`)
   } else if (!removeDataSource && appIntegrations.DataSource) {
-    Logger.debug(`Preserving DataSource integration for agent ${agentId} (use --remove-datasource to remove)`)
+    Logger.debug(
+      `Preserving DataSource integration for agent ${agentId} (use --remove-datasource to remove)`,
+    )
   }
 
   // Update agent
@@ -576,7 +580,9 @@ async function fetchDatasourceFiles(
 
       if (!response.ok) {
         const errorText = await response.text()
-        Logger.error(`Vespa HTTP error: ${response.status} ${response.statusText}`)
+        Logger.error(
+          `Vespa HTTP error: ${response.status} ${response.statusText}`,
+        )
         Logger.error(`Vespa error response: ${errorText}`)
         throw new Error(
           `Vespa query failed: ${response.status} ${response.statusText}`,
@@ -587,24 +593,35 @@ async function fetchDatasourceFiles(
 
       if (results && results.root) {
         // Store total count from first response
-        if (offset === 0 && results.root.fields && results.root.fields.totalCount !== undefined) {
+        if (
+          offset === 0 &&
+          results.root.fields &&
+          results.root.fields.totalCount !== undefined
+        ) {
           totalCount = results.root.fields.totalCount
-          Logger.info(`Total files in datasource ${datasourceId}: ${totalCount}`)
+          Logger.info(
+            `Total files in datasource ${datasourceId}: ${totalCount}`,
+          )
         }
 
         // Check for errors
         if (results.root.errors && results.root.errors.length > 0) {
-          Logger.error(`Vespa query errors: ${JSON.stringify(results.root.errors)}`)
+          Logger.error(
+            `Vespa query errors: ${JSON.stringify(results.root.errors)}`,
+          )
         }
 
         // Add children to results
         if (results.root.children && results.root.children.length > 0) {
           allFiles = allFiles.concat(results.root.children)
-          Logger.debug(`Fetched ${results.root.children.length} files in this batch (total so far: ${allFiles.length})`)
+          Logger.debug(
+            `Fetched ${results.root.children.length} files in this batch (total so far: ${allFiles.length})`,
+          )
 
           // Check if there are more files to fetch
           offset += results.root.children.length
-          hasMore = results.root.children.length === hitsPerPage && offset < totalCount
+          hasMore =
+            results.root.children.length === hitsPerPage && offset < totalCount
         } else {
           // No more results
           hasMore = false
@@ -627,10 +644,7 @@ async function fetchDatasourceFiles(
     )
     return []
   } catch (error) {
-    Logger.error(
-      `Error fetching files for datasource ${datasourceId}:`,
-      error,
-    )
+    Logger.error(`Error fetching files for datasource ${datasourceId}:`, error)
     if (error instanceof Error) {
       Logger.error(`Error message: ${error.message}`)
       Logger.error(`Error stack: ${error.stack}`)
@@ -690,7 +704,9 @@ Logger.info("Migration Script Configuration:")
 Logger.info(`  Dry run: ${isDryRun}`)
 Logger.info(`  Remove DataSource after migration: ${removeDataSource}`)
 if (!removeDataSource) {
-  Logger.warn("  ⚠️  DataSource objects will NOT be removed (use --remove-datasource to remove)")
+  Logger.warn(
+    "  ⚠️  DataSource objects will NOT be removed (use --remove-datasource to remove)",
+  )
 }
 Logger.info("=" + "=".repeat(60))
 

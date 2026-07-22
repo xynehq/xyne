@@ -3,7 +3,16 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { ArrowLeft, X, Trash2, CornerDownLeft, AlertCircle, CheckCircle, Mail, FileText } from "lucide-react"
+import {
+  ArrowLeft,
+  X,
+  Trash2,
+  CornerDownLeft,
+  AlertCircle,
+  CheckCircle,
+  Mail,
+  FileText,
+} from "lucide-react"
 import { workflowToolsAPI } from "./api/ApiHandlers"
 
 interface EmailConfigUIProps {
@@ -22,7 +31,7 @@ export interface EmailConfig {
   sendingFrom: string
   emailAddresses: string[]
   subject?: string
-  bodySource: 'previous_step' | 'static'
+  bodySource: "previous_step" | "static"
   bodyContent?: string // Static body content
   bodyPath?: string // Path to extract content from previous step
 }
@@ -41,54 +50,68 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
   const [emailConfig, setEmailConfig] = useState<EmailConfig>({
     sendingFrom: "no-reply@xyne.io",
     emailAddresses: [],
-    subject: '',
-    bodySource: 'previous_step',
-    bodyContent: '',
-    bodyPath: '',
+    subject: "",
+    bodySource: "previous_step",
+    bodyContent: "",
+    bodyPath: "",
   })
 
   const [newEmailAddress, setNewEmailAddress] = useState("")
-  const [emailValidationError, setEmailValidationError] = useState<string | null>(null)
+  const [emailValidationError, setEmailValidationError] = useState<
+    string | null
+  >(null)
   const [isEmailValid, setIsEmailValid] = useState<boolean>(false)
 
   // Email validation regex - comprehensive pattern for email validation
-  const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/
+  const emailRegex =
+    /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/
 
   // Validate email function
-  const validateEmail = (email: string): { isValid: boolean; error: string | null } => {
+  const validateEmail = (
+    email: string,
+  ): { isValid: boolean; error: string | null } => {
     if (!email.trim()) {
       return { isValid: false, error: null }
     }
-    
+
     if (email.length > 254) {
-      return { isValid: false, error: "Email address is too long (max 254 characters)" }
+      return {
+        isValid: false,
+        error: "Email address is too long (max 254 characters)",
+      }
     }
-    
+
     if (!emailRegex.test(email)) {
       return { isValid: false, error: "Please enter a valid email address" }
     }
-    
+
     // Additional checks
-    const [localPart, domain] = email.split('@')
-    
+    const [localPart, domain] = email.split("@")
+
     if (localPart.length > 64) {
-      return { isValid: false, error: "Email local part is too long (max 64 characters)" }
+      return {
+        isValid: false,
+        error: "Email local part is too long (max 64 characters)",
+      }
     }
-    
+
     if (domain.length > 253) {
-      return { isValid: false, error: "Email domain is too long (max 253 characters)" }
+      return {
+        isValid: false,
+        error: "Email domain is too long (max 253 characters)",
+      }
     }
-    
+
     // Check for consecutive dots
-    if (email.includes('..')) {
+    if (email.includes("..")) {
       return { isValid: false, error: "Email cannot contain consecutive dots" }
     }
-    
+
     // Check if email starts or ends with dot
-    if (localPart.startsWith('.') || localPart.endsWith('.')) {
+    if (localPart.startsWith(".") || localPart.endsWith(".")) {
       return { isValid: false, error: "Email cannot start or end with a dot" }
     }
-    
+
     return { isValid: true, error: null }
   }
 
@@ -105,28 +128,37 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
     if (isVisible) {
       // Try to load from the most complete data source
       let existingConfig = null
-      
+
       // Check if toolData has more complete configuration
       const toolConfig = toolData?.value || toolData?.config
       const stepConfig = stepData?.config
-      
+
       // Prioritize toolData if it has subject/bodySource fields that stepData lacks
-      if (toolConfig && (toolConfig.subject !== undefined || toolConfig.bodySource !== undefined || toolConfig.bodyContent !== undefined)) {
+      if (
+        toolConfig &&
+        (toolConfig.subject !== undefined ||
+          toolConfig.bodySource !== undefined ||
+          toolConfig.bodyContent !== undefined)
+      ) {
         existingConfig = toolConfig
       } else if (stepConfig) {
         existingConfig = stepConfig
       } else if (toolConfig) {
         existingConfig = toolConfig
       }
-      
+
       if (existingConfig) {
         const newConfig = {
           sendingFrom: existingConfig.sendingFrom || "no-reply@xyne.io",
-          emailAddresses: existingConfig.emailAddresses || existingConfig.to_email || [],
-          subject: existingConfig.subject || '',
-          bodySource: existingConfig.bodySource || (existingConfig.bodyContent ? 'static' : 'previous_step'),
-          bodyContent: existingConfig.bodyContent || '',
-          bodyPath: existingConfig.bodyPath || existingConfig.content_path || '',
+          emailAddresses:
+            existingConfig.emailAddresses || existingConfig.to_email || [],
+          subject: existingConfig.subject || "",
+          bodySource:
+            existingConfig.bodySource ||
+            (existingConfig.bodyContent ? "static" : "previous_step"),
+          bodyContent: existingConfig.bodyContent || "",
+          bodyPath:
+            existingConfig.bodyPath || existingConfig.content_path || "",
         }
         setEmailConfig(newConfig)
       } else {
@@ -134,10 +166,10 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
         setEmailConfig({
           sendingFrom: "no-reply@xyne.io",
           emailAddresses: [],
-          subject: '',
-          bodySource: 'previous_step',
-          bodyContent: '',
-          bodyPath: '',
+          subject: "",
+          bodySource: "previous_step",
+          bodyContent: "",
+          bodyPath: "",
         })
       }
       setNewEmailAddress("")
@@ -148,25 +180,27 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
 
   const handleAddEmail = () => {
     const validation = validateEmail(newEmailAddress)
-    
+
     if (!validation.isValid) {
-      setEmailValidationError(validation.error || "Please enter a valid email address")
+      setEmailValidationError(
+        validation.error || "Please enter a valid email address",
+      )
       setIsEmailValid(false)
       return
     }
-    
+
     if (emailConfig.emailAddresses.includes(newEmailAddress.toLowerCase())) {
       setEmailValidationError("This email address is already added")
       setIsEmailValid(false)
       return
     }
-    
+
     // Add the email (normalize to lowercase for consistency)
     setEmailConfig((prev) => ({
       ...prev,
       emailAddresses: [...prev.emailAddresses, newEmailAddress.toLowerCase()],
     }))
-    
+
     // Reset input and validation state
     setNewEmailAddress("")
     setEmailValidationError(null)
@@ -189,15 +223,15 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
     }
   }
 
-
   // Validation function for email configuration
   const isValidConfiguration = () => {
     // Must have at least one email address
     if (emailConfig.emailAddresses.length === 0) return false
-    
+
     // If using static body, must have body content
-    if (emailConfig.bodySource === 'static' && !emailConfig.bodyContent?.trim()) return false
-    
+    if (emailConfig.bodySource === "static" && !emailConfig.bodyContent?.trim())
+      return false
+
     return true
   }
 
@@ -205,7 +239,10 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
     if (emailConfig.emailAddresses.length === 0) {
       return "Add at least one email address to enable save"
     }
-    if (emailConfig.bodySource === 'static' && !emailConfig.bodyContent?.trim()) {
+    if (
+      emailConfig.bodySource === "static" &&
+      !emailConfig.bodyContent?.trim()
+    ) {
       return "Enter email content for static body"
     }
     return ""
@@ -332,7 +369,9 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
               className="w-full bg-gray-100 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
               disabled
             />
-            <p className="text-xs text-slate-500 dark:text-gray-400">Email isn't editable</p>
+            <p className="text-xs text-slate-500 dark:text-gray-400">
+              Email isn't editable
+            </p>
           </div>
 
           {/* Subject */}
@@ -374,9 +413,18 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
               <div className="flex gap-2">
                 <Button
                   type="button"
-                  variant={emailConfig.bodySource === 'previous_step' ? 'default' : 'outline'}
+                  variant={
+                    emailConfig.bodySource === "previous_step"
+                      ? "default"
+                      : "outline"
+                  }
                   size="sm"
-                  onClick={() => setEmailConfig(prev => ({ ...prev, bodySource: 'previous_step' }))}
+                  onClick={() =>
+                    setEmailConfig((prev) => ({
+                      ...prev,
+                      bodySource: "previous_step",
+                    }))
+                  }
                   className="text-xs"
                 >
                   <FileText className="w-3 h-3 mr-1" />
@@ -384,9 +432,16 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
                 </Button>
                 <Button
                   type="button"
-                  variant={emailConfig.bodySource === 'static' ? 'default' : 'outline'}
+                  variant={
+                    emailConfig.bodySource === "static" ? "default" : "outline"
+                  }
                   size="sm"
-                  onClick={() => setEmailConfig(prev => ({ ...prev, bodySource: 'static' }))}
+                  onClick={() =>
+                    setEmailConfig((prev) => ({
+                      ...prev,
+                      bodySource: "static",
+                    }))
+                  }
                   className="text-xs"
                 >
                   <Mail className="w-3 h-3 mr-1" />
@@ -396,31 +451,48 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
             </div>
 
             {/* Dynamic Body Input */}
-            {emailConfig.bodySource === 'previous_step' ? (
+            {emailConfig.bodySource === "previous_step" ? (
               <div className="space-y-2">
-                <Label htmlFor="body-path" className="text-xs text-slate-600 dark:text-gray-400">
+                <Label
+                  htmlFor="body-path"
+                  className="text-xs text-slate-600 dark:text-gray-400"
+                >
                   Content Path
                 </Label>
                 <Input
                   id="body-path"
                   value={emailConfig.bodyPath}
-                  onChange={(e) => setEmailConfig(prev => ({ ...prev, bodyPath: e.target.value }))}
+                  onChange={(e) =>
+                    setEmailConfig((prev) => ({
+                      ...prev,
+                      bodyPath: e.target.value,
+                    }))
+                  }
                   placeholder="e.g., result.aiOutput, content.path, output"
                   className="w-full dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
                 />
                 <p className="text-xs text-slate-500 dark:text-gray-400">
-                  Path to extract email content from previous step results (leave empty for auto-detection)
+                  Path to extract email content from previous step results
+                  (leave empty for auto-detection)
                 </p>
               </div>
             ) : (
               <div className="space-y-2">
-                <Label htmlFor="body-content" className="text-xs text-slate-600 dark:text-gray-400">
+                <Label
+                  htmlFor="body-content"
+                  className="text-xs text-slate-600 dark:text-gray-400"
+                >
                   Email Content
                 </Label>
                 <Textarea
                   id="body-content"
                   value={emailConfig.bodyContent}
-                  onChange={(e) => setEmailConfig(prev => ({ ...prev, bodyContent: e.target.value }))}
+                  onChange={(e) =>
+                    setEmailConfig((prev) => ({
+                      ...prev,
+                      bodyContent: e.target.value,
+                    }))
+                  }
                   placeholder="Enter your email content here..."
                   className="w-full min-h-[120px] dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
                   rows={6}
@@ -448,8 +520,8 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
                   emailValidationError
                     ? "border-red-500 dark:border-red-400 focus:border-red-500 dark:focus:border-red-400"
                     : isEmailValid && newEmailAddress
-                    ? "border-green-500 dark:border-green-400 focus:border-green-500 dark:focus:border-green-400"
-                    : "dark:border-gray-600"
+                      ? "border-green-500 dark:border-green-400 focus:border-green-500 dark:focus:border-green-400"
+                      : "dark:border-gray-600"
                 }`}
               />
               <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
@@ -464,7 +536,7 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
                 </div>
               </div>
             </div>
-            
+
             {/* Email validation feedback */}
             {emailValidationError && (
               <div className="flex items-center gap-2 mt-2">
@@ -474,7 +546,7 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
                 </p>
               </div>
             )}
-            
+
             {isEmailValid && newEmailAddress && !emailValidationError && (
               <div className="flex items-center gap-2 mt-2">
                 <CheckCircle className="w-4 h-4 text-green-500 dark:text-green-400 flex-shrink-0" />
@@ -483,7 +555,7 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
                 </p>
               </div>
             )}
-            
+
             {newEmailAddress && !isEmailValid && !emailValidationError && (
               <div className="mt-2">
                 <p className="text-sm text-slate-500 dark:text-gray-400">
@@ -540,9 +612,8 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
               </div>
             )}
           </div>
-
         </div>
-        
+
         {/* Save Button - Sticky to bottom */}
         <div className="pt-6 px-0">
           {!isValidConfiguration() && (

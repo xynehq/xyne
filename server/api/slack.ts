@@ -1,11 +1,16 @@
 import type { Context } from "hono"
-import {  z } from "zod"
+import { z } from "zod"
 import { HTTPException } from "hono/http-exception"
-import {  getLoggerWithChild } from "@/logger"
+import { getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
-import { Apps, SlackEntity} from "@xyne/vespa-ts/types"
+import { Apps, SlackEntity } from "@xyne/vespa-ts/types"
 
-import { type VespaSearchResults, type VespaChatUserSearch,type VespaChatContainerSearch,type Span} from "@/shared/types"
+import {
+  type VespaSearchResults,
+  type VespaChatUserSearch,
+  type VespaChatContainerSearch,
+  type Span,
+} from "@/shared/types"
 
 import { getErrorMessage } from "@/utils"
 import { fetchSlackEntity, GetDocumentsByDocIds } from "@/search/vespa"
@@ -97,7 +102,6 @@ export const SlackEntitiesApi = async (c: Context) => {
         0,
       )
 
-
       return c.json({
         results: results || [],
         query: searchParams.query.trim(),
@@ -122,7 +126,6 @@ export const SlackEntitiesApi = async (c: Context) => {
         listParams.limit,
         listParams.offset,
       )
-
 
       return c.json({
         results: results || [],
@@ -154,57 +157,54 @@ export const SlackEntitiesApi = async (c: Context) => {
 export const slackDocumentsApi = async (c: Context) => {
   const { sub } = c.get(JwtPayloadKey)
   const docids: string[] = c.req.query("docids")?.split(",") || []
-  if(docids.length === 0){
+  if (docids.length === 0) {
     throw new HTTPException(400, {
       message: "No document IDs provided",
     })
   }
   try {
-    const mockSpan: Span= {
-  traceId: "mock-trace-id",
-  spanId: "mock-span-id",
-  name: "mock-span",
-  startTime: Date.now(),
-  endTime: Date.now(),
-  attributes: {},
-  events: [],
-  duration: 0,
-  setAttribute: () => mockSpan,
-  addEvent: () => mockSpan,
-  startSpan: () => mockSpan,
-  end: () => mockSpan,
-};
-    const response =await GetDocumentsByDocIds(docids,mockSpan)
-    const mappedData= response.root?.children?.map((doc)=>{
-      const searchResult = doc as VespaSearchResults
-      const fields= searchResult.fields
-      if(fields.sddocname === "chat_user"){
-        const chatUserFields= fields as VespaChatUserSearch
-        return {
-          docId:chatUserFields.docId,
-          name:chatUserFields.name,
+    const mockSpan: Span = {
+      traceId: "mock-trace-id",
+      spanId: "mock-span-id",
+      name: "mock-span",
+      startTime: Date.now(),
+      endTime: Date.now(),
+      attributes: {},
+      events: [],
+      duration: 0,
+      setAttribute: () => mockSpan,
+      addEvent: () => mockSpan,
+      startSpan: () => mockSpan,
+      end: () => mockSpan,
+    }
+    const response = await GetDocumentsByDocIds(docids, mockSpan)
+    const mappedData =
+      response.root?.children?.map((doc) => {
+        const searchResult = doc as VespaSearchResults
+        const fields = searchResult.fields
+        if (fields.sddocname === "chat_user") {
+          const chatUserFields = fields as VespaChatUserSearch
+          return {
+            docId: chatUserFields.docId,
+            name: chatUserFields.name,
+          }
+        } else if (fields.sddocname === "chat_container") {
+          const chatContainerFields = fields as VespaChatContainerSearch
+          return {
+            docId: chatContainerFields.docId,
+            name: chatContainerFields.name,
+          }
+        } else {
+          return {
+            docId: searchResult.fields?.docId,
+            name: searchResult.fields?.sddocname || "unknown",
+          }
         }
-      }
-      else if(fields.sddocname === "chat_container"){
-        const chatContainerFields= fields as VespaChatContainerSearch
-        return {
-          docId:chatContainerFields.docId,
-          name:chatContainerFields.name,
-        }
-      }
-      else{
-        return {
-        docId:searchResult.fields?.docId,
-        name:searchResult.fields?.sddocname || "unknown",
-       
-      }
-      }
-     
-    }) || []
+      }) || []
     return c.json({
-      success:true,
-      totalCount:response.root?.fields?.totalCount || 0,
-      documents:mappedData,
+      success: true,
+      totalCount: response.root?.fields?.totalCount || 0,
+      documents: mappedData,
     })
   } catch (error) {
     const errMsg = getErrorMessage(error)

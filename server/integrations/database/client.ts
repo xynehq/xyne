@@ -3,12 +3,7 @@
  * MySQL can be added as a second implementation.
  */
 
-import type {
-  ColumnInfo,
-  DbRow,
-  TableInfo,
-  TableSyncState,
-} from "./types"
+import type { ColumnInfo, DbRow, TableInfo, TableSyncState } from "./types"
 import type { DatabaseTableSchemaDoc } from "./types"
 import type { DatabaseConnectorConfig } from "@/shared/types"
 import { DatabaseEngine } from "./types"
@@ -48,7 +43,9 @@ export function createClient(config: DatabaseConnectorConfig): DatabaseClient {
     case DatabaseEngine.MSSQL:
       throw new Error("MSSQL client not yet implemented")
     default:
-      throw new Error(`Unknown database engine: ${(config as { engine: string }).engine}`)
+      throw new Error(
+        `Unknown database engine: ${(config as { engine: string }).engine}`,
+      )
   }
 }
 

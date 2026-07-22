@@ -19,10 +19,7 @@ const DEFAULT_PLACEHOLDER = "This is an image."
 
 function resolveConcurrency(explicit?: number): number {
   if (explicit != null && explicit > 0) return explicit
-  const fromEnv = parseInt(
-    process.env.IMAGE_DESCRIBE_CONCURRENCY || "8",
-    10,
-  )
+  const fromEnv = parseInt(process.env.IMAGE_DESCRIBE_CONCURRENCY || "8", 10)
   return Math.max(1, Number.isFinite(fromEnv) ? fromEnv : 8)
 }
 
@@ -87,8 +84,7 @@ function isRejectedImageDescription(raw: string): boolean {
   const s = raw.trim()
   if (!s) return true
   return (
-    s === "No description returned." ||
-    s === "Image is not worth describing."
+    s === "No description returned." || s === "Image is not worth describing."
   )
 }
 
@@ -198,11 +194,7 @@ export class DeferredImageDescriptionBatch {
               try {
                 rawDescription = await withAbortTimeout(
                   (signal) =>
-                    this.describeImage(
-                      buf,
-                      path.basename(filePath),
-                      signal,
-                    ),
+                    this.describeImage(buf, path.basename(filePath), signal),
                   this.describeTimeoutMs,
                   `describeImage hash=${hash.slice(0, 8)}`,
                 )
@@ -239,10 +231,7 @@ export class DeferredImageDescriptionBatch {
             return
           }
 
-          this.hashDescriptions.set(
-            hash,
-            rawDescription.trim(),
-          )
+          this.hashDescriptions.set(hash, rawDescription.trim())
         }),
       ),
     )

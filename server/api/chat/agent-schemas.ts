@@ -1,6 +1,6 @@
 /**
  * JAF-Based Agentic Architecture Schemas
- * 
+ *
  * Core data structures for the agentic system with intelligent tool orchestration,
  * automatic review, and adaptive planning.
  */
@@ -8,10 +8,7 @@
 import { z } from "zod"
 import type { Message as JAFMessage } from "@juspay-xyne-jaf/jaf"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
-import type {
-  Citation,
-  MinimalAgentFragment,
-} from "./types"
+import type { Citation, MinimalAgentFragment } from "./types"
 import type { ReasoningEventPayload } from "@/shared/types"
 import type { VespaSearchResults } from "@xyne/vespa-ts"
 
@@ -224,7 +221,11 @@ export interface ToolFailureInfo {
 export interface Decision {
   id: string
   timestamp: number
-  type: "tool_selection" | "plan_modification" | "strategy_change" | "error_recovery"
+  type:
+    | "tool_selection"
+    | "plan_modification"
+    | "strategy_change"
+    | "error_recovery"
   reasoning: string
   outcome: "success" | "failure" | "pending"
   relatedToolCalls: string[]
@@ -494,9 +495,15 @@ export type ListCustomAgentsInput = z.infer<typeof ListCustomAgentsInputSchema>
 
 export const SubTaskSchema = z.object({
   id: z.string(),
-  description: z.string().describe("Clear description of what this sub-goal achieves"),
-  status: z.enum(["pending", "in_progress", "completed", "blocked", "failed"]).default("pending"),
-  toolsRequired: z.array(z.string()).describe("All tools needed to achieve this sub-goal"),
+  description: z
+    .string()
+    .describe("Clear description of what this sub-goal achieves"),
+  status: z
+    .enum(["pending", "in_progress", "completed", "blocked", "failed"])
+    .default("pending"),
+  toolsRequired: z
+    .array(z.string())
+    .describe("All tools needed to achieve this sub-goal"),
   result: z.string().optional(),
   completedAt: z.number().optional(),
   error: z.string().optional(),
@@ -510,7 +517,9 @@ export const PlanStateSchema = z.object({
 export const RunPublicAgentInputSchema = z.object({
   agentId: z
     .string()
-    .describe("Agent identifier. For internal agents, use the ID from the system prompt. For custom agents, use the ID returned by list_custom_agents."),
+    .describe(
+      "Agent identifier. For internal agents, use the ID from the system prompt. For custom agents, use the ID returned by list_custom_agents.",
+    ),
   query: z
     .string()
     .describe(
@@ -523,7 +532,9 @@ export const RunPublicAgentInputSchema = z.object({
   maxTokens: z
     .number()
     .optional()
-    .describe("Optional upper bound on tokens/cost for the delegated agent output"),
+    .describe(
+      "Optional upper bound on tokens/cost for the delegated agent output",
+    ),
 })
 
 export type RunPublicAgentInput = z.infer<typeof RunPublicAgentInputSchema>

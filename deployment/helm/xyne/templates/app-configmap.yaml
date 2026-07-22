@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "xyne.fullname" . }}-app
+  labels:
+    {{- include "xyne.labels" . | nindent 4 }}
+data:
+  NODE_ENV: {{ .Values.app.env.NODE_ENV | default "production" | quote }}
+  PORT: {{ .Values.app.port | quote }}
+  METRICS_PORT: {{ .Values.app.metricsPort | quote }}
+  SYNC_SERVER_PORT: {{ .Values.app.syncServerPort | quote }}
+  SYNC_SERVER_HOST: "localhost"
+  DATABASE_HOST: {{ include "xyne.databaseHost" . }}
+  VESPA_HOST: {{ include "xyne.fullname" . }}-vespa
+  VESPA_FEED_PORT: {{ .Values.app.env.VESPA_FEED_PORT | default "8080" | quote }}
+  VESPA_QUERY_PORT: {{ .Values.app.env.VESPA_QUERY_PORT | default "8081" | quote }}
+  EMBEDDING_MODEL: {{ .Values.app.env.EMBEDDING_MODEL | default "bge-small-en-v1.5" | quote }}
+  HOST: {{ printf "http://%s" .Values.ingress.host | quote }}
+  GOOGLE_WEB_LOGIN_ENABLED: {{ .Values.app.env.GOOGLE_WEB_LOGIN_ENABLED | default "true" | quote }}
+  KEYCLOAK_WEB_ENABLED: {{ .Values.app.env.KEYCLOAK_WEB_ENABLED | default "false" | quote }}
+  DOCLING_ENABLED: {{ .Values.app.env.DOCLING_ENABLED | default "false" | quote }}
+  AUTH_TYPE: {{ .Values.app.env.AUTH_TYPE | default "OAuth" | quote }}
+  {{- range $key, $value := .Values.app.env }}
+  {{- if not (has $key (list "NODE_ENV" "VESPA_FEED_PORT" "VESPA_QUERY_PORT" "EMBEDDING_MODEL" "GOOGLE_WEB_LOGIN_ENABLED" "KEYCLOAK_WEB_ENABLED" "DOCLING_ENABLED" "AUTH_TYPE")) }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+  {{- end }}

@@ -97,7 +97,9 @@ export async function formatSearchToolResponse(
         content: await answerContextMap(
           r,
           metadataForContext,
-          idx < chunksPerDocument.length ? chunksPerDocument[idx] : config.maxDefaultSummary,
+          idx < chunksPerDocument.length
+            ? chunksPerDocument[idx]
+            : config.maxDefaultSummary,
           undefined,
           r.fields?.sddocname === KbItemsSchema,
           builtUserQuery || undefined,
@@ -139,13 +141,17 @@ export async function formatSearchToolResponseAsRawDocuments(
 
   const rawDocuments: ToolRawDocument[] = children.map((r, idx) => {
     const citation = searchToCitation(r)
-    const fields = r.fields as { chunks_summary?: string[]; matchfeatures?: unknown } | undefined
+    const fields = r.fields as
+      | { chunks_summary?: string[]; matchfeatures?: unknown }
+      | undefined
     const chunksSummary = fields?.chunks_summary ?? []
     const matchfeatures = fields?.matchfeatures
     const scoredChunks = getSortedScoredChunks(
       matchfeatures as Parameters<typeof getSortedScoredChunks>[0],
       chunksSummary,
-      idx < chunksPerDocument.length ? chunksPerDocument[idx] : config.maxDefaultSummary,
+      idx < chunksPerDocument.length
+        ? chunksPerDocument[idx]
+        : config.maxDefaultSummary,
     )
     const chunks: RawChunkWithScore[] = scoredChunks.map((sc) => ({
       chunkKey: `i:${sc.index}`,
@@ -201,7 +207,8 @@ export function formatChatMemoryToolResponse(
       title: `Conversation turn ${f.turnNumber}`,
       url: "",
       app: Apps.ChatMemory,
-      entity: ChatMemoryEntity.ConversationTurn as unknown as Citation["entity"],
+      entity:
+        ChatMemoryEntity.ConversationTurn as unknown as Citation["entity"],
     }
     return {
       id: f.docId,
@@ -305,7 +312,10 @@ export function mapCitationsForAgentDocument(citations: unknown): Array<{
 }> {
   if (!Array.isArray(citations)) return []
   return citations
-    .filter((citation): citation is Citation => !!citation && typeof citation === "object")
+    .filter(
+      (citation): citation is Citation =>
+        !!citation && typeof citation === "object",
+    )
     .map((citation) => {
       const entityValue =
         citation.entity && typeof citation.entity === "object"

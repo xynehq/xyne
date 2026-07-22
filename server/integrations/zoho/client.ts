@@ -157,11 +157,10 @@ export class ZohoDeskClient {
         this.accessToken = accessToken
         this.tokenExpiresAt = expiresAt
 
-
         return accessToken
       } catch (error) {
         // Failure log - safe for production
-  
+
         logger.error("❌ Failed to refresh Zoho access token", {
           errorMessage: error instanceof Error ? error.message : String(error),
           errorStack: error instanceof Error ? error.stack : undefined,
@@ -668,7 +667,6 @@ export class ZohoDeskClient {
   } | null> {
     try {
       logger.info("Fetching agent by ID", { agentId })
-
 
       const response = await this.makeRequest<any>("GET", `/agents/${agentId}`)
 

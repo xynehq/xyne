@@ -34,23 +34,26 @@ export default function WebhookConfigurationUI({
     if (initialConfig) {
       return initialConfig
     }
-    
+
     // Second priority: extract from toolData (workflow tools structure)
     if (toolData) {
       let extractedConfig: WebhookConfig
-      
+
       // Handle workflow tool structure: { type: 'webhook', value: {...}, config: {...} }
-      if (toolData.type === 'webhook' && toolData.value && toolData.config) {
+      if (toolData.type === "webhook" && toolData.value && toolData.config) {
         const valueData = toolData.value
         const configData = toolData.config
-        
+
         extractedConfig = {
           webhookUrl: valueData.webhookUrl || "",
-          httpMethod: (valueData.httpMethod || "GET") as WebhookConfig['httpMethod'],
+          httpMethod: (valueData.httpMethod ||
+            "GET") as WebhookConfig["httpMethod"],
           path: valueData.path || "",
-          authentication: (configData.authentication || "none") as WebhookConfig['authentication'],
+          authentication: (configData.authentication ||
+            "none") as WebhookConfig["authentication"],
           selectedCredential: configData.selectedCredential || undefined,
-          responseMode: (configData.responseMode || "immediately") as WebhookConfig['responseMode'],
+          responseMode: (configData.responseMode ||
+            "immediately") as WebhookConfig["responseMode"],
           options: configData.options || {},
           headers: configData.headers || {},
           queryParams: configData.queryParams || {},
@@ -60,24 +63,28 @@ export default function WebhookConfigurationUI({
         // Handle legacy structures
         const valueData = toolData.value || toolData.val || toolData
         const configData = toolData.config || toolData
-        
+
         extractedConfig = {
           webhookUrl: valueData.webhookUrl || configData.webhookUrl || "",
-          httpMethod: (valueData.httpMethod || configData.httpMethod || "GET") as WebhookConfig['httpMethod'],
+          httpMethod: (valueData.httpMethod ||
+            configData.httpMethod ||
+            "GET") as WebhookConfig["httpMethod"],
           path: valueData.path || configData.path || "",
-          authentication: (configData.authentication || "none") as WebhookConfig['authentication'],
+          authentication: (configData.authentication ||
+            "none") as WebhookConfig["authentication"],
           selectedCredential: configData.selectedCredential || undefined,
-          responseMode: (configData.responseMode || "immediately") as WebhookConfig['responseMode'],
+          responseMode: (configData.responseMode ||
+            "immediately") as WebhookConfig["responseMode"],
           options: configData.options || {},
           headers: configData.headers || {},
           queryParams: configData.queryParams || {},
           requestBody: valueData.requestBody || configData.requestBody || "",
         }
       }
-      
+
       return extractedConfig
     }
-    
+
     // Default config if no data provided
     return {
       webhookUrl: "",
@@ -100,8 +107,11 @@ export default function WebhookConfigurationUI({
   const [copied, setCopied] = useState(false)
   const [curlCopied, setCurlCopied] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
-  const [originalConfig, setOriginalConfig] = useState<WebhookConfig | null>(null)
-  const [selectedCredentialData, setSelectedCredentialData] = useState<Credential | null>(null)
+  const [originalConfig, setOriginalConfig] = useState<WebhookConfig | null>(
+    null,
+  )
+  const [selectedCredentialData, setSelectedCredentialData] =
+    useState<Credential | null>(null)
 
   // Handle prop changes - force update when toolData changes
   useEffect(() => {
@@ -109,24 +119,32 @@ export default function WebhookConfigurationUI({
       setOriginalConfig(config)
       setHasChanges(false)
     }
-    
-    if (toolData && toolData.type === 'webhook' && toolData.value && toolData.config) {
+
+    if (
+      toolData &&
+      toolData.type === "webhook" &&
+      toolData.value &&
+      toolData.config
+    ) {
       const valueData = toolData.value
       const configData = toolData.config
-      
+
       const newConfig: WebhookConfig = {
         webhookUrl: valueData.webhookUrl || "",
-        httpMethod: (valueData.httpMethod || "GET") as WebhookConfig['httpMethod'],
+        httpMethod: (valueData.httpMethod ||
+          "GET") as WebhookConfig["httpMethod"],
         path: valueData.path || "",
-        authentication: (configData.authentication || "none") as WebhookConfig['authentication'],
+        authentication: (configData.authentication ||
+          "none") as WebhookConfig["authentication"],
         selectedCredential: configData.selectedCredential || undefined,
-        responseMode: (configData.responseMode || "immediately") as WebhookConfig['responseMode'],
+        responseMode: (configData.responseMode ||
+          "immediately") as WebhookConfig["responseMode"],
         options: configData.options || {},
         headers: configData.headers || {},
         queryParams: configData.queryParams || {},
         requestBody: valueData.requestBody || configData.requestBody || "",
       }
-      
+
       // Force update the config
       setConfig(newConfig)
       setOriginalConfig(newConfig)
@@ -141,7 +159,8 @@ export default function WebhookConfigurationUI({
   // Track changes in config
   useEffect(() => {
     if (originalConfig) {
-      const configChanged = JSON.stringify(config) !== JSON.stringify(originalConfig)
+      const configChanged =
+        JSON.stringify(config) !== JSON.stringify(originalConfig)
       setHasChanges(configChanged)
     }
   }, [config, originalConfig])
@@ -151,14 +170,30 @@ export default function WebhookConfigurationUI({
     const getCredentialData = async () => {
       if (config.selectedCredential && config.authentication !== "none") {
         try {
-          console.log('🔧 Looking for credential data for:', config.selectedCredential, 'type:', config.authentication)
-          
+          console.log(
+            "🔧 Looking for credential data for:",
+            config.selectedCredential,
+            "type:",
+            config.authentication,
+          )
+
           // First check if we have credentials in the tool config (for existing workflows)
-          if (toolData?.config?.credentials && Array.isArray(toolData.config.credentials)) {
-            console.log('🔧 Found credentials in tool config:', toolData.config.credentials)
-            const selectedCred = toolData.config.credentials.find((cred: any) => cred.isSelected === true)
+          if (
+            toolData?.config?.credentials &&
+            Array.isArray(toolData.config.credentials)
+          ) {
+            console.log(
+              "🔧 Found credentials in tool config:",
+              toolData.config.credentials,
+            )
+            const selectedCred = toolData.config.credentials.find(
+              (cred: any) => cred.isSelected === true,
+            )
             if (selectedCred) {
-              console.log('🔧 Found selected credential in tool config:', selectedCred)
+              console.log(
+                "🔧 Found selected credential in tool config:",
+                selectedCred,
+              )
               // Convert tool config credential format to our expected format
               const credentialData: Credential = {
                 id: config.selectedCredential,
@@ -166,22 +201,31 @@ export default function WebhookConfigurationUI({
                 type: config.authentication as "basic" | "bearer" | "api_key",
                 user: selectedCred.user,
                 password: selectedCred.password,
-                isValid: true
+                isValid: true,
               }
               setSelectedCredentialData(credentialData)
               return
             }
           }
-          
+
           // Fallback to API fetch for new credentials
-          console.log('🔧 Fetching credential data from API for:', config.selectedCredential, 'type:', config.authentication)
-          const credentials = await credentialsAPI.fetchByType(config.authentication as "basic" | "bearer" | "api_key")
-          console.log('🔧 Available credentials from API:', credentials)
-          const credential = credentials.find(cred => cred.id === config.selectedCredential)
-          console.log('🔧 Found credential from API:', credential)
+          console.log(
+            "🔧 Fetching credential data from API for:",
+            config.selectedCredential,
+            "type:",
+            config.authentication,
+          )
+          const credentials = await credentialsAPI.fetchByType(
+            config.authentication as "basic" | "bearer" | "api_key",
+          )
+          console.log("🔧 Available credentials from API:", credentials)
+          const credential = credentials.find(
+            (cred) => cred.id === config.selectedCredential,
+          )
+          console.log("🔧 Found credential from API:", credential)
           setSelectedCredentialData(credential || null)
         } catch (error) {
-          console.error('Failed to get credential data:', error)
+          console.error("Failed to get credential data:", error)
           setSelectedCredentialData(null)
         }
       } else {
@@ -198,33 +242,40 @@ export default function WebhookConfigurationUI({
     if (config.webhookUrl && config.webhookUrl.trim()) {
       return config.webhookUrl
     }
-    
+
     // Otherwise, generate based on path
     // In development, use the backend server URL (port 3000)
     // In production, use the same origin
-    const isDevelopment = window.location.port === '5173'
-    const baseUrl = isDevelopment ? 'http://localhost:3000' : window.location.origin
-    const cleanPath = config.path?.startsWith('/') ? config.path : `/${config.path || ''}`
+    const isDevelopment = window.location.port === "5173"
+    const baseUrl = isDevelopment
+      ? "http://localhost:3000"
+      : window.location.origin
+    const cleanPath = config.path?.startsWith("/")
+      ? config.path
+      : `/${config.path || ""}`
     let url = `${baseUrl}/workflow/webhook${cleanPath}`
-    
+
     // Add query parameters if they exist
     const queryParams = config.queryParams || {}
     const queryString = Object.entries(queryParams)
       .filter(([key, value]) => key.trim() && value.trim())
-      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
-      .join('&')
-    
+      .map(
+        ([key, value]) =>
+          `${encodeURIComponent(key)}=${encodeURIComponent(value)}`,
+      )
+      .join("&")
+
     if (queryString) {
       url += `?${queryString}`
     }
-    
+
     return url
   }
 
   const validateHeaders = () => {
     const headers = config.headers || {}
     const errors: string[] = []
-    
+
     for (const [key, value] of Object.entries(headers)) {
       if (!key.trim()) {
         errors.push("Header name cannot be empty")
@@ -234,10 +285,12 @@ export default function WebhookConfigurationUI({
       }
       // Basic header name validation (no spaces, special chars)
       if (!/^[a-zA-Z0-9-_]+$/.test(key.trim())) {
-        errors.push(`Header name "${key}" contains invalid characters. Use only letters, numbers, hyphens, and underscores.`)
+        errors.push(
+          `Header name "${key}" contains invalid characters. Use only letters, numbers, hyphens, and underscores.`,
+        )
       }
     }
-    
+
     return errors
   }
 
@@ -250,7 +303,7 @@ export default function WebhookConfigurationUI({
     // Validate headers
     const headerErrors = validateHeaders()
     if (headerErrors.length > 0) {
-      alert(`Header validation failed:\n${headerErrors.join('\n')}`)
+      alert(`Header validation failed:\n${headerErrors.join("\n")}`)
       return
     }
 
@@ -274,7 +327,7 @@ export default function WebhookConfigurationUI({
     const finalConfig: WebhookConfig = {
       ...config,
       webhookUrl,
-      path: config.path.startsWith('/') ? config.path : `/${config.path}`
+      path: config.path.startsWith("/") ? config.path : `/${config.path}`,
     }
 
     onSave?.(finalConfig)
@@ -282,12 +335,12 @@ export default function WebhookConfigurationUI({
 
   const addHeader = () => {
     if (newHeaderKey.trim() && newHeaderValue.trim()) {
-      setConfig(prev => ({
+      setConfig((prev) => ({
         ...prev,
         headers: {
           ...prev.headers,
-          [newHeaderKey]: newHeaderValue
-        }
+          [newHeaderKey]: newHeaderValue,
+        },
       }))
       setNewHeaderKey("")
       setNewHeaderValue("")
@@ -295,11 +348,11 @@ export default function WebhookConfigurationUI({
   }
 
   const removeHeader = (key: string) => {
-    setConfig(prev => {
-      const newHeaders = { ...prev.headers };
-      delete newHeaders[key];
-      return { ...prev, headers: newHeaders };
-    });
+    setConfig((prev) => {
+      const newHeaders = { ...prev.headers }
+      delete newHeaders[key]
+      return { ...prev, headers: newHeaders }
+    })
   }
 
   // Copy webhook URL to clipboard
@@ -310,13 +363,13 @@ export default function WebhookConfigurationUI({
       setCopied(true)
       setTimeout(() => setCopied(false), 2000) // Reset after 2 seconds
     } catch (err) {
-      console.error('Failed to copy URL:', err)
+      console.error("Failed to copy URL:", err)
       // Fallback for browsers that don't support clipboard API
-      const textArea = document.createElement('textarea')
+      const textArea = document.createElement("textarea")
       textArea.value = url
       document.body.appendChild(textArea)
       textArea.select()
-      document.execCommand('copy')
+      document.execCommand("copy")
       document.body.removeChild(textArea)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
@@ -336,12 +389,18 @@ export default function WebhookConfigurationUI({
     if (config.authentication === "basic" && config.selectedCredential) {
       // First try to get basic_auth from tool config (for existing workflows)
       const toolCredentials = toolData?.config?.credentials
-      const selectedToolCred = toolCredentials?.find((cred: any) => cred.isSelected === true)
-      
+      const selectedToolCred = toolCredentials?.find(
+        (cred: any) => cred.isSelected === true,
+      )
+
       if (selectedToolCred && selectedToolCred.basic_auth) {
         // Use the pre-encoded basic_auth from tool config
         curlCommand += ` \\\n--header 'Authorization: Basic ${selectedToolCred.basic_auth}'`
-      } else if (selectedCredentialData && selectedCredentialData.user && selectedCredentialData.password) {
+      } else if (
+        selectedCredentialData &&
+        selectedCredentialData.user &&
+        selectedCredentialData.password
+      ) {
         // Create Basic Auth token from fetched credential data
         const credentials = `${selectedCredentialData.user}:${selectedCredentialData.password}`
         const basicAuthToken = btoa(credentials) // Base64 encode
@@ -356,14 +415,20 @@ export default function WebhookConfigurationUI({
     if (config.headers && Object.keys(config.headers).length > 0) {
       Object.entries(config.headers).forEach(([key, value]) => {
         // Skip Content-Type if already added, and Authorization if auth is handled above
-        if (key.toLowerCase() !== 'content-type' && key.toLowerCase() !== 'authorization') {
+        if (
+          key.toLowerCase() !== "content-type" &&
+          key.toLowerCase() !== "authorization"
+        ) {
           curlCommand += ` \\\n--header '${key}: ${value}'`
         }
       })
     }
 
     // Add request body for POST, PUT, PATCH methods
-    if ((method === "POST" || method === "PUT" || method === "PATCH") && config.requestBody) {
+    if (
+      (method === "POST" || method === "PUT" || method === "PATCH") &&
+      config.requestBody
+    ) {
       // Escape single quotes in JSON for shell
       const escapedBody = config.requestBody.replace(/'/g, "'\"'\"'")
       curlCommand += ` \\\n--data '${escapedBody}'`
@@ -382,13 +447,13 @@ export default function WebhookConfigurationUI({
       setCurlCopied(true)
       setTimeout(() => setCurlCopied(false), 2000) // Reset after 2 seconds
     } catch (err) {
-      console.error('Failed to copy curl command:', err)
+      console.error("Failed to copy curl command:", err)
       // Fallback for browsers that don't support clipboard API
-      const textArea = document.createElement('textarea')
+      const textArea = document.createElement("textarea")
       textArea.value = curlCommand
       document.body.appendChild(textArea)
       textArea.select()
-      document.execCommand('copy')
+      document.execCommand("copy")
       document.body.removeChild(textArea)
       setCurlCopied(true)
       setTimeout(() => setCurlCopied(false), 2000)
@@ -397,12 +462,12 @@ export default function WebhookConfigurationUI({
 
   const addQueryParam = () => {
     if (newParamKey.trim() && newParamValue.trim()) {
-      setConfig(prev => ({
+      setConfig((prev) => ({
         ...prev,
         queryParams: {
           ...prev.queryParams,
-          [newParamKey]: newParamValue
-        }
+          [newParamKey]: newParamValue,
+        },
       }))
       setNewParamKey("")
       setNewParamValue("")
@@ -410,11 +475,11 @@ export default function WebhookConfigurationUI({
   }
 
   const removeQueryParam = (key: string) => {
-    setConfig(prev => {
-      const newQueryParams = { ...prev.queryParams };
-      delete newQueryParams[key];
-      return { ...prev, queryParams: newQueryParams };
-    });
+    setConfig((prev) => {
+      const newQueryParams = { ...prev.queryParams }
+      delete newQueryParams[key]
+      return { ...prev, queryParams: newQueryParams }
+    })
   }
 
   return (
@@ -465,7 +530,7 @@ export default function WebhookConfigurationUI({
         >
           Webhook Configuration
         </h2>
-        
+
         <button
           onClick={onClose || onBack}
           className="flex items-center justify-center"
@@ -491,13 +556,17 @@ export default function WebhookConfigurationUI({
               <label className="text-sm font-medium text-slate-700 dark:text-gray-300">
                 Webhook URL
               </label>
-              
+
               {/* Copy cURL Button */}
               <button
                 onClick={copyCurlCommand}
                 disabled={!config.path?.trim()}
                 className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed border border-gray-300 dark:border-gray-600 rounded-md transition-colors"
-                title={curlCopied ? "cURL command copied!" : "Copy cURL command for testing"}
+                title={
+                  curlCopied
+                    ? "cURL command copied!"
+                    : "Copy cURL command for testing"
+                }
               >
                 {curlCopied ? (
                   <>
@@ -512,7 +581,7 @@ export default function WebhookConfigurationUI({
                 )}
               </button>
             </div>
-            
+
             <div className="space-y-2">
               <div className="relative">
                 <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg pr-12">
@@ -538,7 +607,6 @@ export default function WebhookConfigurationUI({
             </div>
           </div>
 
-
           {/* HTTP Method */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-slate-700 dark:text-gray-300">
@@ -550,10 +618,15 @@ export default function WebhookConfigurationUI({
                 { value: "POST", label: "POST" },
                 { value: "PUT", label: "PUT" },
                 { value: "DELETE", label: "DELETE" },
-                { value: "PATCH", label: "PATCH" }
+                { value: "PATCH", label: "PATCH" },
               ]}
               value={config.httpMethod}
-              onSelect={(value) => setConfig(prev => ({ ...prev, httpMethod: value as WebhookConfig['httpMethod'] }))}
+              onSelect={(value) =>
+                setConfig((prev) => ({
+                  ...prev,
+                  httpMethod: value as WebhookConfig["httpMethod"],
+                }))
+              }
               placeholder="Select HTTP method"
               className="w-full dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
               variant="outline"
@@ -568,12 +641,15 @@ export default function WebhookConfigurationUI({
             <input
               type="text"
               value={config.path}
-              onChange={(e) => setConfig(prev => ({ ...prev, path: e.target.value }))}
+              onChange={(e) =>
+                setConfig((prev) => ({ ...prev, path: e.target.value }))
+              }
               placeholder="e.g., /my-webhook"
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
             />
             <div className="text-xs text-gray-500 dark:text-gray-400">
-              The path where your webhook will be accessible. Use a unique identifier.
+              The path where your webhook will be accessible. Use a unique
+              identifier.
             </div>
           </div>
 
@@ -585,10 +661,16 @@ export default function WebhookConfigurationUI({
             <Dropdown
               options={[
                 { value: "none", label: "None" },
-                { value: "basic", label: "Basic Auth" }
+                { value: "basic", label: "Basic Auth" },
               ]}
               value={config.authentication}
-              onSelect={(value) => setConfig(prev => ({ ...prev, authentication: value as WebhookConfig['authentication'], selectedCredential: undefined }))}
+              onSelect={(value) =>
+                setConfig((prev) => ({
+                  ...prev,
+                  authentication: value as WebhookConfig["authentication"],
+                  selectedCredential: undefined,
+                }))
+              }
               placeholder="Select authentication type"
               className="w-full dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
               variant="outline"
@@ -599,12 +681,24 @@ export default function WebhookConfigurationUI({
           {config.authentication !== "none" && (
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700 dark:text-gray-300">
-                Credential for {config.authentication === "basic" ? "Basic Auth" : config.authentication === "bearer" ? "Bearer Token" : "API Key"}
+                Credential for{" "}
+                {config.authentication === "basic"
+                  ? "Basic Auth"
+                  : config.authentication === "bearer"
+                    ? "Bearer Token"
+                    : "API Key"}
               </label>
               <CredentialSelector
-                authType={config.authentication as "basic" | "bearer" | "api_key"}
+                authType={
+                  config.authentication as "basic" | "bearer" | "api_key"
+                }
                 selectedCredentialId={config.selectedCredential}
-                onSelect={(credentialId) => setConfig(prev => ({ ...prev, selectedCredential: credentialId || undefined }))}
+                onSelect={(credentialId) =>
+                  setConfig((prev) => ({
+                    ...prev,
+                    selectedCredential: credentialId || undefined,
+                  }))
+                }
                 existingCredentials={toolData?.config?.credentials || []}
               />
             </div>
@@ -616,61 +710,92 @@ export default function WebhookConfigurationUI({
               Response
             </label>
             <Dropdown
-              options={[
-                { value: "immediately", label: "Immediately" }
-              ]}
+              options={[{ value: "immediately", label: "Immediately" }]}
               value={config.responseMode}
-              onSelect={(value) => setConfig(prev => ({ ...prev, responseMode: value as WebhookConfig['responseMode'] }))}
+              onSelect={(value) =>
+                setConfig((prev) => ({
+                  ...prev,
+                  responseMode: value as WebhookConfig["responseMode"],
+                }))
+              }
               placeholder="Select response mode"
               className="w-full dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
               variant="outline"
             />
             <div className="text-xs text-gray-500 dark:text-gray-400">
-              If you are sending back a response, add a "Content-Type" response header with the appropriate value to avoid unexpected behavior
+              If you are sending back a response, add a "Content-Type" response
+              header with the appropriate value to avoid unexpected behavior
             </div>
           </div>
 
           {/* Request Body - Shows only for POST, PUT, PATCH methods */}
-          {(config.httpMethod === "POST" || config.httpMethod === "PUT" || config.httpMethod === "PATCH") && (
+          {(config.httpMethod === "POST" ||
+            config.httpMethod === "PUT" ||
+            config.httpMethod === "PATCH") && (
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700 dark:text-gray-300">
-                Request Body {config.httpMethod === "POST" && <span className="text-red-500">*</span>}
+                Request Body{" "}
+                {config.httpMethod === "POST" && (
+                  <span className="text-red-500">*</span>
+                )}
               </label>
               <div className="space-y-2">
                 <textarea
                   value={config.requestBody || ""}
-                  onChange={(e) => setConfig(prev => ({ ...prev, requestBody: e.target.value }))}
+                  onChange={(e) =>
+                    setConfig((prev) => ({
+                      ...prev,
+                      requestBody: e.target.value,
+                    }))
+                  }
                   placeholder='{"key": "value", "message": "Hello World"}'
                   rows={6}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-mono text-sm resize-vertical"
                 />
                 <div className="text-xs text-gray-500 dark:text-gray-400">
-                  {config.httpMethod === "POST" 
-                    ? "JSON request body is mandatory for POST webhooks. External systems must send this exact JSON structure." 
+                  {config.httpMethod === "POST"
+                    ? "JSON request body is mandatory for POST webhooks. External systems must send this exact JSON structure."
                     : "Optional JSON request body. Must be valid JSON format if provided."}
                 </div>
-                {config.requestBody && (() => {
-                  try {
-                    JSON.parse(config.requestBody)
-                    return (
-                      <div className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
-                        Valid JSON format
-                      </div>
-                    )
-                  } catch (error) {
-                    return (
-                      <div className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                        </svg>
-                        Invalid JSON format
-                      </div>
-                    )
-                  }
-                })()}
+                {config.requestBody &&
+                  (() => {
+                    try {
+                      JSON.parse(config.requestBody)
+                      return (
+                        <div className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                          <svg
+                            className="w-3 h-3"
+                            fill="currentColor"
+                            viewBox="0 0 20 20"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                          Valid JSON format
+                        </div>
+                      )
+                    } catch (error) {
+                      return (
+                        <div className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
+                          <svg
+                            className="w-3 h-3"
+                            fill="currentColor"
+                            viewBox="0 0 20 20"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                          Invalid JSON format
+                        </div>
+                      )
+                    }
+                  })()}
               </div>
             </div>
           )}
@@ -680,7 +805,7 @@ export default function WebhookConfigurationUI({
             <label className="text-sm font-medium text-slate-700 dark:text-gray-300">
               Headers
             </label>
-          
+
             {/* Existing Headers */}
             {Object.entries(config.headers || {}).length > 0 && (
               <div className="space-y-2">
@@ -688,12 +813,20 @@ export default function WebhookConfigurationUI({
                   <div key={key} className="relative">
                     <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg">
                       <div className="space-y-1">
-                        <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Name</div>
-                        <div className="text-sm text-gray-900 dark:text-gray-100 font-mono break-all">{key}</div>
+                        <div className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                          Name
+                        </div>
+                        <div className="text-sm text-gray-900 dark:text-gray-100 font-mono break-all">
+                          {key}
+                        </div>
                       </div>
                       <div className="space-y-1 mt-2">
-                        <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Value</div>
-                        <div className="text-sm text-gray-900 dark:text-gray-100 font-mono break-all">{value}</div>
+                        <div className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                          Value
+                        </div>
+                        <div className="text-sm text-gray-900 dark:text-gray-100 font-mono break-all">
+                          {value}
+                        </div>
                       </div>
                     </div>
                     <button
@@ -711,7 +844,9 @@ export default function WebhookConfigurationUI({
             {/* Add New Header */}
             <div className="p-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg space-y-3">
               <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Header Name</label>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Header Name
+                </label>
                 <input
                   type="text"
                   value={newHeaderKey}
@@ -721,7 +856,9 @@ export default function WebhookConfigurationUI({
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Header Value</label>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Header Value
+                </label>
                 <input
                   type="text"
                   value={newHeaderValue}
@@ -745,38 +882,50 @@ export default function WebhookConfigurationUI({
             <label className="text-sm font-medium text-slate-700 dark:text-gray-300">
               Query Parameters
             </label>
-          
+
             {/* Existing Parameters */}
             {Object.entries(config.queryParams || {}).length > 0 && (
               <div className="space-y-2">
-                {Object.entries(config.queryParams || {}).map(([key, value]) => (
-                  <div key={key} className="relative">
-                    <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg">
-                      <div className="space-y-1">
-                        <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Parameter Name</div>
-                        <div className="text-sm text-gray-900 dark:text-gray-100 font-mono break-all">{key}</div>
+                {Object.entries(config.queryParams || {}).map(
+                  ([key, value]) => (
+                    <div key={key} className="relative">
+                      <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg">
+                        <div className="space-y-1">
+                          <div className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                            Parameter Name
+                          </div>
+                          <div className="text-sm text-gray-900 dark:text-gray-100 font-mono break-all">
+                            {key}
+                          </div>
+                        </div>
+                        <div className="space-y-1 mt-2">
+                          <div className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                            Parameter Value
+                          </div>
+                          <div className="text-sm text-gray-900 dark:text-gray-100 font-mono break-all">
+                            {value}
+                          </div>
+                        </div>
                       </div>
-                      <div className="space-y-1 mt-2">
-                        <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Parameter Value</div>
-                        <div className="text-sm text-gray-900 dark:text-gray-100 font-mono break-all">{value}</div>
-                      </div>
+                      <button
+                        onClick={() => removeQueryParam(key)}
+                        className="absolute top-2 right-2 p-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/50 rounded transition-colors"
+                        title="Remove parameter"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
                     </div>
-                    <button
-                      onClick={() => removeQueryParam(key)}
-                      className="absolute top-2 right-2 p-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/50 rounded transition-colors"
-                      title="Remove parameter"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
+                  ),
+                )}
               </div>
             )}
 
             {/* Add New Parameter */}
             <div className="p-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg space-y-3">
               <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Parameter Name</label>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Parameter Name
+                </label>
                 <input
                   type="text"
                   value={newParamKey}
@@ -786,7 +935,9 @@ export default function WebhookConfigurationUI({
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Parameter Value</label>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Parameter Value
+                </label>
                 <input
                   type="text"
                   value={newParamValue}
@@ -808,11 +959,13 @@ export default function WebhookConfigurationUI({
           {/* Options Info */}
           <div className="p-3 bg-blue-50 dark:bg-blue-900/50 border border-blue-200 dark:border-blue-800 rounded-lg">
             <div className="text-sm text-blue-800 dark:text-blue-200">
-              <strong>Note:</strong> Once you save this configuration, the webhook will be available at the generated URL and will trigger your workflow when called.
+              <strong>Note:</strong> Once you save this configuration, the
+              webhook will be available at the generated URL and will trigger
+              your workflow when called.
             </div>
           </div>
         </div>
-        
+
         {/* Save Button - Sticky to bottom */}
         {builder && (
           <div className="pt-6 px-0">

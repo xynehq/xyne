@@ -4,7 +4,13 @@ import { useAuth } from "@/auth"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 
 export function Login() {
   const { login } = useAuth()
@@ -78,7 +84,10 @@ export function Login() {
 
               <p className="text-sm text-center text-muted-foreground">
                 Don't have an account?{" "}
-                <Link to="/signup" className="text-foreground font-medium hover:underline">
+                <Link
+                  to="/signup"
+                  className="text-foreground font-medium hover:underline"
+                >
                   Sign up
                 </Link>
               </p>

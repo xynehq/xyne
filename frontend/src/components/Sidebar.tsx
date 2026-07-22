@@ -146,7 +146,7 @@ export const Sidebar = ({
           />
         )}
         {!isEmbedded && (
-        <div className="flex flex-col items-center pt-4">
+          <div className="flex flex-col items-center pt-4">
             {photoLink && (
               <img
                 className="w-8 h-8 rounded-full mb-4"
@@ -311,9 +311,9 @@ export const Sidebar = ({
                     className="dark:stroke-[#F1F3F4]"
                   />
                 </TooltipTrigger>
-                  <Tip side="right" info="Collections" />
-                </Tooltip>
-              </Link>
+                <Tip side="right" info="Collections" />
+              </Tooltip>
+            </Link>
           )}
           {/* User Management - Admin only */}
           {!isEmbedded && role === UserRole.SuperAdmin && (
@@ -360,24 +360,26 @@ export const Sidebar = ({
           )}
         </div>
         <div className="mt-auto mb-4 flex flex-col items-center">
-          {!isEmbedded && <div
-            onClick={toggleTheme}
-            className="flex w-8 h-8 rounded-lg items-center justify-center cursor-pointer hover:bg-[#D8DFE680] dark:hover:bg-gray-700 mb-4"
-          >
-            <Tooltip>
-              <TooltipTrigger asChild>
-                {isDarkMode ? (
-                  <Sun size={18} stroke="#F1F3F4" />
-                ) : (
-                  <Moon size={18} stroke="#384049" />
-                )}
-              </TooltipTrigger>
-              <Tip
-                side="right"
-                info={isDarkMode ? "Light Mode" : "Dark Mode"}
-              />
-            </Tooltip>
-          </div>}
+          {!isEmbedded && (
+            <div
+              onClick={toggleTheme}
+              className="flex w-8 h-8 rounded-lg items-center justify-center cursor-pointer hover:bg-[#D8DFE680] dark:hover:bg-gray-700 mb-4"
+            >
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  {isDarkMode ? (
+                    <Sun size={18} stroke="#F1F3F4" />
+                  ) : (
+                    <Moon size={18} stroke="#384049" />
+                  )}
+                </TooltipTrigger>
+                <Tip
+                  side="right"
+                  info={isDarkMode ? "Light Mode" : "Dark Mode"}
+                />
+              </Tooltip>
+            </div>
+          )}
           {!isEmbedded && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

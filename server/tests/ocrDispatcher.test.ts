@@ -1,6 +1,6 @@
 /**
  * Test file for OCR Dispatcher Logic
- * 
+ *
  * This test suite verifies the dispatch logic implementation in chunkByOCR.ts
  * It mocks the instance status endpoint and PDF processing to demonstrate
  * how batches are processed under various scenarios.
@@ -10,7 +10,11 @@ import { describe, expect, test, beforeEach, afterEach, mock } from "bun:test"
 import { promises as fsPromises } from "fs"
 import * as path from "path"
 import { PDFDocument } from "pdf-lib"
-import type { PdfOcrBatch, DispatchOptions, DispatchReport } from "../lib/chunkByOCR"
+import type {
+  PdfOcrBatch,
+  DispatchOptions,
+  DispatchReport,
+} from "../lib/chunkByOCR"
 import { dispatchOCRBatches } from "../lib/chunkByOCR"
 
 // ============================================================================
@@ -40,8 +44,12 @@ async function createMockBatches(
   const pdfFileName = path.basename(pdfPath)
 
   const batches: PdfOcrBatch[] = []
-  
-  for (let startPage = 0; startPage < totalPages && batches.length < maxBatches; startPage += pagesPerBatch) {
+
+  for (
+    let startPage = 0;
+    startPage < totalPages && batches.length < maxBatches;
+    startPage += pagesPerBatch
+  ) {
     const endPage = Math.min(startPage + pagesPerBatch, totalPages)
     const pageCount = endPage - startPage
 
@@ -57,7 +65,7 @@ async function createMockBatches(
     }
 
     const pdfBytes = await newPdf.save()
-    
+
     batches.push({
       id: `batch-${batches.length + 1}`,
       fileName: pdfFileName,
@@ -88,14 +96,16 @@ function createMockFetch(config: MockStatusConfig) {
     install: () => {
       // Capture the current fetch at install time, not at creation time
       savedOriginalFetch = globalThis.fetch
-      
+
       const mockFetch: typeof globalThis.fetch = Object.assign(
         async (input: RequestInfo | URL, init?: RequestInit) => {
           if (typeof input === "string" && input.includes("/instance_status")) {
             statusCallCount += 1
-            
+
             if (config.serverDown) {
-              throw new Error("ECONNREFUSED: Connection refused - instance status server is down")
+              throw new Error(
+                "ECONNREFUSED: Connection refused - instance status server is down",
+              )
             }
 
             const idle =
@@ -231,9 +241,11 @@ function createMetricsCollector() {
       const key = tags ? `${name}:${JSON.stringify(tags)}` : name
       data.counters[key] = (data.counters[key] || 0) + 1
     }),
-    observe: mock((name: string, value: number, tags?: Record<string, string>) => {
-      data.observations.push({ name, value, tags })
-    }),
+    observe: mock(
+      (name: string, value: number, tags?: Record<string, string>) => {
+        data.observations.push({ name, value, tags })
+      },
+    ),
     getData: () => data,
   }
 }
@@ -314,7 +326,10 @@ describe("OCR Dispatcher", () => {
         maxRetries: 2,
       }
 
-      const report: DispatchReport = await dispatchOCRBatches(mockBatches, options)
+      const report: DispatchReport = await dispatchOCRBatches(
+        mockBatches,
+        options,
+      )
 
       expect(report.total).toBe(3)
       expect(report.succeeded).toBeGreaterThanOrEqual(2)
@@ -346,7 +361,10 @@ describe("OCR Dispatcher", () => {
         maxRetries: 2,
       }
 
-      const report: DispatchReport = await dispatchOCRBatches(mockBatches, options)
+      const report: DispatchReport = await dispatchOCRBatches(
+        mockBatches,
+        options,
+      )
 
       expect(report.total).toBe(3)
       expect(report.succeeded).toBeGreaterThanOrEqual(2)
@@ -378,7 +396,10 @@ describe("OCR Dispatcher", () => {
         maxRetries: 2,
       }
 
-      const report: DispatchReport = await dispatchOCRBatches(mockBatches, options)
+      const report: DispatchReport = await dispatchOCRBatches(
+        mockBatches,
+        options,
+      )
 
       expect(report.total).toBe(3)
       expect(mockProcessor.stats.totalDispatched).toBeGreaterThanOrEqual(2)
@@ -409,7 +430,10 @@ describe("OCR Dispatcher", () => {
         maxRetries: 2,
       }
 
-      const report: DispatchReport = await dispatchOCRBatches(mockBatches, options)
+      const report: DispatchReport = await dispatchOCRBatches(
+        mockBatches,
+        options,
+      )
 
       expect(report.total).toBe(3)
       expect(mockFetch.getCallCount()).toBeGreaterThan(0)
@@ -440,7 +464,10 @@ describe("OCR Dispatcher", () => {
         maxRetries: 2,
       }
 
-      const report: DispatchReport = await dispatchOCRBatches(mockBatches, options)
+      const report: DispatchReport = await dispatchOCRBatches(
+        mockBatches,
+        options,
+      )
 
       expect(report.total).toBe(3)
       expect(mockProcessor.stats.totalDispatched).toBeGreaterThanOrEqual(2)
@@ -506,10 +533,13 @@ describe("OCR Dispatcher", () => {
         maxRetries: 3,
       }
 
-      const report: DispatchReport = await dispatchOCRBatches(mockBatches, options)
+      const report: DispatchReport = await dispatchOCRBatches(
+        mockBatches,
+        options,
+      )
 
       const metricsData = metrics.getData()
-      
+
       expect(report.total).toBe(3)
       expect(metrics.incr).toHaveBeenCalled()
       expect(metrics.observe).toHaveBeenCalled()
@@ -540,11 +570,14 @@ describe("OCR Dispatcher", () => {
         maxRetries: 2,
       }
 
-      const report: DispatchReport = await dispatchOCRBatches(mockBatches, options)
+      const report: DispatchReport = await dispatchOCRBatches(
+        mockBatches,
+        options,
+      )
 
       expect(report.perItem).toBeDefined()
       expect(report.perItem.length).toBe(3)
-      
+
       for (const item of report.perItem) {
         expect(item.id).toBeDefined()
         expect(item.status).toMatch(/ok|failed/)

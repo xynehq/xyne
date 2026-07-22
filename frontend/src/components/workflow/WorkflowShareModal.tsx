@@ -1,6 +1,15 @@
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { X, Plus, Trash2, AlertCircle, Users, UserPlus, Shield, ExternalLink } from "lucide-react"
+import {
+  X,
+  Plus,
+  Trash2,
+  AlertCircle,
+  Users,
+  UserPlus,
+  Shield,
+  ExternalLink,
+} from "lucide-react"
 import { api } from "../../api"
 import { WorkflowTemplate } from "./Types"
 
@@ -52,16 +61,19 @@ export function WorkflowShareModal({
   const [isEmailValid, setIsEmailValid] = useState<boolean>(false)
   const [isLoading, setIsLoading] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
-  
+
   // Unauthorized agents popup state
-  const [showUnauthorizedAgentsPopup, setShowUnauthorizedAgentsPopup] = useState(false)
-  const [unauthorizedAgents, setUnauthorizedAgents] = useState<{
-    agentId: string
-    agentName: string
-    toolId: string
-    missingUserEmails: string[]
-  }[]>([])
-  
+  const [showUnauthorizedAgentsPopup, setShowUnauthorizedAgentsPopup] =
+    useState(false)
+  const [unauthorizedAgents, setUnauthorizedAgents] = useState<
+    {
+      agentId: string
+      agentName: string
+      toolId: string
+      missingUserEmails: string[]
+    }[]
+  >([])
+
   // Current workflow users
   const [currentUsers, setCurrentUsers] = useState<WorkflowUser[]>([])
   const [loadingUsers, setLoadingUsers] = useState(false)
@@ -144,14 +156,18 @@ export function WorkflowShareModal({
     const loadCurrentWorkflowUsers = async () => {
       setLoadingUsers(true)
       try {
-        const response = await api.workflow.templates[workflow.id].permissions.$get()
+        const response =
+          await api.workflow.templates[workflow.id].permissions.$get()
         if (response.ok) {
           const data = await response.json()
           if (data.success) {
             setCurrentUsers(data.data.users || [])
           }
         } else {
-          console.error("Failed to fetch workflow users:", await response.text())
+          console.error(
+            "Failed to fetch workflow users:",
+            await response.text(),
+          )
         }
       } catch (error) {
         console.error("Failed to fetch workflow users:", error)
@@ -186,7 +202,6 @@ export function WorkflowShareModal({
 
   // Handle keyboard navigation in autocomplete
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault()
@@ -303,7 +318,9 @@ export function WorkflowShareModal({
   const handleRemoveCurrentUser = (userEmail: string) => {
     setRemovedUserEmails((prev) => [...prev, userEmail.toLowerCase()])
     // Also remove from emails list if they were added
-    setEmails((prev) => prev.filter((email) => email !== userEmail.toLowerCase()))
+    setEmails((prev) =>
+      prev.filter((email) => email !== userEmail.toLowerCase()),
+    )
   }
 
   // Handle enter key press for adding email
@@ -329,14 +346,14 @@ export function WorkflowShareModal({
   // Helper function to get role badge color
   const getRoleColor = (role: string) => {
     switch (role.toLowerCase()) {
-      case 'owner':
-        return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
-      case 'editor':
-        return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-      case 'viewer':
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+      case "owner":
+        return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+      case "editor":
+        return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+      case "viewer":
+        return "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
       default:
-        return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
+        return "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300"
     }
   }
 
@@ -344,13 +361,17 @@ export function WorkflowShareModal({
   const handleSubmit = async () => {
     // Calculate final list of users: current users (not removed) + new emails
     const currentUserEmails = currentUsers
-      .filter(user => !removedUserEmails.includes(user.user.email.toLowerCase()))
-      .map(user => user.user.email.toLowerCase())
-    
+      .filter(
+        (user) => !removedUserEmails.includes(user.user.email.toLowerCase()),
+      )
+      .map((user) => user.user.email.toLowerCase())
+
     const finalUserEmails = [...new Set([...currentUserEmails, ...emails])]
-    
+
     if (finalUserEmails.length === 0 && removedUserEmails.length === 0) {
-      setSubmitError("Please add at least one email address or make changes to existing permissions")
+      setSubmitError(
+        "Please add at least one email address or make changes to existing permissions",
+      )
       return
     }
 
@@ -375,7 +396,7 @@ export function WorkflowShareModal({
       // Handle different error responses
       if (response.status === 403) {
         const errorData = await response.json()
-        
+
         // Check if this is an unauthorized agents error
         if (errorData.details?.unauthorizedAgents) {
           setUnauthorizedAgents(errorData.details.unauthorizedAgents)
@@ -387,7 +408,6 @@ export function WorkflowShareModal({
       // Handle other errors
       const errorText = await response.text()
       throw new Error(`Failed to share workflow: ${errorText}`)
-
     } catch (error) {
       console.error("Failed to share workflow:", error)
       setSubmitError(
@@ -443,11 +463,13 @@ export function WorkflowShareModal({
             <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
               People with access ({currentUsers.length})
             </h3>
-            
+
             {loadingUsers ? (
               <div className="flex items-center justify-center py-4">
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                <span className="ml-2 text-sm text-gray-500">Loading users...</span>
+                <span className="ml-2 text-sm text-gray-500">
+                  Loading users...
+                </span>
               </div>
             ) : currentUsers.length === 0 ? (
               <div className="text-center py-4">
@@ -457,53 +479,64 @@ export function WorkflowShareModal({
             ) : (
               <div className="space-y-2 max-h-32 overflow-y-auto">
                 {currentUsers
-                  .filter(userPermission => !removedUserEmails.includes(userPermission.user.email.toLowerCase()))
+                  .filter(
+                    (userPermission) =>
+                      !removedUserEmails.includes(
+                        userPermission.user.email.toLowerCase(),
+                      ),
+                  )
                   .map((userPermission) => (
-                  <div
-                    key={userPermission.id}
-                    className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded-lg"
-                  >
-                    <div className="flex items-center gap-2">
-                      {userPermission.user.photoLink ? (
-                        <img
-                          src={userPermission.user.photoLink}
-                          alt={userPermission.user.name}
-                          className="w-6 h-6 rounded-full"
-                        />
-                      ) : (
-                        <div className="w-6 h-6 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center">
-                          <span className="text-xs text-gray-600 dark:text-gray-300">
-                            {userPermission.user.name?.charAt(0) || userPermission.user.email.charAt(0)}
-                          </span>
+                    <div
+                      key={userPermission.id}
+                      className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                    >
+                      <div className="flex items-center gap-2">
+                        {userPermission.user.photoLink ? (
+                          <img
+                            src={userPermission.user.photoLink}
+                            alt={userPermission.user.name}
+                            className="w-6 h-6 rounded-full"
+                          />
+                        ) : (
+                          <div className="w-6 h-6 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center">
+                            <span className="text-xs text-gray-600 dark:text-gray-300">
+                              {userPermission.user.name?.charAt(0) ||
+                                userPermission.user.email.charAt(0)}
+                            </span>
+                          </div>
+                        )}
+
+                        <div>
+                          <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                            {userPermission.user.name ||
+                              userPermission.user.email}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {userPermission.user.email}
+                          </p>
                         </div>
-                      )}
-                      
-                      <div>
-                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                          {userPermission.user.name || userPermission.user.email}
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {userPermission.user.email}
-                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`px-2 py-1 text-xs font-medium rounded-full ${getRoleColor(userPermission.role)}`}
+                        >
+                          {userPermission.role}
+                        </span>
+                        {userPermission.role.toLowerCase() !== "owner" && (
+                          <button
+                            onClick={() =>
+                              handleRemoveCurrentUser(userPermission.user.email)
+                            }
+                            className="p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded transition-colors"
+                            title="Remove user access"
+                          >
+                            <X className="w-3 h-3 text-gray-500 dark:text-red-400" />
+                          </button>
+                        )}
                       </div>
                     </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getRoleColor(userPermission.role)}`}>
-                        {userPermission.role}
-                      </span>
-                      {userPermission.role.toLowerCase() !== 'owner' && (
-                        <button
-                          onClick={() => handleRemoveCurrentUser(userPermission.user.email)}
-                          className="p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded transition-colors"
-                          title="Remove user access"
-                        >
-                          <X className="w-3 h-3 text-gray-500 dark:text-red-400" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  ))}
               </div>
             )}
           </div>
@@ -632,14 +665,17 @@ export function WorkflowShareModal({
             <Button
               onClick={handleSubmit}
               className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-              disabled={isLoading || (emails.length === 0 && removedUserEmails.length === 0)}
+              disabled={
+                isLoading ||
+                (emails.length === 0 && removedUserEmails.length === 0)
+              }
             >
               {isLoading ? "Sharing..." : "Share Workflow"}
             </Button>
           </div>
         </div>
       </div>
-      
+
       {/* Unauthorized Agents Popup */}
       {showUnauthorizedAgentsPopup && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]">
@@ -680,7 +716,10 @@ export function WorkflowShareModal({
                         Cannot share workflow
                       </p>
                       <p className="text-sm text-amber-700 dark:text-amber-300">
-                        This workflow contains AI agents that are not accessible to some of the users you're trying to share with. To share this workflow, those users need access to the following agents:
+                        This workflow contains AI agents that are not accessible
+                        to some of the users you're trying to share with. To
+                        share this workflow, those users need access to the
+                        following agents:
                       </p>
                     </div>
                   </div>
@@ -692,9 +731,12 @@ export function WorkflowShareModal({
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
                   Restricted Agents ({unauthorizedAgents.length})
                 </h3>
-                
+
                 {unauthorizedAgents.map((agent, index) => (
-                  <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                  <div
+                    key={index}
+                    className="border border-gray-200 dark:border-gray-700 rounded-lg p-4"
+                  >
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
@@ -712,7 +754,10 @@ export function WorkflowShareModal({
                       <button
                         onClick={() => {
                           // Open agent edit page in a new tab
-                          window.open(`/agent?agentId=${agent.agentId}&mode=edit`, '_blank')
+                          window.open(
+                            `/agent?agentId=${agent.agentId}&mode=edit`,
+                            "_blank",
+                          )
                         }}
                         className="flex items-center gap-1 px-2 py-1 text-xs text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
                       >
@@ -720,7 +765,7 @@ export function WorkflowShareModal({
                         <ExternalLink className="w-3 h-3" />
                       </button>
                     </div>
-                    
+
                     <div className="mb-3">
                       <p className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
                         Users who need access:

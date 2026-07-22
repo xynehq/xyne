@@ -12,12 +12,12 @@ import { ChatSSEvents } from "shared/types"
 interface QAAgentConfigUIProps {
   isVisible: boolean
   onBack: () => void
-  onClose?: () => void 
+  onClose?: () => void
   onSave?: (agentConfig: QAAgentConfig) => void
   toolData?: any
-  toolId?: string 
-  stepData?: any 
-  showBackButton?: boolean 
+  toolId?: string
+  stepData?: any
+  showBackButton?: boolean
   builder?: boolean
 }
 
@@ -55,29 +55,30 @@ const QAAgentConfigUI: React.FC<QAAgentConfigUIProps> = ({
   const [modelsLoaded, setModelsLoaded] = useState(false)
   const [defaultModel, setDefaultModel] = useState<string>("")
 
-  const getValidModelId = useCallback((modelId: string | undefined): string => {
-    // Prefer the provided modelId if valid, then defaultModel from API, then first model in list
-    if (modelId && models.includes(modelId)) {
-      return modelId
-    }
-    if (defaultModel && models.includes(defaultModel)) {
-      return defaultModel
-    }
-    return models[0] || ""
-  }, [models, defaultModel])
-  
+  const getValidModelId = useCallback(
+    (modelId: string | undefined): string => {
+      // Prefer the provided modelId if valid, then defaultModel from API, then first model in list
+      if (modelId && models.includes(modelId)) {
+        return modelId
+      }
+      if (defaultModel && models.includes(defaultModel)) {
+        return defaultModel
+      }
+      return models[0] || ""
+    },
+    [models, defaultModel],
+  )
+
   React.useEffect(() => {
     if (isVisible) {
-      
       let existingConfig = null
-      
+
       if (stepData?.config) {
         existingConfig = stepData.config
       } else if (toolData) {
-        
         existingConfig = toolData.val || toolData.value || toolData.config || {}
       }
-      
+
       if (existingConfig) {
         setAgentConfig({
           name: existingConfig.name || "Q&A Agent",
@@ -86,10 +87,9 @@ const QAAgentConfigUI: React.FC<QAAgentConfigUIProps> = ({
           isExistingAgent: existingConfig.isExistingAgent || false,
         })
       } else {
-        
         setAgentConfig({
           name: "Q&A Agent",
-          model: getValidModelId(undefined), 
+          model: getValidModelId(undefined),
           systemPrompt: "",
           isExistingAgent: false,
         })
@@ -98,14 +98,14 @@ const QAAgentConfigUI: React.FC<QAAgentConfigUIProps> = ({
       setIsEnhancingPrompt(false)
     }
   }, [isVisible, toolData, stepData, getValidModelId])
-  
+
   React.useEffect(() => {
     if (isVisible && !modelsLoaded) {
       const fetchModels = async () => {
         setIsLoadingModels(true)
         try {
           const response = await api.workflow.models.$get()
-          
+
           if (response.ok) {
             const data = await response.json()
             if (data.success && data.data && Array.isArray(data.data)) {
@@ -120,10 +120,10 @@ const QAAgentConfigUI: React.FC<QAAgentConfigUIProps> = ({
               setModelsLoaded(true)
             }
           } else {
-            console.warn('Failed to fetch models from API, using defaults')
+            console.warn("Failed to fetch models from API, using defaults")
           }
         } catch (error) {
-          console.warn('Error fetching models:', error)
+          console.warn("Error fetching models:", error)
         } finally {
           setIsLoadingModels(false)
         }
@@ -132,11 +132,10 @@ const QAAgentConfigUI: React.FC<QAAgentConfigUIProps> = ({
       fetchModels()
     }
   }, [isVisible, modelsLoaded])
-  
-  
-  const HIDDEN_APPEND_TEXT = "\n\nPlease convert the text output of the previous step in pure textual representation removing any html tags/escape sequences"
-  
-  
+
+  const HIDDEN_APPEND_TEXT =
+    "\n\nPlease convert the text output of the previous step in pure textual representation removing any html tags/escape sequences"
+
   const getDisplaySystemPrompt = (systemPrompt: string): string => {
     if (systemPrompt.endsWith(HIDDEN_APPEND_TEXT)) {
       return systemPrompt.slice(0, -HIDDEN_APPEND_TEXT.length)
@@ -144,10 +143,9 @@ const QAAgentConfigUI: React.FC<QAAgentConfigUIProps> = ({
     return systemPrompt
   }
 
-  
   const getFullSystemPrompt = (displayPrompt: string): string => {
     if (displayPrompt.endsWith(HIDDEN_APPEND_TEXT)) {
-      return displayPrompt 
+      return displayPrompt
     }
     return displayPrompt + HIDDEN_APPEND_TEXT
   }
@@ -158,13 +156,12 @@ const QAAgentConfigUI: React.FC<QAAgentConfigUIProps> = ({
       setPromptError("Please enter a system prompt first")
       return
     }
-    
+
     setPromptError(null)
 
     setIsEnhancingPrompt(true)
 
     try {
-      
       const requirements = `Enhance this Q&A AI agent system prompt to be more professional, clear, and effective for answering questions from Excel sheets. Make it more structured and comprehensive while preserving the original intent.
 
 Original prompt: "${displayPrompt}"
@@ -177,9 +174,7 @@ Please provide an enhanced version that:
 
 Return only the enhanced system prompt without any additional explanation.`
 
-      
       try {
-        
         const url = new URL(
           "/api/v1/agent/generate-prompt",
           window.location.origin,
@@ -190,7 +185,6 @@ Return only the enhanced system prompt without any additional explanation.`
         let eventSource: EventSource | null = null
         let generatedPrompt = ""
 
-        
         try {
           eventSource = await createAuthEventSource(url.toString())
         } catch (err) {
@@ -198,7 +192,6 @@ Return only the enhanced system prompt without any additional explanation.`
           throw new Error("Failed to create EventSource")
         }
 
-        
         await new Promise((resolve, reject) => {
           if (!eventSource) {
             reject(new Error("EventSource not created"))
@@ -213,7 +206,7 @@ Return only the enhanced system prompt without any additional explanation.`
             try {
               const data = JSON.parse(event.data)
               const finalPrompt = data.fullPrompt || generatedPrompt
-              
+
               if (finalPrompt.trim()) {
                 setAgentConfig((prev) => ({
                   ...prev,
@@ -259,13 +252,11 @@ Return only the enhanced system prompt without any additional explanation.`
             reject(new Error("Connection error during prompt generation"))
           })
         })
-        
-        
+
         return
       } catch (error) {
         console.error("Generate prompt API error:", error)
 
-        
         const fallbackEnhancement = `You are a professional Q&A AI agent specialized in answering questions from Excel spreadsheets.
 
 CORE RESPONSIBILITIES:
@@ -300,12 +291,10 @@ Process each question independently and provide thoughtful, well-reasoned answer
 
   const handleSave = async () => {
     try {
-      
       const configToSave = {
         ...agentConfig,
       }
 
-      
       if (toolId && !builder) {
         const updatedToolData = {
           type: "qna_agent",
@@ -320,11 +309,10 @@ Process each question independently and provide thoughtful, well-reasoned answer
         await workflowToolsAPI.updateTool(toolId, updatedToolData)
       }
 
-      
       onSave?.(configToSave)
     } catch (error) {
       console.error("Failed to save Q&A agent configuration:", error)
-      
+
       const configToSave = {
         ...agentConfig,
       }
@@ -431,7 +419,9 @@ Process each question independently and provide thoughtful, well-reasoned answer
                 onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
                 className="w-full h-10 px-3 py-2 bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-600 rounded-md text-sm text-left flex items-center justify-between focus:outline-none focus:ring-1 focus:ring-slate-400 dark:focus:ring-gray-500 focus:border-slate-400 dark:focus:border-gray-500"
               >
-                <span className="text-slate-900 dark:text-gray-300">{agentConfig.model}</span>
+                <span className="text-slate-900 dark:text-gray-300">
+                  {agentConfig.model}
+                </span>
                 <ChevronDown
                   className={`w-4 h-4 text-slate-500 dark:text-gray-400 transition-transform ${isModelDropdownOpen ? "rotate-180" : ""}`}
                 />
@@ -474,7 +464,10 @@ Process each question independently and provide thoughtful, well-reasoned answer
               </Label>
               <button
                 onClick={enhanceSystemPrompt}
-                disabled={isEnhancingPrompt || !getDisplaySystemPrompt(agentConfig.systemPrompt).trim()}
+                disabled={
+                  isEnhancingPrompt ||
+                  !getDisplaySystemPrompt(agentConfig.systemPrompt).trim()
+                }
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Enhance with AI"
               >
@@ -510,7 +503,7 @@ Process each question independently and provide thoughtful, well-reasoned answer
             </p>
           </div>
         </div>
-        
+
         {/* Save Button - Sticky to bottom */}
         <div className="pt-6 px-0">
           <Button

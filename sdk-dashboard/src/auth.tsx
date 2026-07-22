@@ -1,4 +1,11 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useEffect,
+  type ReactNode,
+} from "react"
 import * as api from "./api"
 
 interface User {
@@ -14,7 +21,12 @@ interface AuthState {
 
 interface AuthContextValue extends AuthState {
   login: (email: string, password: string) => Promise<void>
-  signup: (email: string, password: string, name: string, workspaceName: string) => Promise<void>
+  signup: (
+    email: string,
+    password: string,
+    name: string,
+    workspaceName: string,
+  ) => Promise<void>
   logout: () => void
   isAuthenticated: boolean
 }
@@ -33,12 +45,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   })
 
-  const setAuth = useCallback((token: string, user: User, workspaceId: string) => {
-    localStorage.setItem("sdk_token", token)
-    localStorage.setItem("sdk_user", JSON.stringify(user))
-    localStorage.setItem("sdk_workspace_id", workspaceId)
-    setState({ token, user, workspaceId })
-  }, [])
+  const setAuth = useCallback(
+    (token: string, user: User, workspaceId: string) => {
+      localStorage.setItem("sdk_token", token)
+      localStorage.setItem("sdk_user", JSON.stringify(user))
+      localStorage.setItem("sdk_workspace_id", workspaceId)
+      setState({ token, user, workspaceId })
+    },
+    [],
+  )
 
   const logout = useCallback(() => {
     localStorage.removeItem("sdk_token")
@@ -47,15 +62,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState({ token: null, user: null, workspaceId: null })
   }, [])
 
-  const login = useCallback(async (email: string, password: string) => {
-    const res = await api.login({ email, password })
-    setAuth(res.token, res.user, res.workspace_id)
-  }, [setAuth])
+  const login = useCallback(
+    async (email: string, password: string) => {
+      const res = await api.login({ email, password })
+      setAuth(res.token, res.user, res.workspace_id)
+    },
+    [setAuth],
+  )
 
-  const signup = useCallback(async (email: string, password: string, name: string, workspaceName: string) => {
-    const res = await api.signup({ email, password, name, workspace_name: workspaceName })
-    setAuth(res.token, res.user, res.workspace_id)
-  }, [setAuth])
+  const signup = useCallback(
+    async (
+      email: string,
+      password: string,
+      name: string,
+      workspaceName: string,
+    ) => {
+      const res = await api.signup({
+        email,
+        password,
+        name,
+        workspace_name: workspaceName,
+      })
+      setAuth(res.token, res.user, res.workspace_id)
+    },
+    [setAuth],
+  )
 
   // Verify token on mount
   useEffect(() => {
