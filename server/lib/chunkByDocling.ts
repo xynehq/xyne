@@ -522,8 +522,13 @@ function transformImageChunks(doclingImageChunks: DoclingImageChunk[]): {
   for (let index = 0; index < doclingImageChunks.length; index++) {
     const imgChunk = doclingImageChunks[index]
 
-    // Use the VLM-extracted text as the searchable content
-    const description = imgChunk.text?.trim() || ""
+    // Use the VLM-extracted text as the searchable content.
+    // Skip chunks with no text so empty strings never land in image_chunks
+    // (they surface as "" entries in chunks_summary).
+    const description = imgChunk.text?.trim()
+    if (!description) {
+      continue
+    }
 
     image_chunks.push(description)
     // Docling returns 1-based page numbers (first page = 1)
@@ -532,7 +537,7 @@ function transformImageChunks(doclingImageChunks: DoclingImageChunk[]): {
       ? imgChunk.page_number - 1
       : undefined
     image_chunks_map.push({
-      chunk_index: index,
+      chunk_index: image_chunks.length - 1,
       page_numbers: pageNumber !== undefined ? [pageNumber] : [],
       block_labels: ["image"],
       bbox: imgChunk.bbox,
