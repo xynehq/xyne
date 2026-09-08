@@ -1,3 +1,6 @@
+# ⚠️ MOVED — This repo is no longer maintained here.
+
+**New home: [github.com/juspay/xyne-spaces](https://github.com/juspay/xyne-spaces)**
 ![Xyne App](docs/readme/Xyne-Readme.png)
 
 <p align="center">
