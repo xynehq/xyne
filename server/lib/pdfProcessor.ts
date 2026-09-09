@@ -23,7 +23,6 @@ export type PdfProcessingMethod =
   (typeof PDF_PROCESSING_METHOD)[keyof typeof PDF_PROCESSING_METHOD]
 
 const PDF_GEMINI_PAGE_THRESHOLD = 40
-const MAX_PDF_PAGE_COUNT = 1000
 const DEFAULT_DOCLING_TIMEOUT_FALLBACK_MS = 30 * 60 * 1000
 const DOCLING_TIMEOUT_PER_PAGE_MS = 15 * 1000
 const DOCLING_TIMEOUT_PER_100KB_MS = 10 * 1000
@@ -33,6 +32,19 @@ type DoclingPreflight = {
   pageCount: number | null
   timeoutMs: number
   usedFallbackTimeout: boolean
+}
+
+export type DoclingPageChunkResult = {
+  result: ProcessingResult
+  partIndex: number
+  startPage: number
+  endPage: number
+  totalPages: number
+}
+
+export type LoadedPdfDocument = {
+  document: PDFDocument
+  pageCount: number
 }
 
 function getConfiguredDoclingBaseTimeoutMs(): number {
@@ -192,17 +204,31 @@ export class PdfProcessor {
     }
   }
 
-  private static async getPdfPageCount(buffer: Buffer): Promise<number | null> {
+  static async loadDocument(buffer: Buffer): Promise<LoadedPdfDocument | null> {
     try {
       const document = await PDFDocument.load(buffer)
-      return document.getPageCount()
+      return {
+        document,
+        pageCount: document.getPageCount(),
+      }
     } catch (error) {
-      Logger.warn(
-        error,
-        "Failed to determine PDF page count, skipping Gemini eligibility check",
-      )
+      Logger.warn(error, "Failed to load PDF document")
       return null
     }
+  }
+
+  private static async getPdfPageCount(buffer: Buffer): Promise<number | null> {
+    const loadedDocument = await this.loadDocument(buffer)
+    return loadedDocument?.pageCount ?? null
+  }
+
+  static shouldStreamWithDocling(pageCount: number | null): boolean {
+    return (
+      config.doclingEnabled &&
+      Number.isFinite(pageCount) &&
+      (pageCount as number) >= config.doclingStreamingMinPages &&
+      config.doclingPageChunkSize > 0
+    )
   }
 
   /**
@@ -298,6 +324,100 @@ export class PdfProcessor {
     )
   }
 
+  static async *processWithDoclingPageChunks(
+    source: Buffer | LoadedPdfDocument,
+    fileName: string,
+    vespaDocId: string,
+    pageChunkSize: number = config.doclingPageChunkSize,
+    knownTotalPages?: number | null,
+  ): AsyncGenerator<DoclingPageChunkResult> {
+    if (!Number.isFinite(pageChunkSize) || pageChunkSize <= 0) {
+      throw new Error("Docling page chunk size must be greater than zero")
+    }
+
+    const loadedDocument = Buffer.isBuffer(source)
+      ? await this.loadDocument(source)
+      : source
+
+    if (!loadedDocument) {
+      throw new Error("Failed to load PDF for Docling page chunk processing")
+    }
+
+    const sourceDocument = loadedDocument.document
+    const totalPages =
+      typeof knownTotalPages === "number" &&
+      Number.isFinite(knownTotalPages) &&
+      knownTotalPages > 0
+        ? knownTotalPages
+        : loadedDocument.pageCount
+
+    if (totalPages > config.maxPdfPageCount) {
+      throw new PdfPageCountExceededError(totalPages, config.maxPdfPageCount)
+    }
+
+    let partIndex = 0
+    for (
+      let startPage = 0;
+      startPage < totalPages;
+      startPage += pageChunkSize
+    ) {
+      const endPage = Math.min(startPage + pageChunkSize, totalPages)
+      const pageIndexes = Array.from(
+        { length: endPage - startPage },
+        (_, index) => startPage + index,
+      )
+
+      const partDocument = await PDFDocument.create()
+      const copiedPages = await partDocument.copyPages(
+        sourceDocument,
+        pageIndexes,
+      )
+      for (const page of copiedPages) {
+        partDocument.addPage(page)
+      }
+
+      const partBytes = await partDocument.save()
+      const partBuffer = Buffer.from(partBytes)
+      const partDocId = `${vespaDocId}__docling_part_${partIndex}`
+      const partFileName = `${fileName}.pages-${startPage + 1}-${endPage}.pdf`
+      const preflight = calculateDoclingTimeoutMs(
+        partBuffer.length,
+        endPage - startPage,
+      )
+
+      Logger.info(
+        {
+          fileName,
+          vespaDocId,
+          partDocId,
+          partIndex,
+          startPage: startPage + 1,
+          endPage,
+          totalPages,
+          partSizeBytes: partBuffer.length,
+        },
+        "Processing Docling PDF page chunk",
+      )
+
+      const result = await this.processWithDocling(
+        partBuffer,
+        partFileName,
+        partDocId,
+        preflight,
+      )
+
+      yield {
+        result,
+        partIndex,
+        startPage,
+        endPage,
+        totalPages,
+      }
+
+      partIndex += 1
+    }
+  }
+
   /**
    * Processes a PDF using the fallback logic:
    * 1. Try OCR first (if enabled via useOCR)
@@ -325,8 +445,8 @@ export class PdfProcessor {
     useOCR: boolean = true,
   ): Promise<ProcessingResult> {
     const pageCount = await this.getPdfPageCount(buffer)
-    if (pageCount !== null && pageCount > MAX_PDF_PAGE_COUNT) {
-      throw new PdfPageCountExceededError(pageCount, MAX_PDF_PAGE_COUNT)
+    if (pageCount !== null && pageCount > config.maxPdfPageCount) {
+      throw new PdfPageCountExceededError(pageCount, config.maxPdfPageCount)
     }
     const disableFallbacks = config.pdfProcessingDisableFallbacks
 
@@ -448,7 +568,7 @@ export class PdfProcessor {
   }
 
   static getMaxPdfPageCount(): number {
-    return MAX_PDF_PAGE_COUNT
+    return config.maxPdfPageCount
   }
 
   /**
