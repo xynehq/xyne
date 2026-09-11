@@ -17,6 +17,7 @@ interface DebugDocModalProps {
   isOpen: boolean
   onClose: () => void
   currentSheetIndex?: number
+  agentId?: string | null
 }
 interface KnowledgeBaseFileMetadata {
   originalFileName: string
@@ -51,6 +52,7 @@ export function DebugDocModal({
   isOpen,
   onClose,
   currentSheetIndex,
+  agentId,
 }: DebugDocModalProps) {
   const { toast } = useToast()
   const [vespaData, setVespaData] = useState<KnowledgeBaseFile | null>(null)
@@ -102,6 +104,7 @@ export function DebugDocModal({
           docId: documentId,
           schema: "kb_items",
           sheetIndex: currentSheetIndex,
+          ...(agentId ? { agentId } : {}),
         }),
       })
 
@@ -139,7 +142,7 @@ export function DebugDocModal({
     if (isOpen && documentId && !vespaData && !loadingVespaData) {
       handleFetchVespaData()
     }
-  }, [isOpen, documentId])
+  }, [isOpen, documentId, agentId])
 
   const handleOpenChange = (open: boolean) => {
     if (!open) {
