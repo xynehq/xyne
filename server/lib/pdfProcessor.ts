@@ -23,7 +23,6 @@ export type PdfProcessingMethod =
   (typeof PDF_PROCESSING_METHOD)[keyof typeof PDF_PROCESSING_METHOD]
 
 const PDF_GEMINI_PAGE_THRESHOLD = 40
-const MAX_PDF_PAGE_COUNT = 1000
 const DEFAULT_DOCLING_TIMEOUT_FALLBACK_MS = 30 * 60 * 1000
 const DOCLING_TIMEOUT_PER_PAGE_MS = 15 * 1000
 const DOCLING_TIMEOUT_PER_100KB_MS = 10 * 1000
@@ -325,8 +324,8 @@ export class PdfProcessor {
     useOCR: boolean = true,
   ): Promise<ProcessingResult> {
     const pageCount = await this.getPdfPageCount(buffer)
-    if (pageCount !== null && pageCount > MAX_PDF_PAGE_COUNT) {
-      throw new PdfPageCountExceededError(pageCount, MAX_PDF_PAGE_COUNT)
+    if (pageCount !== null && pageCount > config.maxPdfPageCount) {
+      throw new PdfPageCountExceededError(pageCount, config.maxPdfPageCount)
     }
     const disableFallbacks = config.pdfProcessingDisableFallbacks
 
@@ -448,7 +447,7 @@ export class PdfProcessor {
   }
 
   static getMaxPdfPageCount(): number {
-    return MAX_PDF_PAGE_COUNT
+    return config.maxPdfPageCount
   }
 
   /**
