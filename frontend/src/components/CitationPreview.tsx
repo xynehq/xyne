@@ -65,6 +65,11 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
   initialPageIndex,
 }) => {
   const [documentContent, setDocumentContent] = useState<Blob | null>(null)
+  // Tracks whether the underlying PDF viewer has actually painted its first
+  // page canvas. We gate `onDocumentLoaded` on this so downstream consumers
+  // (e.g. chat.tsx replaying a chunk highlight) anchor their overlays to a
+  // stable canvas — not one that's still resizing from the initial render.
+  const [pdfFirstPageRendered, setPdfFirstPageRendered] = useState(false)
   const [agentDocument, setAgentDocument] = useState<AgentDocumentPayload | null>(
     null,
   )
@@ -311,6 +316,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
               displayMode="continuous"
               documentOperationsRef={documentOperationsRef}
               initialPage={initialPageOrSheetIndex}
+              onFirstPageRendered={() => setPdfFirstPageRendered(true)}
             />
           </div>
         )
@@ -426,16 +432,32 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
     }
   }, [citation, documentContent, initialPageIndex])
 
-  // Notify parent when document is loaded and ready
+  // Reset the "PDF actually rendered" latch whenever the citation switches
+  // to a different doc — otherwise a stale `true` from a previous citation
+  // would let onDocumentLoaded fire before the new PDF's canvas is painted.
+  useEffect(() => {
+    setPdfFirstPageRendered(false)
+  }, [citation?.docId])
+
+  // Notify parent when document is loaded AND visually rendered. For PDFs
+  // we gate on `pdfFirstPageRendered` (a real "first canvas painted" signal
+  // from PdfViewer) instead of just `documentContent` (which is the pdf.js
+  // *fetch* completing — way before the canvas is at final size). Anchoring
+  // a highlight overlay before the canvas stabilizes causes the "highlight
+  // lands in wrong spot on the first click" bug.
   useEffect(() => {
     if (!onDocumentLoaded || loading || error) return
     if (citation && isAgentDocumentCitation(citation)) {
       if (agentDocument) onDocumentLoaded()
       return
     }
-    if (documentContent && viewerElement) {
-      onDocumentLoaded()
-    }
+    if (!documentContent || !viewerElement) return
+    const extension = citation?.title?.split(".").pop()?.toLowerCase()
+    // Non-PDFs (markdown, docx, etc.) don't need the canvas-stable gate —
+    // their viewers either don't have an overlay use case or render
+    // synchronously enough that the existing "documentContent" check is OK.
+    if (extension === "pdf" && !pdfFirstPageRendered) return
+    onDocumentLoaded()
   }, [
     loading,
     error,
@@ -444,6 +466,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
     onDocumentLoaded,
     viewerElement,
     citation,
+    pdfFirstPageRendered,
   ])
 
   if (!isOpen) return null

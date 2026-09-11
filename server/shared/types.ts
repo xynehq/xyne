@@ -548,6 +548,12 @@ export enum ChatSSEvents {
   AttachmentUpdate = "au",
   ClarificationRequested = "cr",
   ClarificationProvided = "cp",
+  // Emitted by the cite-pass (insertCitations.ts) after synthesis finishes:
+  // payload is the full answer text WITH `K[N_M]` markers inserted.
+  // Frontend should REPLACE the currently displayed message text with this,
+  // not append. Streamed `ResponseUpdate` chunks are append-only; this event
+  // is the single "the answer is now done and includes citations" signal.
+  ResponseCited = "rcc",
 }
 
 const messageMetadataSchema = z.object({
