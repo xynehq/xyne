@@ -143,6 +143,7 @@ schema mail {
         query(e) tensor<bfloat16>(v[DIMS])  # Query embedding
         query(alpha) double  # Alpha parameter for hybrid weight
         query(recency_decay_rate) double
+        query(mailBoost) double
       }
 
       constants {
@@ -172,6 +173,9 @@ schema mail {
       function combined_bm25() {
         expression: bm25(subject) + bm25(chunks)
       }
+       function is_mail() {
+      expression: if(attribute(app) == "gmail", 1, 0)
+      }
 
       function matchedFieldCount() {
         expression {
@@ -192,7 +196,7 @@ schema mail {
         expression {
           if(query(is_intent_search) == 1.0,
             simplePeopleRank,
-            ((nativeRank(subject) + nativeRank(chunks) + peopleRank) / if(matchedFieldCount == 0, 1, matchedFieldCount))
+            ((nativeRank(subject) + nativeRank(chunks) + peopleRank) / if(matchedFieldCount == 0, 1, matchedFieldCount))* if(is_mail == 1, query(mailBoost), 1)
           )
         }
       }
