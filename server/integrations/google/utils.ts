@@ -41,8 +41,7 @@ import path from "path"
 import { retryWithBackoff } from "@/utils"
 import config from "@/config"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
-const { host } = config
-const METRICS_SERVER_URL = host ?? "http://localhost:3000"
+const METRICS_SERVER_URL = "http://localhost:3001"
 
 // TODO: make it even more extensive
 export const mimeTypeMap: Record<string, DriveEntity> = {
@@ -446,6 +445,7 @@ interface ProgressMetrics {
   totalBlockedPdfs: number
 }
 
+// Method called when sending progress to the server when ingestion is done using script
 export const sendProgressToServer = async (metrics: ProgressMetrics) => {
   Logger.info(`Updating Progress for Script`)
 
