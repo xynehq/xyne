@@ -2418,6 +2418,11 @@ app
   .get("/agent/:agentExternalId", GetAgentApi) // Get Agent details
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory) // List chat history
   .post(
+    "/chat/generateTitle",
+    zValidator("json", chatTitleSchema),
+    GenerateChatTitleApi,
+  ) // Generate chat title
+  .post(
     "/message/feedback",
     zValidator("json", messageFeedbackSchema),
     MessageFeedbackApi,
