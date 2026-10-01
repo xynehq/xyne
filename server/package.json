@@ -8,7 +8,7 @@
     "@commitlint/cli": "^19.8.1",
     "@commitlint/config-conventional": "^19.8.1",
     "@digitalroute/cz-conventional-changelog-for-jira": "^8.0.1",
-    "@faker-js/faker": "^9.3.0",
+    "@faker-js/faker": "^10.5.0",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/commit-analyzer": "^13.0.1",
     "@semantic-release/git": "^10.0.1",
